@@ -1,4 +1,0 @@
-module AMORA {
-header "AMORA-Swift.h"
-export *
-}
