@@ -20,6 +20,7 @@ struct NotchView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             Capsule(style: .continuous)
                 .fill(Color.black.opacity(0.88))

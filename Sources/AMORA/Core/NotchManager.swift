@@ -20,25 +20,29 @@ final class NotchManager {
     }
 
     static var notchedScreen: NSScreen? {
-        for screen in NSScreen.screens {
-            if screen.safeAreaInsets.top > 0 {
-                return screen
-            }
-        }
-        return NSScreen.main
+        NSScreen.screens.first(where: { hasHardwareNotch(on: $0) }) ?? NSScreen.main
+    }
+
+    static func hasHardwareNotch(on screen: NSScreen) -> Bool {
+        guard screen.safeAreaInsets.top > 0,
+              let leftArea = screen.auxiliaryTopLeftArea,
+              let rightArea = screen.auxiliaryTopRightArea else { return false }
+        return rightArea.minX > leftArea.maxX
     }
 
     static func notchRect(on screen: NSScreen) -> NSRect {
         let screenFrame = screen.frame
         let safeAreaTop = screen.safeAreaInsets.top
 
-        if safeAreaTop > 0,
+        if hasHardwareNotch(on: screen),
            let leftArea = screen.auxiliaryTopLeftArea,
            let rightArea = screen.auxiliaryTopRightArea,
            rightArea.minX > leftArea.maxX {
             let width = rightArea.minX - leftArea.maxX
             let height = safeAreaTop
             let originX = leftArea.maxX
+            // Use the physical display top, not visibleFrame.maxY. The latter
+            // represents usable application space below the menu bar.
             let originY = screenFrame.maxY - height
             return NSRect(x: originX, y: originY, width: width, height: height)
         }
@@ -50,6 +54,17 @@ final class NotchManager {
         let originY = screenFrame.maxY - fallbackHeight
 
         return NSRect(x: originX, y: originY, width: fallbackWidth, height: fallbackHeight)
+    }
+
+    static func logGeometryIfEnabled(for screen: NSScreen, notchRect: NSRect, amoraFrame: NSRect) {
+        guard UserDefaults.standard.bool(forKey: "AMORADebugGeometry") else { return }
+        print("[AMORA] screen.frame=\(screen.frame)")
+        print("[AMORA] screen.visibleFrame=\(screen.visibleFrame)")
+        print("[AMORA] safeAreaInsets=\(screen.safeAreaInsets)")
+        print("[AMORA] auxiliaryTopLeftArea=\(String(describing: screen.auxiliaryTopLeftArea))")
+        print("[AMORA] auxiliaryTopRightArea=\(String(describing: screen.auxiliaryTopRightArea))")
+        print("[AMORA] calculated notchRect=\(notchRect)")
+        print("[AMORA] calculated AMORA frame=\(amoraFrame)")
     }
 
     private func setupCursorTracking() {
@@ -76,6 +91,11 @@ final class NotchManager {
 
             let windowFrame = window.frame
             let distance = hypot(currentPosition.x - windowFrame.midX, currentPosition.y - windowFrame.midY)
+
+            // While the island is expanded, keep tracking the cursor for eye
+            // movement (above) but don't let proximity drive state transitions —
+            // the expanded state is owned by WindowManager / click-outside.
+            guard !AppState.shared.isQuickPanelOpen else { return }
 
             let stateManager = AppState.shared.stateManager
             let settings = AppState.shared.settings

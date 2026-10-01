@@ -8,6 +8,11 @@ final class QuickPanelViewModel {
 }
 
 struct QuickPanelView: View {
+    /// When embedded inside the Dynamic Island, drop the standalone panel's fixed
+    /// frame + background (the island supplies the black surface) and inset the
+    /// content below the physical notch.
+    var embedded: Bool = false
+    var topInset: CGFloat = 0
     @Bindable var vm = QuickPanelViewModel()
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
@@ -23,6 +28,33 @@ struct QuickPanelView: View {
     }
 
     var body: some View {
+        if embedded {
+            content
+                .padding(.top, topInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else {
+            content
+                .frame(width: 320, height: 420)
+                .background {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color(red: 0.08, green: 0.10, blue: 0.14).opacity(0.96))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.2), Color.white.opacity(0.04)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 8)
+                }
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 12) {
             // Header
             HStack(spacing: 10) {
@@ -110,23 +142,6 @@ struct QuickPanelView: View {
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
-        }
-        .frame(width: 320, height: 420)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(red: 0.08, green: 0.10, blue: 0.14).opacity(0.96))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.2), Color.white.opacity(0.04)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 8)
         }
     }
 

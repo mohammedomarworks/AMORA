@@ -55,6 +55,8 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSPrefersDisplaySafeAreaCompatibilityMode</key>
+    <false/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
 </dict>
