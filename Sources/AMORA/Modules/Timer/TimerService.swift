@@ -42,6 +42,8 @@ final class TimerService {
                 self?.tick()
             }
         }
+
+        PersonalityEngine.shared.react(to: .timerStarted)
     }
 
     func pauseTimer() {
@@ -82,7 +84,9 @@ final class TimerService {
 
     private func timerFinished() {
         stopTimer()
-        NSSound.beep()
-        AppState.shared.stateManager.transition(to: .happy)
+        // Route the completion through the personality engine so the message,
+        // sound, expression, and celebration bounce all stay in one place.
+        PersonalityEngine.shared.react(to: .timerCompleted)
+        AMORARobot.shared.playBounce()
     }
 }

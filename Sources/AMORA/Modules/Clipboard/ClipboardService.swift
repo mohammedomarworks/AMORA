@@ -65,6 +65,8 @@ final class ClipboardService {
         pasteboard.clearContents()
         pasteboard.setString(item.text, forType: .string)
         lastChangeCount = pasteboard.changeCount
+        // Only a user-initiated restore reacts — never passive clipboard changes.
+        PersonalityEngine.shared.react(to: .clipboardRestored)
     }
 
     func clearHistory() {

@@ -72,6 +72,42 @@ struct Expression: Equatable {
         )
     }
 
+    /// Head cocked, eyes glancing up — "huh, what's this?"
+    static func curious() -> Expression {
+        Expression(
+            eyes: .normal,
+            eyeOffset: CGPoint(x: 1.5, y: 2),
+            mouth: .neutral,
+            blinkProgress: 0,
+            headTilt: 0.28,
+            antennaPulse: 0.5
+        )
+    }
+
+    /// Soft downward eyes — gentle worry, never alarming.
+    static func concerned() -> Expression {
+        Expression(
+            eyes: .sad,
+            eyeOffset: .zero,
+            mouth: .neutral,
+            blinkProgress: 0.1,
+            headTilt: -0.12,
+            antennaPulse: 0.3
+        )
+    }
+
+    /// Big grin + lively antenna — celebratory, paired with a small bounce.
+    static func excited() -> Expression {
+        Expression(
+            eyes: .happy,
+            eyeOffset: .zero,
+            mouth: .smile,
+            blinkProgress: 0,
+            headTilt: 0,
+            antennaPulse: 1.0
+        )
+    }
+
     static func sleepy() -> Expression {
         Expression(
             eyes: .halfClosed,

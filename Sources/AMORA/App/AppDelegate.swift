@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupMenuBar()
         windowManager?.showNotchWindow()
+
+        // A gentle "Ready." greeting once AMORA is on screen.
+        PersonalityEngine.shared.react(to: .launched)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

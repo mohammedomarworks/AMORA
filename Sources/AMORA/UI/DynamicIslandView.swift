@@ -57,9 +57,11 @@ struct BottomRoundedRectangle: Shape {
 }
 /// The tiny notch-integrated element shown when collapsed: just AMORA's eyes,
 /// glowing at the lower lip of the notch. No pod, no antenna, no panel — so the
-/// user sees essentially the normal notch, with a hint of life.
+/// user sees essentially the normal notch, with a hint of life. Uses the shared
+/// eye so expression + theme stay consistent with the full character.
 struct NotchEyesView: View {
     @Bindable var robot: AMORARobot
+    private var palette: ThemePalette { AppState.shared.settings.palette }
 
     var body: some View {
         HStack(spacing: 7) {
@@ -69,13 +71,17 @@ struct NotchEyesView: View {
     }
 
     private var eye: some View {
-        let openHeight: CGFloat = 7
-        let height = max(1.2, openHeight * CGFloat(1 - robot.blinkPhase * 0.92))
-        return Capsule(style: .continuous)
-            .fill(Color(red: 0.93, green: 0.99, blue: 1.0))
-            .frame(width: 5, height: height)
-            .shadow(color: Color(red: 0.25, green: 0.85, blue: 1.0).opacity(0.9), radius: 2.5)
-            .offset(x: robot.eyeDirection.x, y: -robot.eyeDirection.y)
+        AMORAEyeView(
+            shape: robot.expression.eyes,
+            direction: robot.eyeDirection,
+            blink: max(robot.blinkPhase, robot.expression.blinkProgress),
+            width: 5,
+            height: 7,
+            core: palette.eyeCore,
+            glow: palette.eyeGlow,
+            lineWidth: 1.6,
+            glowRadius: 2.5
+        )
     }
 }
 
@@ -143,8 +149,18 @@ struct DynamicIslandView: View {
             startPoint: .top,
             endPoint: .bottom
         )
+        // A faint top sheen that only appears as the island expands, giving the
+        // chin a soft glassy highlight. At tD = 0 it is fully transparent, so the
+        // collapsed notch stays pure black and merges with the bezel.
+        let sheen = LinearGradient(
+            colors: [Color.white.opacity(0.06 * tD), Color.clear],
+            startPoint: .top,
+            endPoint: .bottom
+        )
         let filled = shape.fill(Color.black)
-        let bordered = filled.overlay(shape.stroke(stroke, lineWidth: 1))
+        let bordered = filled
+            .overlay(shape.fill(sheen))
+            .overlay(shape.stroke(stroke, lineWidth: 1))
         let shadowed = bordered.shadow(color: Color.black.opacity(0.55 * tD), radius: 20 * t, x: 0, y: 8 * t)
         return shadowed
             .contentShape(shape)

@@ -13,6 +13,9 @@ final class BatteryService {
     var hasBattery: Bool = true
 
     private var timer: Timer?
+    /// The first `refresh()` only establishes a baseline; events fire on the
+    /// transitions detected on subsequent refreshes so we never alarm on launch.
+    private var hasBaseline = false
 
     private init() {
         refresh()
@@ -29,6 +32,10 @@ final class BatteryService {
     }
 
     func refresh() {
+        let oldLevel = level
+        let oldCharging = isCharging
+        let hadBaseline = hasBaseline
+
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef],
               !sources.isEmpty else {
@@ -36,6 +43,7 @@ final class BatteryService {
             level = 100
             isPluggedIn = true
             isCharging = false
+            hasBaseline = true
             return
         }
 
@@ -68,6 +76,30 @@ final class BatteryService {
                 timeRemainingFormatted = isPluggedIn ? "On AC Power" : "On Battery"
             }
             break
+        }
+
+        detectBatteryEvents(oldLevel: oldLevel, oldCharging: oldCharging, hadBaseline: hadBaseline)
+        hasBaseline = true
+    }
+
+    /// Fire personality events only on meaningful threshold crossings, so AMORA
+    /// reacts once when something changes rather than nagging on every poll.
+    private func detectBatteryEvents(oldLevel: Int, oldCharging: Bool, hadBaseline: Bool) {
+        guard hadBaseline, hasBattery else { return }
+        let engine = PersonalityEngine.shared
+
+        if isCharging && !oldCharging {
+            engine.react(to: .charging)
+        }
+        if isPluggedIn && level >= 100 && oldLevel < 100 {
+            engine.react(to: .chargedFull)
+        }
+        if !isCharging && !isPluggedIn {
+            if level <= 10 && oldLevel > 10 {
+                engine.react(to: .criticalBattery)
+            } else if level <= 20 && oldLevel > 20 {
+                engine.react(to: .lowBattery)
+            }
         }
     }
 }

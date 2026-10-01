@@ -10,7 +10,21 @@ final class MusicService {
     var isPlaying: Bool = false
     var isAvailable: Bool = false
 
+    /// Playback position in seconds and total track length, polled alongside the
+    /// title so the island can show a live progress bar.
+    var elapsed: Double = 0
+    var duration: Double = 0
+
+    /// 0…1 fraction of the current track that has played.
+    var progress: Double {
+        guard duration > 0 else { return 0 }
+        return max(0, min(1, elapsed / duration))
+    }
+
     private var pollTimer: Timer?
+    /// Suppresses an event on the very first poll so we don't greet music that
+    /// was already playing before AMORA launched.
+    private var hasPolledOnce = false
 
     private init() {
         checkCurrentTrack()
@@ -27,23 +41,30 @@ final class MusicService {
     }
 
     func checkCurrentTrack() {
-        // Query Music.app
+        // Query Music.app. Fetch track info while playing *or* paused so the
+        // card can keep showing the song and a resume button when paused.
         let script = """
         if application "Music" is running then
             tell application "Music"
                 set pState to player state as string
-                if pState is "playing" then
+                if pState is "playing" or pState is "paused" then
                     set trk to name of current track
                     set art to artist of current track
-                    return pState & "|||" & trk & "|||" & art
+                    set dur to (duration of current track)
+                    set pos to (player position)
+                    return pState & "|||" & trk & "|||" & art & "|||" & dur & "|||" & pos
                 else
-                    return pState & "||||||"
+                    return pState & "|||" & "" & "|||" & "" & "|||" & "0" & "|||" & "0"
                 end if
             end tell
         else
-            return "stopped||||||"
+            return "stopped|||" & "" & "|||" & "" & "|||" & "0" & "|||" & "0"
         end if
         """
+
+        let wasPlaying = isPlaying
+        var nowPlaying = false
+        var gotTrack = false
 
         var error: NSDictionary?
         if let appleScript = NSAppleScript(source: script) {
@@ -54,23 +75,42 @@ final class MusicService {
                     let state = parts[0]
                     let title = parts[1]
                     let art = parts[2]
+                    nowPlaying = (state == "playing")
 
-                    self.isPlaying = (state == "playing")
+                    if parts.count >= 5 {
+                        self.duration = Double(parts[3]) ?? 0
+                        self.elapsed = Double(parts[4]) ?? 0
+                    }
+
                     if !title.isEmpty {
                         self.trackTitle = title
                         self.artist = art
                         self.isAvailable = true
-                        return
+                        gotTrack = true
                     }
                 }
             }
         }
 
-        if !isPlaying {
+        self.isPlaying = nowPlaying
+        if !gotTrack {
             self.trackTitle = "No Music Playing"
             self.artist = ""
             self.isAvailable = false
+            self.elapsed = 0
+            self.duration = 0
         }
+
+        // Emit play/stop transitions after the first baseline poll, so AMORA
+        // reacts when the user starts music, not to whatever was already going.
+        if hasPolledOnce {
+            if nowPlaying && !wasPlaying {
+                PersonalityEngine.shared.react(to: .musicStarted)
+            } else if !nowPlaying && wasPlaying {
+                PersonalityEngine.shared.react(to: .musicStopped)
+            }
+        }
+        hasPolledOnce = true
     }
 
     func togglePlayPause() {
