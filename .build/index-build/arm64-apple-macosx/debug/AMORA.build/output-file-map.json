@@ -1,0 +1,65 @@
+{
+  "": {
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/primary.swiftdeps"
+  },
+  "/Users/omar/Amora/Sources/AMORA/App/AMORAApp.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAApp.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAApp.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAApp.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAApp.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/App/AppDelegate.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppDelegate.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppDelegate.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppDelegate~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppDelegate.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppDelegate.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Character/Expression.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Expression.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Expression.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Expression~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Expression.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Expression.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Core/AMORAState.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAState.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAState.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAState~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAState.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAState.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Core/AppState.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppState.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppState.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppState~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppState.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppState.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/NotchManager.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/NotchManager.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/NotchManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/NotchManager.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/NotchManager.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/PermissionManager.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/PermissionManager.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/PermissionManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/PermissionManager.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/PermissionManager.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Core/WindowManager.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/WindowManager.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/WindowManager.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/WindowManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/WindowManager.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/WindowManager.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Persistence/StorageManager.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/StorageManager.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/StorageManager.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/StorageManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/StorageManager.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/StorageManager.dia"  },
+  "/Users/omar/Amora/Sources/AMORA/Settings/Preferences.swift": {
+    "dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Preferences.d",
+    "object": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Preferences.swift.o",
+    "swiftmodule": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Preferences~partial.swiftmodule",
+    "swift-dependencies": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Preferences.swiftdeps",
+    "diagnostics": "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Preferences.dia"  }
+}

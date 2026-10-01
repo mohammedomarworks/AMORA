@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'AllExcludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'AMORA-product' in project 'AMORA'
+Target 'AMORA-product' in project 'AMORA' (no dependencies)

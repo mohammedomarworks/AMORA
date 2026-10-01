@@ -1,0 +1,47 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "AMORA-arm64-apple-macosx-debug.module": ["<AMORA-arm64-apple-macosx-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<AMORA-arm64-apple-macosx-debug.module>"]
+  "test": ["<AMORA-arm64-apple-macosx-debug.module>"]
+default: "main"
+nodes:
+  "/Users/omar/Amora/Sources/AMORA/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/omar/Amora/Sources/AMORA/App/AMORAApp.swift","/Users/omar/Amora/Sources/AMORA/App/AppDelegate.swift","/Users/omar/Amora/Sources/AMORA/Character/Expression.swift","/Users/omar/Amora/Sources/AMORA/Core/AMORAState.swift","/Users/omar/Amora/Sources/AMORA/Core/AppState.swift","/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift","/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift","/Users/omar/Amora/Sources/AMORA/Core/WindowManager.swift","/Users/omar/Amora/Sources/AMORA/Persistence/StorageManager.swift","/Users/omar/Amora/Sources/AMORA/Settings/Preferences.swift"]
+    outputs: ["/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources"]
+    description: "Write auxiliary file /Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources"
+
+  "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Library/Developer/CommandLineTools/usr/bin/swiftc"]
+    outputs: ["/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+
+  "<AMORA-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules/AMORA.swiftmodule"]
+    outputs: ["<AMORA-arm64-apple-macosx-debug.module>"]
+
+  "C.AMORA-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/omar/Amora/Sources/AMORA/App/AMORAApp.swift","/Users/omar/Amora/Sources/AMORA/App/AppDelegate.swift","/Users/omar/Amora/Sources/AMORA/Character/Expression.swift","/Users/omar/Amora/Sources/AMORA/Core/AMORAState.swift","/Users/omar/Amora/Sources/AMORA/Core/AppState.swift","/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift","/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift","/Users/omar/Amora/Sources/AMORA/Core/WindowManager.swift","/Users/omar/Amora/Sources/AMORA/Persistence/StorageManager.swift","/Users/omar/Amora/Sources/AMORA/Settings/Preferences.swift","/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt","/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources"]
+    outputs: ["/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules/AMORA.swiftmodule"]
+    description: "Compiling Swift Module 'AMORA' (10 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","AMORA","-emit-dependencies","-emit-module","-emit-module-path","/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules/AMORA.swiftmodule","-output-file-map","/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/output-file-map.json","-incremental","@/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources","-I","/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx15.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-Onone","-enable-testing","-j10","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","AMORA_main","-swift-version","6","-Xfrontend","-experimental-lazy-typecheck","-Xfrontend","-experimental-skip-all-function-bodies","-Xfrontend","-experimental-allow-module-with-compiler-errors","-Xfrontend","-empty-abi-descriptor","-I","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-L","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-plugin-path","/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","amora"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/omar/Amora/Sources/AMORA/","/Users/omar/Amora/Package.swift","/Users/omar/Amora/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

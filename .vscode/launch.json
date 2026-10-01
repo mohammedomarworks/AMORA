@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Amora}",
+            "name": "Debug AMORA",
+            "target": "AMORA",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AMORA"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Amora}",
+            "name": "Release AMORA",
+            "target": "AMORA",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AMORA"
+        }
+    ]
+}

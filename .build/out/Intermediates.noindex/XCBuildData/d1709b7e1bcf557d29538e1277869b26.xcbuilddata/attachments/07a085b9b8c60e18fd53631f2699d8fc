@@ -1,0 +1,29 @@
+{
+  "" : {
+    "diagnostics" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests-primary.dia",
+    "emit-module-dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests-primary-emit-module.dia",
+    "pch" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests-primary.swiftdeps"
+  },
+  "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/DerivedSources/test_entry_point.swift" : {
+    "const-values" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point.swiftconstvalues",
+    "dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point.d",
+    "diagnostics" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point.dia",
+    "index-unit-output-path" : "/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "llvm-bc" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point.bc",
+    "object" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "swift-dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point.swiftdeps",
+    "swiftmodule" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/test_entry_point~partial.swiftmodule"
+  },
+  "/Users/omar/Amora/Tests/AMORATests/AMORATests.swift" : {
+    "const-values" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests.swiftconstvalues",
+    "dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests.d",
+    "diagnostics" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests.dia",
+    "index-unit-output-path" : "/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests.o",
+    "llvm-bc" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests.bc",
+    "object" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests.o",
+    "swift-dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests.swiftdeps",
+    "swiftmodule" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORATests-p.build/Objects-normal/arm64/AMORATests~partial.swiftmodule"
+  }
+}

@@ -1,0 +1,320 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.AMORA-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources",
+      "importPath" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/App/AMORAApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/App/AppDelegate.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Character/Expression.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/AMORAState.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/AppState.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/WindowManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Persistence/StorageManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Settings/Preferences.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "AMORA",
+      "moduleOutputPath" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules/AMORA.swiftmodule",
+      "objects" : [
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAApp.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppDelegate.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Expression.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AMORAState.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/AppState.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/NotchManager.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/PermissionManager.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/WindowManager.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/StorageManager.swift.o",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/Preferences.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx15.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "AMORA_main",
+        "-swift-version",
+        "6",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "amora"
+      ],
+      "outputFileMapPath" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules/AMORA.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/omar/Amora/Sources/AMORA/App/AMORAApp.swift",
+        "/Users/omar/Amora/Sources/AMORA/App/AppDelegate.swift",
+        "/Users/omar/Amora/Sources/AMORA/Character/Expression.swift",
+        "/Users/omar/Amora/Sources/AMORA/Core/AMORAState.swift",
+        "/Users/omar/Amora/Sources/AMORA/Core/AppState.swift",
+        "/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift",
+        "/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift",
+        "/Users/omar/Amora/Sources/AMORA/Core/WindowManager.swift",
+        "/Users/omar/Amora/Sources/AMORA/Persistence/StorageManager.swift",
+        "/Users/omar/Amora/Sources/AMORA/Settings/Preferences.swift"
+      ],
+      "tempsPath" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "AMORA" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "AMORA",
+      "-package-name",
+      "amora",
+      "-c",
+      "/Users/omar/Amora/Sources/AMORA/App/AMORAApp.swift",
+      "/Users/omar/Amora/Sources/AMORA/App/AppDelegate.swift",
+      "/Users/omar/Amora/Sources/AMORA/Character/Expression.swift",
+      "/Users/omar/Amora/Sources/AMORA/Core/AMORAState.swift",
+      "/Users/omar/Amora/Sources/AMORA/Core/AppState.swift",
+      "/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift",
+      "/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift",
+      "/Users/omar/Amora/Sources/AMORA/Core/WindowManager.swift",
+      "/Users/omar/Amora/Sources/AMORA/Persistence/StorageManager.swift",
+      "/Users/omar/Amora/Sources/AMORA/Settings/Preferences.swift",
+      "-I",
+      "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx15.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "AMORA_main",
+      "-swift-version",
+      "6",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "amora",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "AMORA" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : [
+      {
+
+      }
+    ]
+  },
+  "writeCommands" : {
+    "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/App/AMORAApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/App/AppDelegate.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Character/Expression.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/AMORAState.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/AppState.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Core/WindowManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Persistence/StorageManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/omar/Amora/Sources/AMORA/Settings/Preferences.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/AMORA.build/sources"
+    },
+    "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/omar/Amora/.build/index-build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+    }
+  }
+}

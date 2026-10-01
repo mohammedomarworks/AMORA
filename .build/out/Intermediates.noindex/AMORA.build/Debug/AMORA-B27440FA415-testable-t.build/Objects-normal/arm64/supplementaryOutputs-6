@@ -1,0 +1,23 @@
+{
+  "/Users/omar/Amora/Sources/AMORA/Core/AppState.swift" : {
+    "const-values" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/AppState.swiftconstvalues",
+    "dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/AppState.d",
+    "diagnostics" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/AppState.dia",
+    "object" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/AppState.o",
+    "swift-dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/AppState.swiftdeps"
+  },
+  "/Users/omar/Amora/Sources/AMORA/Core/NotchManager.swift" : {
+    "const-values" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/NotchManager.swiftconstvalues",
+    "dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/NotchManager.d",
+    "diagnostics" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/NotchManager.dia",
+    "object" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/NotchManager.o",
+    "swift-dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/NotchManager.swiftdeps"
+  },
+  "/Users/omar/Amora/Sources/AMORA/Core/PermissionManager.swift" : {
+    "const-values" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/PermissionManager.swiftconstvalues",
+    "dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/PermissionManager.d",
+    "diagnostics" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/PermissionManager.dia",
+    "object" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/PermissionManager.o",
+    "swift-dependencies" : "/Users/omar/Amora/.build/out/Intermediates.noindex/AMORA.build/Debug/AMORA-B27440FA415-testable-t.build/Objects-normal/arm64/PermissionManager.swiftdeps"
+  }
+}
