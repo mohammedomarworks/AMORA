@@ -124,11 +124,21 @@ struct SettingsView: View {
             Section("AI Assistant") {
                 Toggle("Enable AI Assistant", isOn: $settings.aiEnabled)
                 Picker("Provider", selection: $settings.aiProvider) {
+                    Text("Apple On-Device").tag(AIProviderKind.appleOnDevice.rawValue)
                     Text("Anthropic (Claude)").tag("anthropic")
                     Text("OpenAI").tag("openai")
-                    Text("Local (Offline)").tag("local")
+                    Text("Unavailable / None").tag(AIProviderKind.none.rawValue)
                 }
-                SecureField("API Key", text: $settings.aiApiKey)
+                if settings.aiProvider == AIProviderKind.appleOnDevice.rawValue {
+                    Text("Apple On-Device keeps Foundation Model processing on this Mac and requires no API key.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    let appleSettings = AISettingsSnapshot(enabled: true, provider: .appleOnDevice, model: "apple-on-device", apiKey: nil)
+                    let availability = AIProviderFactory.make(for: appleSettings).availability
+                    LabeledContent("Availability", value: availability.displayName)
+                } else if settings.aiProvider != AIProviderKind.none.rawValue {
+                    SecureField("API Key", text: $settings.aiApiKey)
+                }
                 Text("Keys are stored locally on this Mac and never shown in plain text elsewhere.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -146,7 +146,8 @@ struct AMORACommandParser {
     }
 
     private func isTimerStart(_ text: String) -> Bool {
-        text.contains("timer") || text.contains("focus session") || text.contains("pomodoro")
+        if text.hasPrefix("help") || text.contains("plan") || text.contains("how can") { return false }
+        return text.contains("timer") || text.contains("focus session") || text.contains("pomodoro")
     }
 
     private func isAddTime(_ text: String) -> Bool {
@@ -154,7 +155,8 @@ struct AMORACommandParser {
     }
 
     private func isBatteryRequest(_ text: String) -> Bool {
-        text == "battery" || text == "battery status" || text.contains("my battery") || text.contains("how much battery") || text == "am i charging"
+        if text.contains("improve") || text.contains("last longer") || text.contains("extend") || text.contains("life") { return false }
+        return text == "battery" || text == "battery status" || text.contains("my battery") || text.contains("how much battery") || text == "am i charging"
     }
 
     private func isSystemRequest(_ text: String) -> Bool {

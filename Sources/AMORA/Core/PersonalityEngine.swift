@@ -183,6 +183,18 @@ final class PersonalityEngine {
         case .commandFailed:
             return Reaction(key: "commandFailed", state: .concerned, message: nil, sound: .notification,
                             exprCooldown: 0, messageCooldown: 0, revert: 2)
+        case .aiThinking:
+            return Reaction(key: "aiThinking", state: .thinking, message: nil, sound: .click,
+                            exprCooldown: 0, messageCooldown: 0, revert: 0)
+        case .aiSucceeded:
+            return Reaction(key: "aiSucceeded", state: .happy, message: nil, sound: .success,
+                            exprCooldown: 0, messageCooldown: 0, revert: 2)
+        case .aiFailed:
+            return Reaction(key: "aiFailed", state: .concerned, message: nil, sound: .notification,
+                            exprCooldown: 0, messageCooldown: 0, revert: 2)
+        case .aiCancelled:
+            return Reaction(key: "aiCancelled", state: .idle, message: nil, sound: nil,
+                            exprCooldown: 0, messageCooldown: 0, revert: 1)
         case .clipboardRestored:
             return Reaction(key: "clip", state: .happy, message: "Copied.", sound: .click,
                             exprCooldown: 2, messageCooldown: 5, revert: 2)

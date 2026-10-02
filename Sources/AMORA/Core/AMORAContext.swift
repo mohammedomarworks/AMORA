@@ -23,6 +23,7 @@ final class AMORAContext {
     var currentEvent: AMORAEvent?
     var currentEventDate: Date?
     var lastInteractionDate: Date?
+    var assistantState: AssistantState = .idle
     var displayName: String?
     private var isRefreshing = false
 
@@ -73,6 +74,18 @@ final class AMORAContext {
             lastAction = "file"
         case .commandProcessing, .commandSucceeded, .commandFailed:
             lastAction = "command"
+        case .aiThinking:
+            lastAction = "assistant"
+            assistantState = .thinking
+        case .aiSucceeded:
+            lastAction = "assistant"
+            assistantState = .responding
+        case .aiFailed:
+            lastAction = "assistant"
+            assistantState = .failed
+        case .aiCancelled:
+            lastAction = "assistant"
+            assistantState = .cancelled
         default:
             break
         }
@@ -99,6 +112,7 @@ enum AMORAEvent: Equatable {
     case musicStarted, musicPaused, musicChanged, musicStopped
     case clipboardUpdated, clipboardRestored, noteCreated, fileReceived
     case commandProcessing, commandSucceeded, commandFailed
+    case aiThinking, aiSucceeded, aiFailed, aiCancelled
     case systemIdle, systemActive
 }
 

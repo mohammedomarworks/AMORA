@@ -32,12 +32,19 @@ final class SettingsStore {
     var calendarEnabled: Bool = true
     var notificationsEnabled: Bool = false
     var systemMonitorEnabled: Bool = true
-    var aiEnabled: Bool = false
+    var aiEnabled: Bool = true
 
     // AI
-    var aiProvider: String = "anthropic"
-    var aiModel: String = "claude-3-5-sonnet-20241022"
+    var aiProvider: String = AIProviderKind.appleOnDevice.rawValue
+    var aiModel: String = "apple-on-device"
     var aiApiKey: String = ""
+
+    var aiSettingsSnapshot: AISettingsSnapshot {
+        AISettingsSnapshot(enabled: aiEnabled,
+                           provider: AIProviderKind(rawValue: aiProvider) ?? .appleOnDevice,
+                           model: aiModel,
+                           apiKey: aiApiKey.isEmpty ? nil : aiApiKey)
+    }
 
     // Privacy
     var collectAnalytics: Bool = false
@@ -79,6 +86,7 @@ final class SettingsStore {
         if defaults.object(forKey: "AMORA_soundVolume") != nil {
             self.soundVolume = defaults.double(forKey: "AMORA_soundVolume")
         }
+        if defaults.object(forKey: "AMORA_aiEnabled") != nil { self.aiEnabled = defaults.bool(forKey: "AMORA_aiEnabled") }
         if defaults.object(forKey: "AMORA_animationIntensity") != nil {
             self.animationIntensity = defaults.double(forKey: "AMORA_animationIntensity")
         }
@@ -91,9 +99,14 @@ final class SettingsStore {
         if let themeStr = defaults.string(forKey: "AMORA_theme"), let th = Theme(rawValue: themeStr) {
             self.theme = th
         }
-        if let key = defaults.string(forKey: "AMORA_aiApiKey") {
-            self.aiApiKey = key
+        Task { @MainActor in
+            self.aiApiKey = await StorageManager.shared.getSecureItem(forKey: "ai-api-key") ?? ""
         }
+        if let provider = defaults.string(forKey: "AMORA_aiProvider") {
+            self.aiProvider = provider == AIProviderKind.local.rawValue ? AIProviderKind.appleOnDevice.rawValue : provider
+        }
+        if let model = defaults.string(forKey: "AMORA_aiModel") { self.aiModel = model }
+        defaults.removeObject(forKey: "AMORA_aiApiKey")
     }
 
     func save() {
@@ -107,7 +120,10 @@ final class SettingsStore {
         defaults.set(amoraSize, forKey: "AMORA_amoraSize")
         defaults.set(autoCollapseDelay, forKey: "AMORA_autoCollapseDelay")
         defaults.set(theme.rawValue, forKey: "AMORA_theme")
-        defaults.set(aiApiKey, forKey: "AMORA_aiApiKey")
+        defaults.set(aiProvider, forKey: "AMORA_aiProvider")
+        defaults.set(aiModel, forKey: "AMORA_aiModel")
+        defaults.set(aiEnabled, forKey: "AMORA_aiEnabled")
+        Task { await StorageManager.shared.setSecureItem(aiApiKey, forKey: "ai-api-key") }
     }
 }
 

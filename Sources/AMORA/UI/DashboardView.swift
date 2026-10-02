@@ -21,6 +21,8 @@ struct DashboardView: View {
     private var fileShelf = FileShelfService.shared
     private var commandRouter = AMORACommandRouter.shared
     private var commandHistory = AMORACommandHistory.shared
+    private var assistant = AssistantManager.shared
+    private var gateway = AMORACommandGateway()
     private let parser = AMORACommandParser()
 
     init(initialSection: DashboardSection = .overview) {
@@ -244,6 +246,18 @@ struct DashboardView: View {
                         .transition(.opacity)
                 }
 
+                if assistant.state == .thinking {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small).tint(.cyan)
+                        Text("Thinking…").font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.65))
+                        Spacer()
+                        Button("Stop") { assistant.cancel() }
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.cyan)
+                            .buttonStyle(.plain)
+                    }
+                }
+
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles")
                         .foregroundStyle(.cyan)
@@ -374,11 +388,12 @@ struct DashboardView: View {
         vm.commandInput = ""
         guard !trimmed.isEmpty else { return }
         commandHistory.add(trimmed)
-        let command = parser.parse(trimmed, context: commandRouter.currentContext())
-        let result = commandRouter.execute(command)
-        switch result {
-        case let .success(message), let .failure(message), let .needsInformation(message), let .needsConfirmation(message), let .unsupported(message):
-            setFeedback(message)
+        Task { @MainActor in
+            let result = await gateway.submit(trimmed, settings: AppState.shared.settings.aiSettingsSnapshot)
+            switch result {
+            case let .success(message), let .failure(message), let .needsInformation(message), let .needsConfirmation(message), let .unsupported(message):
+                setFeedback(message)
+            }
         }
     }
 
