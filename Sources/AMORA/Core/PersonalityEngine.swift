@@ -15,6 +15,9 @@ enum DynamicIslandMode: Equatable {
     case battery
     case notification
     case system
+    case aiThinking
+    case aiResponse
+    case aiError
 }
 
 @Observable @MainActor
@@ -27,6 +30,12 @@ final class IslandActivityCenter {
     private init() {}
 
     var mode: DynamicIslandMode {
+        switch AMORAContext.shared.assistantState {
+        case .thinking: return .aiThinking
+        case .responding: return .aiResponse
+        case .failed: return .aiError
+        case .idle, .cancelled: break
+        }
         let battery = BatteryService.shared
         if battery.hasBattery && !battery.isCharging && battery.level <= 10 {
             return .battery
@@ -184,13 +193,13 @@ final class PersonalityEngine {
             return Reaction(key: "commandFailed", state: .concerned, message: nil, sound: .notification,
                             exprCooldown: 0, messageCooldown: 0, revert: 2)
         case .aiThinking:
-            return Reaction(key: "aiThinking", state: .thinking, message: nil, sound: .click,
+            return Reaction(key: "aiThinking", state: .aiThinking, message: nil, sound: .click,
                             exprCooldown: 0, messageCooldown: 0, revert: 0)
         case .aiSucceeded:
-            return Reaction(key: "aiSucceeded", state: .happy, message: nil, sound: .success,
+            return Reaction(key: "aiSucceeded", state: .aiResponse, message: nil, sound: .success,
                             exprCooldown: 0, messageCooldown: 0, revert: 2)
         case .aiFailed:
-            return Reaction(key: "aiFailed", state: .concerned, message: nil, sound: .notification,
+            return Reaction(key: "aiFailed", state: .aiError, message: nil, sound: .notification,
                             exprCooldown: 0, messageCooldown: 0, revert: 2)
         case .aiCancelled:
             return Reaction(key: "aiCancelled", state: .idle, message: nil, sound: nil,

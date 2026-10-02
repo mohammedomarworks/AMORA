@@ -24,6 +24,7 @@ final class AMORAContext {
     var currentEventDate: Date?
     var lastInteractionDate: Date?
     var assistantState: AssistantState = .idle
+    var currentAIResponse: String?
     var displayName: String?
     private var isRefreshing = false
 
@@ -77,6 +78,7 @@ final class AMORAContext {
         case .aiThinking:
             lastAction = "assistant"
             assistantState = .thinking
+            currentAIResponse = nil
         case .aiSucceeded:
             lastAction = "assistant"
             assistantState = .responding
@@ -99,6 +101,15 @@ final class AMORAContext {
     func endInteraction() {
         isUserInteracting = false
         lastInteractionDate = Date()
+    }
+
+    func setAIResponse(_ response: String?) {
+        currentAIResponse = response
+    }
+
+    func dismissAIResponse() {
+        currentAIResponse = nil
+        assistantState = .idle
     }
 
 }

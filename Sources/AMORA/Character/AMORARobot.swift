@@ -192,6 +192,12 @@ final class AMORARobot {
             )
         case .error:
             newExpression = .sad()
+        case .aiThinking:
+            newExpression = .thinking()
+        case .aiResponse:
+            newExpression = .happy()
+        case .aiError:
+            newExpression = .concerned()
         case .expanded:
             newExpression = .happy()
         }

@@ -92,6 +92,7 @@ struct NotchEyesView: View {
 struct DynamicIslandView: View {
     @Bindable var robot = AMORARobot.shared
     @Bindable var island = IslandModel.shared
+    @Bindable var assistant = AssistantManager.shared
     private var appState: AppState { AppState.shared }
 
     var body: some View {
@@ -180,9 +181,94 @@ struct DynamicIslandView: View {
     }
 
     private func expandedContent(expansion e: Double, t: CGFloat) -> some View {
-        QuickPanelView(embedded: true, topInset: island.topInset)
+        Group {
+            if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed {
+                AIResponseView(embedded: true, topInset: island.topInset)
+            } else {
+                QuickPanelView(embedded: true, topInset: island.topInset)
+            }
+        }
             .opacity(max(0, min(1, (e - 0.4) / 0.6)))
             .scaleEffect(0.94 + 0.06 * t, anchor: .top)
             .allowsHitTesting(island.isExpanded && e > 0.85)
+    }
+}
+
+/// AI output is persistent content, unlike the short-lived personality text in
+/// the ordinary quick panel. The response is scrollable rather than truncated.
+struct AIResponseView: View {
+    var embedded = false
+    var topInset: CGFloat = 0
+    @Bindable private var assistant = AssistantManager.shared
+    private var palette: ThemePalette { AppState.shared.settings.palette }
+
+    private var responseText: String { assistant.response ?? "" }
+    private var isLong: Bool { responseText.count > 420 || responseText.components(separatedBy: "\n").count > 8 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                AMORARobotView(robot: AMORARobot.shared, compact: true)
+                    .frame(width: 32, height: 28)
+                Text("AMORA")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Spacer()
+                Button { WindowManager.shared.showDashboard() } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                .buttonStyle(.plain)
+                .help("Open response in Dashboard")
+                Button { WindowManager.shared.collapseIsland() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close AI response")
+            }
+
+            if assistant.state == .thinking {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).tint(palette.accent)
+                    Text("Thinking…")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 28)
+            } else {
+                ScrollView {
+                    Text(responseText)
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: isLong ? 270 : 210)
+                .scrollIndicators(.hidden)
+
+                HStack {
+                    if isLong {
+                        Button("Expand") { WindowManager.shared.showDashboard() }
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(palette.accent)
+                            .buttonStyle(.plain)
+                    }
+                    Spacer()
+                    Button("Close") { WindowManager.shared.collapseIsland() }
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.top, topInset + 14)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

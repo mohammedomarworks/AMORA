@@ -41,6 +41,8 @@ final class AssistantManager {
             lastError = .unavailable
             let fallback = "AI Assistant is turned off in Settings."
             response = fallback
+            AMORAContext.shared.setAIResponse(fallback)
+            AMORAEventCenter.shared.emit(.aiFailed)
             return fallback
         }
 
@@ -49,6 +51,7 @@ final class AssistantManager {
             lastError = unavailableError(for: provider)
             let fallback = message(for: lastError!)
             response = fallback
+            AMORAContext.shared.setAIResponse(fallback)
             AMORAEventCenter.shared.emit(.aiFailed)
             return fallback
         }
@@ -56,6 +59,7 @@ final class AssistantManager {
         state = .thinking
         response = nil
         lastError = nil
+        AMORAContext.shared.setAIResponse(nil)
         AMORAEventCenter.shared.emit(.aiThinking)
 
         var messages = conversation.messages
@@ -73,6 +77,7 @@ final class AssistantManager {
             conversation.append(assistantMessage)
             state = .responding
             response = answer
+            AMORAContext.shared.setAIResponse(answer)
             AMORAEventCenter.shared.emit(.aiSucceeded)
             return answer
         } catch is CancellationError {
@@ -86,12 +91,14 @@ final class AssistantManager {
             AMORAEventCenter.shared.emit(.aiFailed)
             let message = self.message(for: error)
             response = message
+            AMORAContext.shared.setAIResponse(message)
             return message
         } catch {
             state = .failed
             lastError = .networkFailure
             AMORAEventCenter.shared.emit(.aiFailed)
             response = "I can't reach that AI service right now."
+            AMORAContext.shared.setAIResponse(response)
             return response!
         }
     }
@@ -145,11 +152,20 @@ final class AssistantManager {
         }
     }
 
+    func dismissResponse() {
+        guard state != .thinking else { return }
+        response = nil
+        lastError = nil
+        state = .idle
+        AMORAContext.shared.dismissAIResponse()
+    }
+
     func startNewConversation() {
         cancel()
         conversation.reset()
         response = nil
         state = .idle
+        AMORAContext.shared.dismissAIResponse()
     }
 }
 
@@ -167,6 +183,7 @@ final class AMORACommandGateway {
     func submit(_ input: String, settings: AISettingsSnapshot) async -> AMORACommandResult {
         let command = parser.parse(input, context: router.currentContext())
         if case let .unknown(text) = command, !isLocalUnknown(text) {
+            WindowManager.shared.showQuickPanel()
             return .success(message: await assistant.submit(input, settings: settings))
         }
         return router.execute(command)

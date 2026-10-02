@@ -102,6 +102,9 @@ struct AMORARobotView: View {
         case .music: return "enjoying music"
         case .speaking: return "speaking"
         case .error: return "something went wrong"
+        case .aiThinking: return "focused"
+        case .aiResponse: return "happy"
+        case .aiError: return "something went wrong"
         }
     }
 }

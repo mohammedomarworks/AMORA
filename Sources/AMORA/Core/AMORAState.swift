@@ -18,10 +18,16 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
     case music
     case speaking
     case error
+    case aiThinking
+    case aiResponse
+    case aiError
 
     var priority: Int {
         switch self {
         case .error: return 100
+        case .aiThinking: return 95
+        case .aiError: return 94
+        case .aiResponse: return 93
         case .thinking: return 90
         case .focused: return 74
         case .speaking: return 85

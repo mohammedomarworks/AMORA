@@ -160,6 +160,7 @@ final class WindowManager {
         }
         IslandModel.shared.isExpanded = false
         AppState.shared.isQuickPanelOpen = false
+        AssistantManager.shared.dismissResponse()
         removeClickOutsideMonitor()
         AMORAContext.shared.endInteraction()
         AMORAEventCenter.shared.emit(.closed)
