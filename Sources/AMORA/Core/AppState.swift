@@ -27,6 +27,8 @@ final class AppState {
 
     func handleLaunch() {
         stateManager.transition(to: .idle)
+        AMORAContext.shared.refreshFromServices()
+        AMORAEventCenter.shared.emit(.launched)
     }
 
     func handleTerminate() {

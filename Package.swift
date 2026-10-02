@@ -18,5 +18,10 @@ let package = Package(
             dependencies: [],
             path: "Sources/AMORA"
         ),
+        .testTarget(
+            name: "AMORATests",
+            dependencies: ["AMORA"],
+            path: "Tests/AMORATests"
+        ),
     ]
 )

@@ -23,6 +23,7 @@ final class FileShelfService {
     func addFile(url: URL) {
         if !items.contains(where: { $0.url == url }) {
             items.insert(ShelfItem(url: url), at: 0)
+            AMORAEventCenter.shared.emit(.fileReceived)
         }
     }
 

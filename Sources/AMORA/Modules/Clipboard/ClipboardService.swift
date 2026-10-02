@@ -57,6 +57,7 @@ final class ClipboardService {
             if history.count > 15 {
                 history.removeLast()
             }
+            AMORAEventCenter.shared.emit(.clipboardUpdated)
         }
     }
 
@@ -66,7 +67,7 @@ final class ClipboardService {
         pasteboard.setString(item.text, forType: .string)
         lastChangeCount = pasteboard.changeCount
         // Only a user-initiated restore reacts — never passive clipboard changes.
-        PersonalityEngine.shared.react(to: .clipboardRestored)
+        AMORAEventCenter.shared.emit(.clipboardRestored)
     }
 
     func clearHistory() {

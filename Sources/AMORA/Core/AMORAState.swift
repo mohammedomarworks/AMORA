@@ -7,6 +7,7 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
     case hover
     case expanded
     case thinking
+    case focused
     case happy
     case curious
     case excited
@@ -22,6 +23,7 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
         switch self {
         case .error: return 100
         case .thinking: return 90
+        case .focused: return 74
         case .speaking: return 85
         case .alert: return 80
         case .expanded: return 70

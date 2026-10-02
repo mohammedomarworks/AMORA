@@ -43,7 +43,7 @@ final class TimerService {
             }
         }
 
-        PersonalityEngine.shared.react(to: .timerStarted)
+        AMORAEventCenter.shared.emit(.timerStarted)
     }
 
     func pauseTimer() {
@@ -51,6 +51,7 @@ final class TimerService {
             isPaused = true
             timer?.invalidate()
             timer = nil
+            AMORAEventCenter.shared.emit(.timerPaused)
         }
     }
 
@@ -62,6 +63,7 @@ final class TimerService {
                     self?.tick()
                 }
             }
+            AMORAEventCenter.shared.emit(.timerResumed)
         }
     }
 
@@ -77,6 +79,7 @@ final class TimerService {
     private func tick() {
         if remainingSeconds > 0 {
             remainingSeconds -= 1
+            AMORAContext.shared.refreshFromServices()
         } else {
             timerFinished()
         }
@@ -86,7 +89,7 @@ final class TimerService {
         stopTimer()
         // Route the completion through the personality engine so the message,
         // sound, expression, and celebration bounce all stay in one place.
-        PersonalityEngine.shared.react(to: .timerCompleted)
+        AMORAEventCenter.shared.emit(.timerCompleted)
         AMORARobot.shared.playBounce()
     }
 }

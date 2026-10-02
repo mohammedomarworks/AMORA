@@ -86,19 +86,19 @@ final class BatteryService {
     /// reacts once when something changes rather than nagging on every poll.
     private func detectBatteryEvents(oldLevel: Int, oldCharging: Bool, hadBaseline: Bool) {
         guard hadBaseline, hasBattery else { return }
-        let engine = PersonalityEngine.shared
+        let events = AMORAEventCenter.shared
 
         if isCharging && !oldCharging {
-            engine.react(to: .charging)
+            events.emit(.charging)
         }
         if isPluggedIn && level >= 100 && oldLevel < 100 {
-            engine.react(to: .chargedFull)
+            events.emit(.chargedFull)
         }
         if !isCharging && !isPluggedIn {
             if level <= 10 && oldLevel > 10 {
-                engine.react(to: .criticalBattery)
+                events.emit(.criticalBattery)
             } else if level <= 20 && oldLevel > 20 {
-                engine.react(to: .lowBattery)
+                events.emit(.lowBattery)
             }
         }
     }

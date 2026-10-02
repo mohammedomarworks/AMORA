@@ -163,6 +163,8 @@ final class AMORARobot {
             newExpression = .happy()
         case .thinking:
             newExpression = .thinking()
+        case .focused:
+            newExpression = .thinking()
         case .happy:
             newExpression = .happy()
         case .curious:

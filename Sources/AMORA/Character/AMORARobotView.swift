@@ -92,7 +92,7 @@ struct AMORARobotView: View {
         switch state {
         case .idle, .watching: return "resting"
         case .hover, .happy, .expanded: return "happy"
-        case .thinking: return "focused"
+        case .thinking, .focused: return "focused"
         case .curious: return "curious"
         case .excited: return "excited"
         case .concerned: return "concerned"

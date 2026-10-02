@@ -100,14 +100,15 @@ final class MusicService {
             self.elapsed = 0
             self.duration = 0
         }
-
         // Emit play/stop transitions after the first baseline poll, so AMORA
         // reacts when the user starts music, not to whatever was already going.
         if hasPolledOnce {
             if nowPlaying && !wasPlaying {
-                PersonalityEngine.shared.react(to: .musicStarted)
+                AMORAEventCenter.shared.emit(.musicStarted)
             } else if !nowPlaying && wasPlaying {
-                PersonalityEngine.shared.react(to: .musicStopped)
+                AMORAEventCenter.shared.emit(gotTrack ? .musicPaused : .musicStopped)
+            } else if nowPlaying && wasPlaying && gotTrack {
+                AMORAEventCenter.shared.emit(.musicChanged)
             }
         }
         hasPolledOnce = true

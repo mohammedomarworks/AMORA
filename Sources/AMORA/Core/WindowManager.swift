@@ -143,7 +143,8 @@ final class WindowManager {
         IslandModel.shared.isExpanded = true
         AppState.shared.isQuickPanelOpen = true
         AppState.shared.stateManager.transition(to: .expanded)
-        PersonalityEngine.shared.react(to: .opened)
+        AMORAContext.shared.beginInteraction()
+        AMORAEventCenter.shared.emit(.opened)
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -160,7 +161,8 @@ final class WindowManager {
         IslandModel.shared.isExpanded = false
         AppState.shared.isQuickPanelOpen = false
         removeClickOutsideMonitor()
-        PersonalityEngine.shared.react(to: .closed)
+        AMORAContext.shared.endInteraction()
+        AMORAEventCenter.shared.emit(.closed)
         animateIsland(to: 0)
     }
 

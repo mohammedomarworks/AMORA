@@ -30,6 +30,7 @@ final class NotesService {
         let note = NoteItem(text: trimmed)
         notes.insert(note, at: 0)
         saveNotes()
+        AMORAEventCenter.shared.emit(.noteCreated)
     }
 
     func deleteNote(at index: Int) {

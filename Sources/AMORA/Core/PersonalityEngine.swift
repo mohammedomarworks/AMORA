@@ -40,14 +40,6 @@ final class IslandActivityCenter {
 
 /// Meaningful moments AMORA can react to. The engine owns the mapping from event
 /// to expression / message / sound, plus the cooldowns that keep it from nagging.
-enum AMORAEvent {
-    case launched, opened, closed
-    case timerStarted, timerCompleted
-    case charging, chargedFull, lowBattery, criticalBattery
-    case musicStarted, musicStopped
-    case clipboardRestored, fileReceived
-}
-
 /// Lightweight "brain" that turns events into character. Reactions are mostly
 /// expression + animation; text is the rare exception. Per-event cooldowns stop
 /// AMORA from greeting on every open or alarming on every battery tick.
@@ -83,6 +75,12 @@ final class PersonalityEngine {
             if let s = r.sound { SoundService.shared.play(s) }
             if event == .timerCompleted { celebrationToken &+= 1 }
         }
+    }
+
+    /// Compatibility entry point for UI-only reactions. Service events should
+    /// normally enter through AMORAEventCenter so context is updated first.
+    func emit(_ event: AMORAEvent) {
+        AMORAEventCenter.shared.emit(event)
     }
 
     // MARK: - Cooldown bookkeeping
@@ -143,6 +141,12 @@ final class PersonalityEngine {
         case .timerStarted:
             return Reaction(key: "timerStart", state: .thinking, message: "Let's focus.", sound: nil,
                             exprCooldown: 2, messageCooldown: 2, revert: 3)
+        case .timerPaused:
+            return Reaction(key: "timerPause", state: .curious, message: "Timer paused.", sound: .click,
+                            exprCooldown: 1, messageCooldown: 1, revert: 2)
+        case .timerResumed:
+            return Reaction(key: "timerResume", state: .focused, message: "Back to it.", sound: .click,
+                            exprCooldown: 1, messageCooldown: 1, revert: 2)
         case .timerCompleted:
             return Reaction(key: "timerDone", state: .excited, message: "Focus session complete! ✨", sound: .timerComplete,
                             exprCooldown: 1, messageCooldown: 1, revert: 5)
@@ -161,6 +165,12 @@ final class PersonalityEngine {
         case .musicStarted:
             return Reaction(key: "musicOn", state: .music, message: nil, sound: nil,
                             exprCooldown: 30, messageCooldown: 120, revert: 0)
+        case .musicPaused:
+            return Reaction(key: "musicPause", state: .curious, message: "Music paused.", sound: .click,
+                            exprCooldown: 2, messageCooldown: 2, revert: 2)
+        case .musicChanged:
+            return Reaction(key: "musicChange", state: .curious, message: nil, sound: nil,
+                            exprCooldown: 2, messageCooldown: 2, revert: 0)
         case .musicStopped:
             return Reaction(key: "musicOff", state: .idle, message: nil, sound: nil,
                             exprCooldown: 30, messageCooldown: 120, revert: 0)
@@ -170,8 +180,11 @@ final class PersonalityEngine {
         case .fileReceived:
             return Reaction(key: "file", state: .happy, message: "Got it.", sound: .pop,
                             exprCooldown: 2, messageCooldown: 2, revert: 3)
+        case .clipboardUpdated, .noteCreated, .commandProcessing, .commandSucceeded,
+             .commandFailed, .systemIdle, .systemActive:
+            return Reaction(key: "quiet", state: .idle, message: nil, sound: nil,
+                            exprCooldown: 0, messageCooldown: 0, revert: 0)
         }
     }
 
 }
-
