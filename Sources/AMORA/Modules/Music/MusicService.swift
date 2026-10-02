@@ -126,6 +126,24 @@ final class MusicService {
         }
     }
 
+    func play() {
+        runScript("""
+        if application "Music" is running then
+            tell application "Music" to play
+        end if
+        """)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.checkCurrentTrack() }
+    }
+
+    func pause() {
+        runScript("""
+        if application "Music" is running then
+            tell application "Music" to pause
+        end if
+        """)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.checkCurrentTrack() }
+    }
+
     func nextTrack() {
         let script = """
         if application "Music" is running then

@@ -67,6 +67,13 @@ final class TimerService {
         }
     }
 
+    func addTime(seconds: Int) {
+        guard seconds > 0, isRunning else { return }
+        totalSeconds += seconds
+        remainingSeconds += seconds
+        AMORAContext.shared.refreshFromServices()
+    }
+
     func stopTimer() {
         timer?.invalidate()
         timer = nil

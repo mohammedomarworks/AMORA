@@ -6,6 +6,7 @@ final class DashboardViewModel {
     var commandInput: String = ""
     var assistantFeedback: String? = nil
     var selectedSection: DashboardView.DashboardSection = .overview
+    var suggestions: [String] = []
 }
 
 struct DashboardView: View {
@@ -18,6 +19,15 @@ struct DashboardView: View {
     private var clipboard = ClipboardService.shared
     private var notes = NotesService.shared
     private var fileShelf = FileShelfService.shared
+    private var commandRouter = AMORACommandRouter.shared
+    private var commandHistory = AMORACommandHistory.shared
+    private let parser = AMORACommandParser()
+
+    init(initialSection: DashboardSection = .overview) {
+        let model = DashboardViewModel()
+        model.selectedSection = initialSection
+        _vm = Bindable(wrappedValue: model)
+    }
 
     enum DashboardSection: String, CaseIterable {
         case overview = "Overview"
@@ -239,9 +249,12 @@ struct DashboardView: View {
                         .foregroundStyle(.cyan)
                         .font(.system(size: 13))
 
-                    TextField("Ask AMORA anything or enter a quick command…", text: $vm.commandInput)
+                    TextField("Try ‘start a 25 minute timer’…", text: $vm.commandInput)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
+                        .onChange(of: vm.commandInput) { _, value in
+                            vm.suggestions = suggestions(for: value)
+                        }
                         .onSubmit {
                             handleCommand(vm.commandInput)
                         }
@@ -259,6 +272,40 @@ struct DashboardView: View {
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+
+                if !vm.suggestions.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(vm.suggestions.prefix(3), id: \.self) { suggestion in
+                            Button(suggestion) { handleCommand(suggestion) }
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.75))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.white.opacity(0.06)))
+                                .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                if !commandHistory.items.isEmpty && vm.commandInput.isEmpty {
+                    HStack(spacing: 6) {
+                        Text("Recent")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.4))
+                        ForEach(commandHistory.items.prefix(2), id: \.self) { item in
+                            Button(item) { handleCommand(item) }
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .lineLimit(1)
+                                .buttonStyle(.plain)
+                        }
+                        Spacer()
+                        Button("Clear") { commandHistory.clear() }
+                            .font(.system(size: 9))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .buttonStyle(.plain)
+                    }
+                }
 
                 // Quick Prompt Chips
                 HStack(spacing: 6) {
@@ -323,57 +370,27 @@ struct DashboardView: View {
     }
 
     private func handleCommand(_ input: String) {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         vm.commandInput = ""
         guard !trimmed.isEmpty else { return }
-
-        robot.updateExpression(for: .thinking)
-
-        if trimmed.contains("timer") {
-            if trimmed.contains("stop") || trimmed.contains("cancel") {
-                timer.stopTimer()
-                setFeedback("Timer stopped.")
-            } else if trimmed.contains("10") {
-                timer.startTimer(minutes: 10)
-                setFeedback("Started 10-minute timer.")
-            } else if trimmed.contains("15") {
-                timer.startTimer(minutes: 15)
-                setFeedback("Started 15-minute timer.")
-            } else if trimmed.contains("25") || trimmed.contains("pomodoro") {
-                timer.startTimer(minutes: 25)
-                setFeedback("Started 25-minute Pomodoro timer.")
-            } else {
-                timer.startTimer(minutes: 5)
-                setFeedback("Started 5-minute timer.")
-            }
-            robot.updateExpression(for: .happy)
-        } else if trimmed.contains("play") || trimmed.contains("music") || trimmed.contains("pause") {
-            music.togglePlayPause()
-            setFeedback("Toggled music playback.")
-            robot.updateExpression(for: .music)
-        } else if trimmed.contains("next") {
-            music.nextTrack()
-            setFeedback("Skipped to next track.")
-        } else if trimmed.contains("battery") {
-            setFeedback("Battery level is \(battery.level)%. \(battery.timeRemainingFormatted)")
-            robot.updateExpression(for: .happy)
-        } else if trimmed.contains("cpu") || trimmed.contains("system") {
-            setFeedback(String(format: "CPU: %.0f%%, RAM: %.1f GB used", systemMonitor.cpuUsagePercent, systemMonitor.memoryUsedGB))
-            robot.updateExpression(for: .alert)
-        } else if trimmed.contains("note") {
-            let noteContent = input.replacingOccurrences(of: "note", with: "", options: .caseInsensitive).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !noteContent.isEmpty {
-                notes.addNote(noteContent)
-                setFeedback("Saved note: \"\(noteContent)\"")
-                robot.updateExpression(for: .happy)
-            } else {
-                setFeedback("Specify text to save a note!")
-            }
-        } else {
-            // Friendly AI assistant placeholder router
-            setFeedback("AMORA received: \"\(input)\".")
-            robot.updateExpression(for: .happy)
+        commandHistory.add(trimmed)
+        let command = parser.parse(trimmed, context: commandRouter.currentContext())
+        let result = commandRouter.execute(command)
+        switch result {
+        case let .success(message), let .failure(message), let .needsInformation(message), let .needsConfirmation(message), let .unsupported(message):
+            setFeedback(message)
         }
+    }
+
+    private func suggestions(for input: String) -> [String] {
+        let prefix = AMORACommandParser.normalize(input)
+        if prefix.isEmpty {
+            if timer.isRunning { return timer.isPaused ? ["Resume timer", "Add 5 minutes", "Stop timer"] : ["Pause timer", "Add 5 minutes", "Stop timer"] }
+            if music.isPlaying { return ["Pause music", "Next track"] }
+            return ["Start a timer", "Play music", "Check battery", "Add a note", "Open Downloads"]
+        }
+        let all = ["Start a timer", "Battery status", "Open Dashboard", "Open Downloads", "Open Settings", "Play music", "Show clipboard", "Show notes"]
+        return all.filter { AMORACommandParser.normalize($0).hasPrefix(prefix) }
     }
 
     // MARK: - Sections

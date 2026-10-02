@@ -294,7 +294,7 @@ final class WindowManager {
 
     // MARK: - Dashboard (full presence level) + Settings
 
-    func showDashboard() {
+    func showDashboard(section: DashboardView.DashboardSection = .overview) {
         if let window = dashboardWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -315,7 +315,7 @@ final class WindowManager {
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.center()
-        window.contentView = NSHostingController(rootView: DashboardView()).view
+        window.contentView = NSHostingController(rootView: DashboardView(initialSection: section)).view
 
         dashboardWindow = window
         window.makeKeyAndOrderFront(nil)

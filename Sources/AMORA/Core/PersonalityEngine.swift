@@ -174,14 +174,22 @@ final class PersonalityEngine {
         case .musicStopped:
             return Reaction(key: "musicOff", state: .idle, message: nil, sound: nil,
                             exprCooldown: 30, messageCooldown: 120, revert: 0)
+        case .commandProcessing:
+            return Reaction(key: "commandProcessing", state: .thinking, message: nil, sound: .click,
+                            exprCooldown: 0, messageCooldown: 0, revert: 0)
+        case .commandSucceeded:
+            return Reaction(key: "commandSucceeded", state: .happy, message: nil, sound: .success,
+                            exprCooldown: 0, messageCooldown: 0, revert: 2)
+        case .commandFailed:
+            return Reaction(key: "commandFailed", state: .concerned, message: nil, sound: .notification,
+                            exprCooldown: 0, messageCooldown: 0, revert: 2)
         case .clipboardRestored:
             return Reaction(key: "clip", state: .happy, message: "Copied.", sound: .click,
                             exprCooldown: 2, messageCooldown: 5, revert: 2)
         case .fileReceived:
             return Reaction(key: "file", state: .happy, message: "Got it.", sound: .pop,
                             exprCooldown: 2, messageCooldown: 2, revert: 3)
-        case .clipboardUpdated, .noteCreated, .commandProcessing, .commandSucceeded,
-             .commandFailed, .systemIdle, .systemActive:
+        case .clipboardUpdated, .noteCreated, .systemIdle, .systemActive:
             return Reaction(key: "quiet", state: .idle, message: nil, sound: nil,
                             exprCooldown: 0, messageCooldown: 0, revert: 0)
         }
