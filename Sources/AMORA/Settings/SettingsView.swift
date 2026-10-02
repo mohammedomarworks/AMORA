@@ -22,30 +22,24 @@ struct SettingsView: View {
     private var generalTab: some View {
         Form {
             Section("Appearance") {
-                Picker("Theme", selection: $settings.theme) {
-                    ForEach(Theme.allCases, id: \.self) { theme in
-                        Text(theme.rawValue).tag(theme)
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("Theme", selection: $settings.theme) {
+                        ForEach(Theme.allCases, id: \.self) { theme in
+                            Text(theme.rawValue).tag(theme)
+                        }
                     }
-                }
-
-                // Live palette swatches — tap to switch; the whole character and
-                // panel recolor from the chosen theme's palette.
-                HStack(spacing: 10) {
-                    Text("Accent")
-                    Spacer()
-                    ForEach(Theme.allCases, id: \.self) { theme in
-                        Circle()
-                            .fill(theme.palette.accent)
-                            .frame(width: 16, height: 16)
-                            .overlay(
-                                Circle().strokeBorder(
-                                    .white.opacity(settings.theme == theme ? 0.9 : 0),
-                                    lineWidth: 1.5
-                                )
-                            )
-                            .onTapGesture { settings.theme = theme }
-                            .accessibilityLabel("\(theme.rawValue) theme")
+                    HStack(spacing: 8) {
+                        Circle().fill(palette.accent).frame(width: 18, height: 18)
+                        Text(themeDescription(settings.theme))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("Live preview")
+                            .font(.caption2)
+                            .foregroundStyle(palette.accent)
                     }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(palette.accent.opacity(0.12)))
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -63,8 +57,13 @@ struct SettingsView: View {
                     Text("AMORA size")
                 }
 
-                Slider(value: $settings.transparency, in: 0.3...1.0) {
-                    Text("Opacity")
+                VStack(alignment: .leading, spacing: 2) {
+                    Slider(value: $settings.transparency, in: 0.3...1.0) {
+                        Text("Opacity")
+                    }
+                    Text("Controls the transparency of AMORA's expanded surfaces.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -81,6 +80,16 @@ struct SettingsView: View {
                 }
                 Slider(value: $settings.autoCollapseDelay, in: 1...10, step: 1)
             }
+        }
+    }
+
+    private func themeDescription(_ theme: Theme) -> String {
+        switch theme {
+        case .midnight: return "Deep violet accent"
+        case .ocean: return "Cool blue accent"
+        case .bubblegum: return "Soft pink accent"
+        case .matrix: return "Terminal green accent"
+        case .minimal: return "Monochrome"
         }
     }
 
@@ -114,6 +123,14 @@ struct SettingsView: View {
                 Toggle("Clipboard History", isOn: $settings.clipboardEnabled)
                 Toggle("Quick Notes", isOn: $settings.notesEnabled)
                 Toggle("System Monitor", isOn: $settings.systemMonitorEnabled)
+            }
+            Section("Browser media") {
+                Text("AMORA can identify a YouTube tab in Safari or Chrome using macOS Automation. Playback controls and progress stay unavailable unless the browser exposes them safely.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("If macOS asks, allow AMORA to control Safari or Google Chrome. If permission is denied, Apple Music and other local modules continue to work normally.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }

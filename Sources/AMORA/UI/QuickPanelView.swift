@@ -14,6 +14,8 @@ struct QuickPanelView: View {
     var embedded: Bool = false
     var topInset: CGFloat = 0
     @Bindable var vm = QuickPanelViewModel()
+    @State private var selectedPage: Page = .controls
+    @State private var pageDragOffset: CGFloat = 0
     @State private var celebrationActive = false
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
@@ -21,6 +23,7 @@ struct QuickPanelView: View {
     private var music = MusicService.shared
     private var clipboard = ClipboardService.shared
     private var notes = NotesService.shared
+    private var fileShelf = FileShelfService.shared
     private var personality = PersonalityEngine.shared
     private var settings = AppState.shared.settings
     private var palette: ThemePalette { settings.palette }
@@ -29,6 +32,13 @@ struct QuickPanelView: View {
         case controls = "Controls"
         case clipboard = "Clipboard"
         case notes = "Notes"
+    }
+
+    enum Page: String, CaseIterable {
+        case controls = "Controls"
+        case clipboard = "Clipboard"
+        case notes = "Notes"
+        case fileShelf = "File Shelf"
     }
 
     var body: some View {
@@ -41,7 +51,7 @@ struct QuickPanelView: View {
                 .frame(width: 320, height: 420)
                 .background {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color(red: 0.08, green: 0.10, blue: 0.14).opacity(0.96))
+                        .fill(Color(red: 0.08, green: 0.10, blue: 0.14).opacity(settings.transparency))
                         .overlay(
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .strokeBorder(
@@ -107,33 +117,31 @@ struct QuickPanelView: View {
             .padding(.horizontal, 14)
             .padding(.top, 14)
 
-            // Segmented Picker
-            Picker("", selection: $vm.selectedTab) {
-                ForEach(QuickTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 14)
+            pageHeader
 
-            // Content Area based on tab
-            Group {
-                switch vm.selectedTab {
-                case .controls:
-                    controlsView
-                case .clipboard:
-                    clipboardView
-                case .notes:
-                    notesView
-                }
-            }
-            .padding(.horizontal, 14)
+            pageContent
+                .padding(.horizontal, 14)
+                .offset(x: pageDragOffset)
+                .gesture(
+                    DragGesture(minimumDistance: 18, coordinateSpace: .local)
+                        .onChanged { value in
+                            pageDragOffset = value.translation.width * 0.35
+                        }
+                        .onEnded { value in
+                            let threshold: CGFloat = 55
+                            if value.translation.width < -threshold { movePage(by: 1) }
+                            if value.translation.width > threshold { movePage(by: -1) }
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                pageDragOffset = 0
+                            }
+                        }
+                )
 
             Spacer(minLength: 4)
 
             // Footer
             HStack {
-                Text(battery.timeRemainingFormatted)
+                        Text(battery.timeRemainingDescription)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
 
@@ -154,6 +162,58 @@ struct QuickPanelView: View {
         .overlay(celebrationOverlay)
         .onChange(of: personality.celebrationToken) { _, _ in
             triggerCelebration()
+        }
+    }
+
+    private var pageHeader: some View {
+        HStack {
+            Button { movePage(by: -1) } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedPage == .controls)
+
+            Text(selectedPage.rawValue.uppercased())
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.75))
+
+            Button { movePage(by: 1) } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedPage == .fileShelf)
+
+            Spacer()
+            HStack(spacing: 4) {
+                ForEach(Page.allCases, id: \.self) { page in
+                    Circle()
+                        .fill(page == selectedPage ? palette.accent : Color.white.opacity(0.25))
+                        .frame(width: page == selectedPage ? 5 : 4, height: page == selectedPage ? 5 : 4)
+                }
+            }
+            .accessibilityLabel("Page (Page.allCases.firstIndex(of: selectedPage)! + 1) of (Page.allCases.count)")
+        }
+        .foregroundStyle(palette.accent)
+        .padding(.horizontal, 14)
+    }
+
+    @ViewBuilder private var pageContent: some View {
+        switch selectedPage {
+        case .controls: controlsView
+        case .clipboard: clipboardView
+        case .notes: notesView
+        case .fileShelf: fileShelfView
+        }
+    }
+
+    private func movePage(by offset: Int) {
+        guard let index = Page.allCases.firstIndex(of: selectedPage) else { return }
+        let next = min(max(index + offset, 0), Page.allCases.count - 1)
+        guard next != index else { return }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            selectedPage = Page.allCases[next]
         }
     }
 
@@ -192,7 +252,7 @@ struct QuickPanelView: View {
             // Music Card
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
-                    Image(systemName: "music.note")
+                    Image(systemName: music.source == .youtube ? "play.rectangle.fill" : "music.note")
                         .font(.system(size: 16))
                         .foregroundStyle(palette.accent)
                         .frame(width: 36, height: 36)
@@ -200,12 +260,12 @@ struct QuickPanelView: View {
                         .opacity(music.isPlaying ? 0.7 + robot.antennaPhase * 0.3 : 1)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(music.trackTitle)
+                        Text(music.source == .youtube ? "YouTube" : music.trackTitle)
                             .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                             .foregroundStyle(.white)
                         if !music.artist.isEmpty {
-                            Text(music.artist)
+                        Text(music.source == .youtube ? music.trackTitle : music.artist)
                                 .font(.system(size: 10))
                                 .lineLimit(1)
                                 .foregroundStyle(.white.opacity(0.6))
@@ -223,6 +283,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Previous track")
+                        .disabled(music.source != .appleMusic)
 
                         Button {
                             music.togglePlayPause()
@@ -232,6 +293,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
+                        .disabled(music.source != .appleMusic)
 
                         Button {
                             music.nextTrack()
@@ -241,6 +303,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Next track")
+                        .disabled(music.source != .appleMusic)
                     }
                     .foregroundStyle(.white.opacity(0.9))
                 }
@@ -329,6 +392,7 @@ struct QuickPanelView: View {
                             Button("5m") { timer.startTimer(minutes: 5) }
                             Button("15m") { timer.startTimer(minutes: 15) }
                             Button("25m") { timer.startTimer(minutes: 25) }
+                            Button("50m") { timer.startTimer(minutes: 50) }
                         }
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.white.opacity(0.8))
@@ -343,10 +407,10 @@ struct QuickPanelView: View {
             // System Quick Status Card
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("System Load")
+                        Text("SYSTEM")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white)
-                    Text(String(format: "CPU: %.0f%% • RAM: %.1f GB", SystemMonitorService.shared.cpuUsagePercent, SystemMonitorService.shared.memoryUsedGB))
+                    Text(String(format: "CPU %.0f%% • Memory %.1f GB", SystemMonitorService.shared.cpuUsagePercent, SystemMonitorService.shared.memoryUsedGB))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.6))
                 }
@@ -493,6 +557,82 @@ struct QuickPanelView: View {
                 }
                 .frame(height: 160)
             }
+        }
+    }
+
+    // MARK: - File Shelf View
+    private var fileShelfView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Pinned files")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+                if !fileShelf.items.isEmpty {
+                    Button("Clear") { fileShelf.clearShelf() }
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .buttonStyle(.plain)
+                }
+            }
+
+            if fileShelf.items.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "tray.and.arrow.down")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.white.opacity(0.3))
+                    Text("Drop files into File Shelf")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 20)
+            } else {
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(fileShelf.items.prefix(5)) { item in
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc")
+                                    .foregroundStyle(palette.accent)
+                                Text(item.name)
+                                    .font(.system(size: 11))
+                                    .lineLimit(1)
+                                    .foregroundStyle(.white.opacity(0.9))
+                                Spacer()
+                                Button { NSWorkspace.shared.open(item.url) } label: {
+                                    Image(systemName: "arrow.up.forward.app")
+                                }
+                                .help("Open file")
+                                .accessibilityLabel("Open \(item.name)")
+                                Button { NSWorkspace.shared.activateFileViewerSelecting([item.url]) } label: {
+                                    Image(systemName: "magnifyingglass")
+                                }
+                                .help("Reveal in Finder")
+                                .accessibilityLabel("Reveal \(item.name) in Finder")
+                                Button { fileShelf.removeItem(id: item.id) } label: {
+                                    Image(systemName: "trash")
+                                        .foregroundStyle(.red.opacity(0.7))
+                                }
+                                .accessibilityLabel("Remove \(item.name)")
+                            }
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
+                        }
+                    }
+                }
+                .frame(height: 170)
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: NSURL.self) { object, _ in
+                    guard let url = object as? NSURL else { return }
+                    Task { @MainActor in fileShelf.addFile(url: url as URL) }
+                }
+            }
+            return !providers.isEmpty
         }
     }
 }

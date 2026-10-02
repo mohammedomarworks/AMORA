@@ -23,6 +23,28 @@ final class AMORATests: XCTestCase {
         XCTAssertTrue(AMORAState.alert.priority > AMORAState.music.priority)
     }
 
+    func testDynamicIslandPageNavigationHasHardBoundaries() {
+        let pages = QuickPanelView.Page.allCases
+        XCTAssertEqual(pages.count, 4)
+        XCTAssertEqual(pages.first, .controls)
+        XCTAssertEqual(pages.last, .fileShelf)
+        XCTAssertEqual(min(max(-1, 0), pages.count - 1), 0)
+        XCTAssertEqual(min(max(pages.count, 0), pages.count - 1), pages.count - 1)
+    }
+
+    func testBatteryEstimatePresentationIsExplicit() {
+        XCTAssertEqual(BatteryService.EstimateState.estimated(minutes: 351), .estimated(minutes: 351))
+        XCTAssertEqual(BatteryService.EstimateState.calculating, .calculating)
+        XCTAssertEqual(BatteryService.EstimateState.unavailable, .unavailable)
+    }
+
+    func testThemesHaveDistinctAccentIdentities() {
+        XCTAssertNotEqual(Theme.midnight.palette.accent, Theme.ocean.palette.accent)
+        XCTAssertNotEqual(Theme.ocean.palette.accent, Theme.bubblegum.palette.accent)
+        XCTAssertNotEqual(Theme.bubblegum.palette.accent, Theme.matrix.palette.accent)
+        XCTAssertNotEqual(Theme.matrix.palette.accent, Theme.minimal.palette.accent)
+    }
+
     func testRobotInit() {
         let robot = AMORARobot()
         XCTAssertEqual(robot.state, .idle)

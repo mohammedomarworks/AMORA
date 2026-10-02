@@ -288,7 +288,7 @@ final class AMORACommandRouter {
         case .showBattery:
             BatteryService.shared.refresh()
             context.lastModule = "battery"
-            result = .success(message: BatteryService.shared.hasBattery ? "Battery is at \(BatteryService.shared.level)%. \(BatteryService.shared.timeRemainingFormatted)" : "This Mac doesn't report a battery.")
+            result = .success(message: BatteryService.shared.hasBattery ? "Battery is at \(BatteryService.shared.level)%. \(BatteryService.shared.timeRemainingDescription.replacingOccurrences(of: "\n", with: " "))" : "This Mac doesn't report a battery.")
         case .showClipboard:
             WindowManager.shared.showDashboard(section: .clipboard)
             result = .success(message: "Here’s your clipboard.")

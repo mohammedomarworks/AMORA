@@ -139,7 +139,7 @@ struct DashboardView: View {
                             .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                     }
-                    Text(battery.timeRemainingFormatted)
+                    Text(battery.timeRemainingDescription.replacingOccurrences(of: "\n", with: " "))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.7))
                     Text(battery.isPluggedIn ? "Power connected" : "On Battery")
@@ -188,7 +188,7 @@ struct DashboardView: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
 
-                // System Load Card
+                // System metrics card
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Image(systemName: "cpu")
@@ -198,7 +198,7 @@ struct DashboardView: View {
                             .font(.system(size: 11, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                     }
-                    Text(String(format: "%.1f GB of %.1f GB RAM", systemMonitor.memoryUsedGB, systemMonitor.memoryTotalGB))
+                    Text(String(format: "%.1f GB of %.1f GB Memory", systemMonitor.memoryUsedGB, systemMonitor.memoryTotalGB))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.7))
                     Text(String(format: "%.0f GB Free Disk", systemMonitor.diskFreeGB))
@@ -328,7 +328,7 @@ struct DashboardView: View {
                         setFeedback("Started 25m Focus Timer!")
                     }
                     quickPromptChip("Battery Status") {
-                        setFeedback("Battery is at \(battery.level)% (\(battery.timeRemainingFormatted))")
+                        setFeedback("Battery is at \(battery.level)% (\(battery.timeRemainingDescription.replacingOccurrences(of: "\n", with: " ")))")
                     }
                     quickPromptChip("Toggle Music") {
                         music.togglePlayPause()
@@ -342,7 +342,7 @@ struct DashboardView: View {
         .frame(width: 480, height: 600)
         .background {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.09, blue: 0.13).opacity(0.96))
+                .fill(Color(red: 0.07, green: 0.09, blue: 0.13).opacity(AppState.shared.settings.transparency))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .strokeBorder(
@@ -411,27 +411,49 @@ struct DashboardView: View {
     // MARK: - Sections
     private var overviewSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Upcoming & Status")
+            Text("WORKSPACE")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.white.opacity(0.8))
 
-            HStack {
+            HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Today")
+                    Text("FOCUS")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
-                    Text(Date().formatted(date: .complete, time: .omitted))
+                    Text(timer.isRunning ? (timer.isPaused ? "Paused \(timer.formattedTime)" : timer.formattedTime) : "Nothing queued")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.6))
                 }
                 Spacer()
-                Image(systemName: "calendar")
+                Image(systemName: timer.isRunning ? "timer" : "checkmark.circle")
                     .font(.system(size: 20))
                     .foregroundStyle(.cyan.opacity(0.8))
             }
-            .padding(12)
+            .padding(10)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
+
+            HStack(spacing: 8) {
+                workspaceValue(title: "RECENT NOTE", value: notes.notes.first?.text ?? "No notes yet", icon: "note.text")
+                workspaceValue(title: "RECENT FILES", value: fileShelf.items.first?.name ?? "No files pinned", icon: "doc")
+            }
         }
+    }
+
+    private func workspaceValue(title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Image(systemName: icon)
+                .foregroundStyle(.cyan.opacity(0.8))
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white.opacity(0.55))
+            Text(value)
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
     }
 
     private var clipboardSection: some View {

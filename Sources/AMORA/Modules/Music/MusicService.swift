@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+enum MediaSource: Equatable {
+    case none
+    case appleMusic
+    case youtube
+}
+
 @Observable @MainActor
 final class MusicService {
     static let shared = MusicService()
@@ -9,6 +15,7 @@ final class MusicService {
     var artist: String = ""
     var isPlaying: Bool = false
     var isAvailable: Bool = false
+    var source: MediaSource = .none
 
     /// Playback position in seconds and total track length, polled alongside the
     /// title so the island can show a live progress bar.
@@ -94,11 +101,22 @@ final class MusicService {
 
         self.isPlaying = nowPlaying
         if !gotTrack {
-            self.trackTitle = "No Music Playing"
-            self.artist = ""
-            self.isAvailable = false
+            if let browserMedia = BrowserMediaProvider.currentYouTubeTab() {
+                self.trackTitle = browserMedia.title
+                self.artist = "YouTube"
+                self.source = .youtube
+                self.isAvailable = true
+            } else {
+                self.trackTitle = "No Media Playing"
+                self.artist = ""
+                self.source = .none
+                self.isAvailable = false
+            }
+            self.isPlaying = false // browser playback state is not safely observable here
             self.elapsed = 0
             self.duration = 0
+        } else {
+            self.source = .appleMusic
         }
         // Emit play/stop transitions after the first baseline poll, so AMORA
         // reacts when the user starts music, not to whatever was already going.
@@ -173,5 +191,54 @@ final class MusicService {
         if let appleScript = NSAppleScript(source: source) {
             appleScript.executeAndReturnError(&error)
         }
+    }
+}
+
+struct BrowserMediaSnapshot: Equatable {
+    let title: String
+}
+
+/// Public Apple Events only: read the front tab's title/URL when Safari or
+/// Chrome exposes a YouTube page. Playback state and controls remain disabled
+/// because browser scripting permissions and tab media state are not universal.
+enum BrowserMediaProvider {
+    static func currentYouTubeTab() -> BrowserMediaSnapshot? {
+        let scripts = [
+            """
+            if application "Safari" is running then
+                tell application "Safari"
+                    if (count of windows) > 0 then
+                        set t to current tab of front window
+                        return (name of t) & "|||" & (URL of t)
+                    end if
+                end tell
+            end if
+            return ""
+            """,
+            """
+            if application "Google Chrome" is running then
+                tell application "Google Chrome"
+                    if (count of windows) > 0 then
+                        set t to active tab of front window
+                        return (title of t) & "|||" & (URL of t)
+                    end if
+                end tell
+            end if
+            return ""
+            """
+        ]
+
+        for script in scripts {
+            var error: NSDictionary?
+            guard let appleScript = NSAppleScript(source: script),
+                  let value = appleScript.executeAndReturnError(&error).stringValue else { continue }
+            let parts = value.components(separatedBy: "|||")
+            guard parts.count == 2,
+                  parts[1].lowercased().contains("youtube.com") || parts[1].lowercased().contains("youtu.be") else { continue }
+            let title = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+            return BrowserMediaSnapshot(title: title)
+        }
+        return nil
     }
 }

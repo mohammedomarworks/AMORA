@@ -203,7 +203,6 @@ struct AIResponseView: View {
     private var palette: ThemePalette { AppState.shared.settings.palette }
 
     private var responseText: String { assistant.response ?? "" }
-    private var isLong: Bool { responseText.count > 420 || responseText.components(separatedBy: "\n").count > 8 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -249,16 +248,10 @@ struct AIResponseView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: isLong ? 270 : 210)
+                .frame(maxHeight: 270)
                 .scrollIndicators(.hidden)
 
                 HStack {
-                    if isLong {
-                        Button("Expand") { WindowManager.shared.showDashboard() }
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundStyle(palette.accent)
-                            .buttonStyle(.plain)
-                    }
                     Spacer()
                     Button("Close") { WindowManager.shared.collapseIsland() }
                         .font(.system(size: 11, weight: .semibold, design: .rounded))

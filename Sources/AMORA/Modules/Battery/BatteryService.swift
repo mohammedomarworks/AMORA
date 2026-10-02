@@ -12,6 +12,25 @@ final class BatteryService {
     var timeRemainingFormatted: String = ""
     var hasBattery: Bool = true
 
+    enum EstimateState: Equatable {
+        case estimated(minutes: Int)
+        case calculating
+        case unavailable
+        case powerConnected
+    }
+
+    private(set) var estimateState: EstimateState = .powerConnected
+
+    var timeRemainingDescription: String {
+        switch estimateState {
+        case let .estimated(minutes):
+            return "Estimated\n\(minutes / 60)h \(minutes % 60)m remaining"
+        case .calculating: return "Calculating estimate…"
+        case .unavailable: return "Time remaining unavailable"
+        case .powerConnected: return "Power connected"
+        }
+    }
+
     private var timer: Timer?
     /// The first `refresh()` only establishes a baseline; events fire on the
     /// transitions detected on subsequent refreshes so we never alarm on launch.
@@ -43,6 +62,7 @@ final class BatteryService {
             level = 100
             isPluggedIn = true
             isCharging = false
+            estimateState = .unavailable
             hasBaseline = true
             return
         }
@@ -67,13 +87,19 @@ final class BatteryService {
             }
 
             if let timeRemaining = desc[kIOPSTimeToEmptyKey as String] as? Int, timeRemaining > 0 {
+                estimateState = .estimated(minutes: timeRemaining)
                 let hours = timeRemaining / 60
                 let minutes = timeRemaining % 60
                 timeRemainingFormatted = "\(hours)h \(minutes)m remaining"
             } else if isCharging {
+                estimateState = .powerConnected
                 timeRemainingFormatted = "Charging"
+            } else if isPluggedIn {
+                estimateState = .powerConnected
+                timeRemainingFormatted = "On AC Power"
             } else {
-                timeRemainingFormatted = isPluggedIn ? "On AC Power" : "On Battery"
+                estimateState = .calculating
+                timeRemainingFormatted = "Calculating estimate…"
             }
             break
         }
