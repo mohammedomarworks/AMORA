@@ -19,6 +19,26 @@
             "target": "AMORA",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release AMORA"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Amora}",
+            "name": "Debug AMORA-BrowserHost",
+            "target": "AMORA-BrowserHost",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AMORA-BrowserHost"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Amora}",
+            "name": "Release AMORA-BrowserHost",
+            "target": "AMORA-BrowserHost",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AMORA-BrowserHost"
         }
     ]
 }

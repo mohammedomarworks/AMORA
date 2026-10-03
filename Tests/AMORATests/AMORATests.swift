@@ -176,6 +176,34 @@ final class AMORATests: XCTestCase {
         }
     }
 
+    func testChromeBridgeRejectsMalformedMessages() {
+        let bridge = ChromeMessageBridge.shared
+        bridge.receive(nil)
+        XCTAssertEqual(bridge.status, .permissionRequired)
+        XCTAssertNil(bridge.state)
+        bridge.receive("{\"type\":\"unexpected\"}")
+        XCTAssertEqual(bridge.status, .protocolError)
+        XCTAssertNil(bridge.state)
+    }
+
+    func testChromeBridgeParsesPlayingAndPausedYouTubeState() {
+        let bridge = ChromeMessageBridge.shared
+        let payload = "{\"type\":\"mediaState\",\"browser\":\"Chrome\",\"provider\":\"YouTube\",\"title\":\"Demo\",\"channel\":\"AMORA\",\"isPlaying\":true,\"currentTime\":12.5,\"duration\":60.0,\"url\":\"https://www.youtube.com/watch?v=demo\",\"controlAvailable\":true}"
+        bridge.receive(payload)
+        XCTAssertEqual(bridge.status, .connected)
+        XCTAssertEqual(bridge.state?.title, "Demo")
+        XCTAssertEqual(bridge.state?.isPlaying, true)
+        XCTAssertEqual(bridge.state?.currentTime, 12.5)
+        bridge.receive(payload.replacingOccurrences(of: "true", with: "false"))
+        XCTAssertEqual(bridge.state?.isPlaying, false)
+    }
+
+    func testYouTubeURLValidationRejectsUnrelatedPages() {
+        XCTAssertTrue(BrowserMediaAppleScript.isSupportedYouTubeURL("https://youtu.be/demo"))
+        XCTAssertTrue(BrowserMediaAppleScript.isSupportedYouTubeURL("https://www.youtube.com/shorts/demo"))
+        XCTAssertFalse(BrowserMediaAppleScript.isSupportedYouTubeURL("https://example.com/watch/demo"))
+    }
+
     func testCloudProviderWithoutKeyReportsAuthenticationRequirement() async {
         let manager = AssistantManager(provider: MockAIProvider(response: "must not be used"), providerIsInjected: false)
         let settings = AISettingsSnapshot(enabled: true, provider: .openAI, model: "gpt", apiKey: nil)

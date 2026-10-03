@@ -16,6 +16,7 @@ final class WindowManager {
     private var notchManager: NotchManager?
     private var clickOutsideMonitor: Any?
     private var keyMonitor: Any?
+    private var scrollMonitor: Any?
     private var screenConfigurationObserver: Any?
 
     // Spring-driven morph state (shared by expand + collapse so interruptions are smooth).
@@ -25,6 +26,9 @@ final class WindowManager {
     private var springTarget: Double = 0
     private var collapsedFrameCache: NSRect = .zero
     private var expandedFrameCache: NSRect = .zero
+    private var horizontalSwipeAccumulator: CGFloat = 0
+    private var horizontalSwipeGestureActive = false
+    private var horizontalSwipeHasTriggered = false
 
     private init() {}
 
@@ -248,10 +252,40 @@ final class WindowManager {
             }
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            if event.keyCode == 123 || event.keyCode == 124 {
+                MainActor.assumeIsolated {
+                    guard IslandModel.shared.isExpanded else { return }
+                    let direction: AMORAPageSwipe = event.keyCode == 123 ? .next : .previous
+                    NotificationCenter.default.post(
+                        name: .amoraPageKeyboard,
+                        object: nil,
+                        userInfo: [AMORAPageSwipe.directionKey: direction]
+                    )
+                }
+                return nil
+            }
             guard event.keyCode == 53 else { return event } // ESC
             MainActor.assumeIsolated {
                 if IslandModel.shared.isExpanded { self?.collapseIsland() }
             }
+            return nil
+        }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
+            guard let self,
+                  IslandModel.shared.isExpanded,
+                  let window = self.islandWindow,
+                  window.frame.contains(NSEvent.mouseLocation),
+                  event.hasPreciseScrollingDeltas else { return event }
+
+            let dx = event.scrollingDeltaX
+            let dy = event.scrollingDeltaY
+            guard abs(dx) > abs(dy), abs(dx) > 0.01 else { return event }
+
+            MainActor.assumeIsolated {
+                self.handleIslandHorizontalScroll(event)
+            }
+            // Consume only horizontal, precise events over the expanded island.
+            // Vertical scrolling and all events outside this window continue normally.
             return nil
         }
     }
@@ -259,6 +293,58 @@ final class WindowManager {
     private func removeClickOutsideMonitor() {
         if let m = clickOutsideMonitor { NSEvent.removeMonitor(m); clickOutsideMonitor = nil }
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+        if let m = scrollMonitor { NSEvent.removeMonitor(m); scrollMonitor = nil }
+        horizontalSwipeAccumulator = 0
+        horizontalSwipeGestureActive = false
+        horizontalSwipeHasTriggered = false
+    }
+
+    private func handleIslandHorizontalScroll(_ event: NSEvent) {
+        let phaseBegan = event.phase.contains(.began)
+        let momentumBegan = event.momentumPhase.contains(.began)
+        let momentumEnded = event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
+
+        // A momentum-began event is part of the same physical gesture. Never
+        // reset here: doing so is what allowed one swipe to cross several page
+        // thresholds in the previous implementation.
+        if phaseBegan {
+            horizontalSwipeAccumulator = 0
+            horizontalSwipeGestureActive = true
+            horizontalSwipeHasTriggered = false
+        }
+
+        if momentumBegan {
+            horizontalSwipeGestureActive = true
+        }
+        guard !horizontalSwipeHasTriggered else {
+            if momentumEnded { finishHorizontalSwipeGesture() }
+            return
+        }
+
+        let delta = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaX : event.scrollingDeltaX
+        horizontalSwipeAccumulator += delta
+        let threshold: CGFloat = 42
+        guard abs(horizontalSwipeAccumulator) >= threshold else {
+            return
+        }
+
+        // After normalizing the device direction, a leftward two-finger
+        // gesture is negative and advances the pager.
+        let direction: AMORAPageSwipe = horizontalSwipeAccumulator < 0 ? .next : .previous
+        NotificationCenter.default.post(
+            name: .amoraPageSwipe,
+            object: nil,
+            userInfo: [AMORAPageSwipe.directionKey: direction]
+        )
+        horizontalSwipeAccumulator = 0
+        horizontalSwipeHasTriggered = true
+    }
+
+    private func finishHorizontalSwipeGesture() {
+        guard horizontalSwipeGestureActive else { return }
+        horizontalSwipeAccumulator = 0
+        horizontalSwipeGestureActive = false
+        horizontalSwipeHasTriggered = false
     }
 
     // MARK: - Screen configuration + pause/restore

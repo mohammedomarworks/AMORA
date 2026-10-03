@@ -1,0 +1,7 @@
+{
+  "name": "com.amora.browser",
+  "description": "AMORA browser media bridge",
+  "path": "REPLACE_WITH_AMORA_BROWSER_HOST_PATH",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://pcjbhandogggbhkjdfpcngenaaediend/"]
+}

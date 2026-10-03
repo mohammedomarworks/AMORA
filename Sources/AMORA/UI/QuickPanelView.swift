@@ -15,7 +15,6 @@ struct QuickPanelView: View {
     var topInset: CGFloat = 0
     @Bindable var vm = QuickPanelViewModel()
     @State private var selectedPage: Page = .controls
-    @State private var pageDragOffset: CGFloat = 0
     @State private var celebrationActive = false
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
@@ -121,21 +120,6 @@ struct QuickPanelView: View {
 
             pageContent
                 .padding(.horizontal, 14)
-                .offset(x: pageDragOffset)
-                .gesture(
-                    DragGesture(minimumDistance: 18, coordinateSpace: .local)
-                        .onChanged { value in
-                            pageDragOffset = value.translation.width * 0.35
-                        }
-                        .onEnded { value in
-                            let threshold: CGFloat = 55
-                            if value.translation.width < -threshold { movePage(by: 1) }
-                            if value.translation.width > threshold { movePage(by: -1) }
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                                pageDragOffset = 0
-                            }
-                        }
-                )
 
             Spacer(minLength: 4)
 
@@ -160,6 +144,14 @@ struct QuickPanelView: View {
             .padding(.bottom, 12)
         }
         .overlay(celebrationOverlay)
+        .onReceive(NotificationCenter.default.publisher(for: .amoraPageSwipe)) { notification in
+            guard let direction = notification.userInfo?[AMORAPageSwipe.directionKey] as? AMORAPageSwipe else { return }
+            movePage(by: direction == .next ? 1 : -1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .amoraPageKeyboard)) { notification in
+            guard let direction = notification.userInfo?[AMORAPageSwipe.directionKey] as? AMORAPageSwipe else { return }
+            movePage(by: direction == .next ? 1 : -1)
+        }
         .onChange(of: personality.celebrationToken) { _, _ in
             triggerCelebration()
         }
@@ -167,32 +159,23 @@ struct QuickPanelView: View {
 
     private var pageHeader: some View {
         HStack {
-            Button { movePage(by: -1) } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 10, weight: .bold))
-            }
-            .buttonStyle(.plain)
-            .disabled(selectedPage == .controls)
-
             Text(selectedPage.rawValue.uppercased())
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.75))
 
-            Button { movePage(by: 1) } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-            }
-            .buttonStyle(.plain)
-            .disabled(selectedPage == .fileShelf)
-
             Spacer()
             HStack(spacing: 4) {
                 ForEach(Page.allCases, id: \.self) { page in
-                    Circle()
-                        .fill(page == selectedPage ? palette.accent : Color.white.opacity(0.25))
-                        .frame(width: page == selectedPage ? 5 : 4, height: page == selectedPage ? 5 : 4)
+                    Button { selectedPage = page } label: {
+                        Circle()
+                            .fill(page == selectedPage ? palette.accent : Color.white.opacity(0.25))
+                            .frame(width: page == selectedPage ? 5 : 4, height: page == selectedPage ? 5 : 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(page.rawValue)
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("Page (Page.allCases.firstIndex(of: selectedPage)! + 1) of (Page.allCases.count)")
         }
         .foregroundStyle(palette.accent)
@@ -265,7 +248,7 @@ struct QuickPanelView: View {
                             .lineLimit(1)
                             .foregroundStyle(.white)
                         if !music.artist.isEmpty {
-                        Text(music.source == .youtube ? music.trackTitle : music.artist)
+                        Text(music.artist)
                                 .font(.system(size: 10))
                                 .lineLimit(1)
                                 .foregroundStyle(.white.opacity(0.6))
@@ -293,7 +276,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
-                        .disabled(music.source != .appleMusic)
+                        .disabled(music.source == .none || (music.source == .youtube && music.browserMediaState?.controlAvailable != true))
 
                         Button {
                             music.nextTrack()

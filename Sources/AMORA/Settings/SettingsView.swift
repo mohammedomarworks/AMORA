@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var settings = AppState.shared.settings
+    @Bindable var chromeBridge = ChromeMessageBridge.shared
     private var palette: ThemePalette { settings.palette }
 
     var body: some View {
@@ -125,10 +126,13 @@ struct SettingsView: View {
                 Toggle("System Monitor", isOn: $settings.systemMonitorEnabled)
             }
             Section("Browser media") {
-                Text("AMORA can identify a YouTube tab in Safari or Chrome using macOS Automation. Playback controls and progress stay unavailable unless the browser exposes them safely.")
+                LabeledContent("Chrome", value: chromeBridge.status.rawValue)
+                LabeledContent("Safari", value: "Not Connected")
+                LabeledContent("YouTube", value: chromeBridge.state == nil ? "Not Detected" : "Detected")
+                Text("AMORA reads only the active YouTube tab in Safari or Chrome and queries its HTML5 video for title, channel, play state, and progress.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("If macOS asks, allow AMORA to control Safari or Google Chrome. If permission is denied, Apple Music and other local modules continue to work normally.")
+                Text("Allow AMORA to control Safari or Google Chrome when macOS asks. This permission is needed for active-tab media detection and play/pause. AMORA does not scan tabs, store history, or upload page content.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

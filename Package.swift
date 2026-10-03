@@ -11,12 +11,21 @@ let package = Package(
             name: "AMORA",
             targets: ["AMORA"]
         ),
+        .executable(
+            name: "AMORA-BrowserHost",
+            targets: ["AMORA-BrowserHost"]
+        ),
     ],
     targets: [
         .executableTarget(
             name: "AMORA",
             dependencies: [],
             path: "Sources/AMORA"
+        ),
+        .executableTarget(
+            name: "AMORA-BrowserHost",
+            dependencies: [],
+            path: "Sources/AMORABrowserHost"
         ),
         .testTarget(
             name: "AMORATests",

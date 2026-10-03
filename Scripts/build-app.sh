@@ -9,10 +9,14 @@ CONFIGURATION="${1:-debug}"
 echo "🔨 Building AMORA ($CONFIGURATION)..."
 if [ "$CONFIGURATION" = "release" ]; then
     swift build -c release
+    swift build -c release --product AMORA-BrowserHost
     BINARY_PATH=".build/release/AMORA"
+    BROWSER_HOST_PATH=".build/release/AMORA-BrowserHost"
 else
     swift build
+    swift build --product AMORA-BrowserHost
     BINARY_PATH=".build/debug/AMORA"
+    BROWSER_HOST_PATH=".build/debug/AMORA-BrowserHost"
 fi
 
 APP_BUNDLE="AMORA.app"
@@ -27,6 +31,12 @@ mkdir -p "$RESOURCES_DIR"
 
 cp "$BINARY_PATH" "$MACOS_DIR/AMORA"
 chmod +x "$MACOS_DIR/AMORA"
+cp "$BROWSER_HOST_PATH" "$RESOURCES_DIR/AMORA-BrowserHost"
+chmod +x "$RESOURCES_DIR/AMORA-BrowserHost"
+cp -R "BrowserExtensions" "$RESOURCES_DIR/BrowserExtensions"
+
+echo "🔌 Registering Chrome native messaging host..."
+"$DIR/Scripts/install-chrome-native-host.sh" "$DIR/$RESOURCES_DIR/AMORA-BrowserHost"
 
 cat <<EOF > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
