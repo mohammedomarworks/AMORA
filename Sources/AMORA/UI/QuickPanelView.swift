@@ -247,8 +247,19 @@ struct QuickPanelView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                             .foregroundStyle(.white)
-                        if !music.artist.isEmpty {
-                        Text(music.artist)
+                        if music.source == .youtube {
+                            Text(music.trackTitle)
+                                .font(.system(size: 10))
+                                .lineLimit(1)
+                                .foregroundStyle(.white.opacity(0.72))
+                            Text(music.browserMediaState?.isPlaying == true
+                                 ? (music.browserMediaState?.isInBackground == true ? "Playing in background" : "Playing")
+                                 : "Paused")
+                                .font(.system(size: 9))
+                                .lineLimit(1)
+                                .foregroundStyle(.white.opacity(0.55))
+                        } else if !music.artist.isEmpty {
+                            Text(music.artist)
                                 .font(.system(size: 10))
                                 .lineLimit(1)
                                 .foregroundStyle(.white.opacity(0.6))
@@ -266,7 +277,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Previous track")
-                        .disabled(music.source != .appleMusic)
+                        .disabled(music.source == .none || (music.source == .youtube && music.browserMediaState?.capabilities.supportsPrevious != true))
 
                         Button {
                             music.togglePlayPause()
@@ -276,7 +287,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
-                        .disabled(music.source == .none || (music.source == .youtube && music.browserMediaState?.controlAvailable != true))
+                        .disabled(music.source == .none || music.controlPending || (music.source == .youtube && (music.browserMediaState?.isPlaying == true ? music.browserMediaState?.capabilities.supportsPause != true : music.browserMediaState?.capabilities.supportsPlay != true)))
 
                         Button {
                             music.nextTrack()
@@ -286,9 +297,14 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Next track")
-                        .disabled(music.source != .appleMusic)
+                        .disabled(music.source == .none || (music.source == .youtube && music.browserMediaState?.capabilities.supportsNext != true))
                     }
                     .foregroundStyle(.white.opacity(0.9))
+                    if let status = music.controlStatus ?? music.controlError {
+                        Text(status)
+                            .font(.system(size: 9))
+                            .foregroundStyle(music.controlError == nil ? Color.secondary : Color.orange)
+                    }
                 }
 
                 // Live progress — only when a track is loaded with a known length.

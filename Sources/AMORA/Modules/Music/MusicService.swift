@@ -22,6 +22,9 @@ final class MusicService {
     var elapsed: Double = 0
     var duration: Double = 0
     var browserMediaState: BrowserMediaState?
+    private(set) var controlPending = false
+    private(set) var controlError: String?
+    private(set) var controlStatus: String?
 
     /// 0…1 fraction of the current track that has played.
     var progress: Double {
@@ -30,12 +33,18 @@ final class MusicService {
     }
 
     private var pollTimer: Timer?
+    private var browserStateObserver: NSObjectProtocol?
     /// Suppresses an event on the very first poll so we don't greet music that
     /// was already playing before AMORA launched.
     private var hasPolledOnce = false
 
     private init() {
         _ = ChromeMessageBridge.shared
+        browserStateObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("com.amora.browser.mediaStateChanged"), object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.checkCurrentTrack() }
+        }
         checkCurrentTrack()
         startPolling()
     }
@@ -50,10 +59,12 @@ final class MusicService {
     }
 
     func checkCurrentTrack() {
-        // A focused YouTube tab wins over local music so the card reflects the
-        // provider the user is actually looking at, including a paused video.
+        // Tracked Chrome media wins over local music, including a paused video
+        // whose tab is no longer selected.
         if let browserMedia = BrowserMediaProvider.currentState() {
             let wasPlaying = isPlaying
+            let previousTitle = trackTitle
+            let previousSource = source
             trackTitle = browserMedia.title
             artist = browserMedia.artistOrChannel.isEmpty ? "YouTube" : browserMedia.artistOrChannel
             source = .youtube
@@ -65,7 +76,7 @@ final class MusicService {
             if hasPolledOnce {
                 if isPlaying && !wasPlaying { AMORAEventCenter.shared.emit(.musicStarted) }
                 else if !isPlaying && wasPlaying { AMORAEventCenter.shared.emit(.musicPaused) }
-                else { AMORAEventCenter.shared.emit(.musicChanged) }
+                else if source != previousSource || trackTitle != previousTitle { AMORAEventCenter.shared.emit(.musicChanged) }
             }
             hasPolledOnce = true
             return
@@ -151,11 +162,7 @@ final class MusicService {
 
     func togglePlayPause() {
         if source == .youtube {
-            if browserMediaState?.controlAvailable == true {
-                if browserMediaState?.browser == .chrome { ChromeMessageBridge.shared.sendPlayPause() }
-                else { BrowserMediaProvider.togglePlayPause() }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.checkCurrentTrack() }
+            sendBrowserCommand(isPlaying ? .pause : .play)
             return
         }
         let script = """
@@ -170,6 +177,7 @@ final class MusicService {
     }
 
     func play() {
+        if source == .youtube { sendBrowserCommand(.play); return }
         runScript("""
         if application "Music" is running then
             tell application "Music" to play
@@ -179,6 +187,7 @@ final class MusicService {
     }
 
     func pause() {
+        if source == .youtube { sendBrowserCommand(.pause); return }
         runScript("""
         if application "Music" is running then
             tell application "Music" to pause
@@ -217,6 +226,54 @@ final class MusicService {
             appleScript.executeAndReturnError(&error)
         }
     }
+
+    private func sendBrowserCommand(_ action: ChromeMediaAction) {
+        guard source == .youtube, browserMediaState?.browser == .chrome else {
+            print("[AMORA Control] UI dispatch rejected action=\(action.rawValue) reason=browser_not_selected")
+            return
+        }
+        print("[AMORA Control] UI dispatch action=\(action.rawValue) provider=YouTube targetTabId=\(browserMediaState?.tabId.map(String.init) ?? "missing")")
+        controlError = nil
+        controlPending = true
+        controlStatus = action == .pause ? "Pausing…" : "Playing…"
+        ChromeMessageBridge.shared.sendMediaCommand(action) { [weak self] success, reason in
+            guard let self else { return }
+            self.controlPending = false
+            if success {
+                print("[AMORA Control] UI completion action=\(action.rawValue) success=true")
+                self.controlStatus = action == .pause ? "Paused" : "Playing"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+            } else {
+                print("[AMORA Control] UI completion action=\(action.rawValue) success=false reason=\(reason ?? "unknown")")
+                self.controlStatus = nil
+                self.controlError = Self.friendlyControlError(reason)
+            }
+            self.checkCurrentTrack()
+        }
+    }
+
+    private static func friendlyControlError(_ reason: String?) -> String {
+        switch reason {
+        case "target_tab_does_not_exist", "target_tab_not_found": return "The selected tab is no longer open."
+        case "target_tab_not_youtube": return "The selected tab is not playing a YouTube video."
+        case "youtube_tab_unavailable", "no_media_target": return "No controllable YouTube video is available."
+        case "content_script_unavailable", "content_script_injection_failed", "content_script_injection_timeout", "content_ping_timeout": return "YouTube's control script is unavailable. Try reloading the YouTube tab."
+        case "content_video_unavailable", "video_unavailable": return "No video player is loaded in the YouTube tab."
+        case "video_play_failed", "play_failed", "play_rejected": return "YouTube did not allow playback to start."
+        case "video_pause_failed", "pause_failed": return "YouTube did not pause the video."
+        case "acknowledgement_not_returned", "content_response_timeout", "worker_command_deadline_exceeded": return "Chrome did not complete the YouTube control request in time."
+        case "tabs_send_message_failed": return "Chrome could not deliver the command to YouTube. Try reloading the YouTube tab."
+        case "native_host_forward_failed": return "AMORA could not communicate with Chrome."
+        case "content_ack_mismatch", "content_ping_ack_mismatch", "ack_mismatch": return "Chrome returned a mismatched YouTube control response."
+        case "ack_malformed": return "Chrome returned an incomplete YouTube control response."
+        case "target_changed": return "The selected YouTube tab changed. Please try the control again."
+        case "missing_target_tab": return "AMORA could not identify the selected YouTube tab."
+        case "bridge_disconnected": return "Chrome is disconnected."
+        case "command_timeout": return "Chrome did not respond in time."
+        case "unsupported": return "This media action is not supported here."
+        default: return "Chrome could not control this video."
+        }
+    }
 }
 
 enum BrowserMediaBrowser: String, Equatable {
@@ -236,6 +293,14 @@ struct BrowserMediaState: Equatable {
     let thumbnailURL: String?
     let lastUpdated: Date
     let controlAvailable: Bool
+    let capabilities: BrowserMediaCapabilities
+    let tabId: Int?
+    let windowId: Int?
+    let isActive: Bool
+    let isInBackground: Bool
+    let trackedMediaTabCount: Int
+    let contentScriptReady: Bool
+    let hasVideo: Bool
 
     var hasReliableProgress: Bool { duration > 0 && currentTime >= 0 }
 }
@@ -246,10 +311,8 @@ protocol BrowserMediaProviderProtocol: Sendable {
     func togglePlayPause()
 }
 
-/// Browser media is deliberately limited to the front window's active tab.
-/// The Apple Events scripts first read the URL, then execute a small query on
-/// that page's public HTML5 video element. No tab list, page body, or history
-/// is collected.
+/// Browser media state comes from the Chrome extension's minimal tracked-tab
+/// snapshots. No page body or browsing history is collected.
     @MainActor
 enum BrowserMediaProvider {
     static let providers: [any BrowserMediaProviderProtocol] = [SafariYouTubeProvider(), ChromeYouTubeProvider()]
@@ -371,13 +434,27 @@ enum BrowserMediaAppleScript {
             url: outer[0],
             thumbnailURL: nil,
             lastUpdated: Date(),
-            controlAvailable: false
+            controlAvailable: false,
+            capabilities: .none,
+            tabId: nil,
+            windowId: nil,
+            isActive: true,
+            isInBackground: false,
+            trackedMediaTabCount: 0,
+            contentScriptReady: false,
+            hasVideo: true
         )
     }
 
     static func isSupportedYouTubeURL(_ url: String) -> Bool {
-        let lower = url.lowercased()
-        return lower.contains("youtube.com/watch") || lower.contains("youtube.com/shorts") || lower.contains("youtu.be/")
+        guard let components = URLComponents(string: url),
+              components.scheme?.lowercased() == "https",
+              let host = components.host?.lowercased() else { return false }
+        let path = components.path.lowercased()
+        if host == "youtube.com" || host == "www.youtube.com" {
+            return path == "/watch" || path.hasPrefix("/shorts/")
+        }
+        return host == "youtu.be" && path.count > 1
     }
 
     static func run(_ source: String) {

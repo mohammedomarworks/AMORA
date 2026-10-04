@@ -2,13 +2,13 @@
   "manifest_version": 3,
   "name": "AMORA Browser Media Helper",
   "version": "1.0.0",
-  "description": "Reports active YouTube HTML5 media state to AMORA.",
-  "permissions": ["tabs", "nativeMessaging"],
+  "description": "Reports tracked YouTube HTML5 media state to AMORA.",
+  "permissions": ["nativeMessaging", "scripting", "storage"],
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvxLcket0wh74VNfyK1mk2zVUTfObNSqBETbvMsrllo8+aznQ6SyVNeM26naZ41pCS4/TM4BflUPca8bj92rxt2wl8QAyY+2t9p3KTXl68c6VkBD/L6hzfpXz0Bg1sTjVuUH79D7tcbm5W8kaXIRBqdiddYNGzMXhYoTDGy3R0uMMoDYt6DSO5+ODHYtOL8FjDufGOgn31W75tMyFdJbflckMT1WskppSegBuYM4E5cZ9jHYyvhsz8Q/ZeVoo5DLw6S9JLrJO2LYcvnXQEvZFWuR0yJM/MEGaB5c1EjQ1cybYY2dXGXU0ot9riYMkMjeAtAP+/XH1I+XxUm8muLDi/QIDAQAB",
   "host_permissions": ["https://www.youtube.com/*", "https://youtube.com/*", "https://youtu.be/*"],
   "background": { "service_worker": "service-worker.js" },
   "content_scripts": [{
-    "matches": ["https://www.youtube.com/watch*", "https://www.youtube.com/shorts/*", "https://youtu.be/*"],
+    "matches": ["https://www.youtube.com/watch*", "https://youtube.com/watch*", "https://www.youtube.com/shorts/*", "https://youtube.com/shorts/*", "https://youtu.be/*"],
     "js": ["content.js"],
     "run_at": "document_idle"
   }]

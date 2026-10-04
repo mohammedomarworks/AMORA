@@ -156,6 +156,27 @@ final class AMORATests: XCTestCase {
         XCTAssertEqual(validator.validate(AMORAToolRequest(tool: .file, operation: .openFolder(name: "Downloads"))), .needsConfirmation(prompt: "Would you like me to open Downloads?"))
     }
 
+    func testToolPlanDecodesOnlyApprovedTypedOperations() {
+        let data = #"{"calls":[{"tool":"timer","action":"start","seconds":1500,"text":null,"name":null},{"tool":"browserMedia","action":"pause","seconds":null,"text":null,"name":null}]}"#.data(using: .utf8)!
+        let plan = try! JSONDecoder().decode(AMORAToolPlan.self, from: data)
+        XCTAssertEqual(plan.requests()?.count, 2)
+        let unsafe = try! JSONDecoder().decode(AMORAToolPlan.self, from: Data(#"{"calls":[{"tool":"shell","action":"run","seconds":null,"text":null,"name":"rm -rf /"}]}"#.utf8))
+        XCTAssertNil(unsafe.requests())
+    }
+
+    func testToolPlanBoundsNumberOfCalls() {
+        let calls = (0..<5).map { _ in #"{"tool":"battery","action":"read","seconds":null,"text":null,"name":null}"# }.joined(separator: ",")
+        let plan = try! JSONDecoder().decode(AMORAToolPlan.self, from: Data("{\"calls\":[\(calls)]}".utf8))
+        XCTAssertNil(plan.requests())
+    }
+
+    func testToolRegistryRejectsDestructiveOrUnknownCapabilities() {
+        let validator = AMORAToolValidator()
+        XCTAssertEqual(validator.validate(AMORAToolRequest(tool: .file, operation: .openFolder(name: "/"))), .rejected(reason: "That folder is not available through AMORA."))
+        let unsafe = try! JSONDecoder().decode(AMORAToolPlan.self, from: Data(#"{"calls":[{"tool":"application","action":"shell","seconds":null,"text":null,"name":"rm"}]}"#.utf8))
+        XCTAssertNil(unsafe.requests())
+    }
+
     func testAssistantCancellationReturnsSafely() async {
         let manager = AssistantManager(provider: SlowProvider())
         let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "slow", apiKey: nil)
@@ -188,12 +209,15 @@ final class AMORATests: XCTestCase {
 
     func testChromeBridgeParsesPlayingAndPausedYouTubeState() {
         let bridge = ChromeMessageBridge.shared
-        let payload = "{\"type\":\"mediaState\",\"browser\":\"Chrome\",\"provider\":\"YouTube\",\"title\":\"Demo\",\"channel\":\"AMORA\",\"isPlaying\":true,\"currentTime\":12.5,\"duration\":60.0,\"url\":\"https://www.youtube.com/watch?v=demo\",\"controlAvailable\":true}"
+        let payload = "{\"type\":\"mediaState\",\"browser\":\"Chrome\",\"provider\":\"YouTube\",\"title\":\"Demo\",\"channel\":\"AMORA\",\"isPlaying\":true,\"currentTime\":12.5,\"duration\":60.0,\"url\":\"https://www.youtube.com/watch?v=demo\",\"controlAvailable\":true,\"tabId\":42,\"windowId\":7,\"isActive\":false,\"isInBackground\":true,\"trackedMediaTabCount\":2,\"contentScriptReady\":true,\"hasVideo\":true}"
         bridge.receive(payload)
         XCTAssertEqual(bridge.status, .connected)
         XCTAssertEqual(bridge.state?.title, "Demo")
         XCTAssertEqual(bridge.state?.isPlaying, true)
         XCTAssertEqual(bridge.state?.currentTime, 12.5)
+        XCTAssertEqual(bridge.state?.tabId, 42)
+        XCTAssertEqual(bridge.state?.trackedMediaTabCount, 2)
+        XCTAssertEqual(bridge.state?.isInBackground, true)
         bridge.receive(payload.replacingOccurrences(of: "true", with: "false"))
         XCTAssertEqual(bridge.state?.isPlaying, false)
     }
@@ -202,6 +226,7 @@ final class AMORATests: XCTestCase {
         XCTAssertTrue(BrowserMediaAppleScript.isSupportedYouTubeURL("https://youtu.be/demo"))
         XCTAssertTrue(BrowserMediaAppleScript.isSupportedYouTubeURL("https://www.youtube.com/shorts/demo"))
         XCTAssertFalse(BrowserMediaAppleScript.isSupportedYouTubeURL("https://example.com/watch/demo"))
+        XCTAssertFalse(BrowserMediaAppleScript.isSupportedYouTubeURL("https://youtube.com.evil.example/watch?v=demo"))
     }
 
     func testCloudProviderWithoutKeyReportsAuthenticationRequirement() async {
@@ -220,5 +245,63 @@ final class AMORATests: XCTestCase {
         _ = await manager.submit("show me an example", settings: settings)
         XCTAssertEqual(manager.conversation.messages.count, 4)
         XCTAssertEqual(manager.conversation.messages[2].content, "show me an example")
+    }
+
+    @MainActor
+    func testChromeBridgeHandlesCommandResultAndRecordsDiagnostics() {
+        let bridge = ChromeMessageBridge.shared
+        let setupPayload = "{\"type\":\"mediaState\",\"browser\":\"Chrome\",\"provider\":\"YouTube\",\"title\":\"Demo\",\"channel\":\"AMORA\",\"isPlaying\":true,\"currentTime\":10.0,\"duration\":60.0,\"url\":\"https://www.youtube.com/watch?v=demo\",\"tabId\":99,\"windowId\":1,\"trackedMediaTabCount\":1,\"contentScriptReady\":true,\"hasVideo\":true}"
+        bridge.receive(setupPayload)
+        XCTAssertEqual(bridge.status, .connected)
+
+        var completedSuccess: Bool?
+        var completedReason: String?
+        bridge.sendMediaCommand(.pause) { success, reason in
+            completedSuccess = success
+            completedReason = reason
+        }
+
+        guard let diagnostic = bridge.commandDiagnostics.last else {
+            XCTFail("Diagnostic record not created")
+            return
+        }
+        XCTAssertEqual(diagnostic.action, .pause)
+        XCTAssertEqual(diagnostic.tabId, 99)
+        XCTAssertEqual(diagnostic.provider, "YouTube")
+
+        let ackPayload = "{\"type\":\"mediaCommandResult\",\"provider\":\"youtube\",\"action\":\"pause\",\"requestId\":\"\(diagnostic.requestId)\",\"tabId\":99,\"success\":true,\"state\":{\"isPlaying\":false,\"title\":\"Demo\",\"currentTime\":10.0,\"duration\":60.0,\"url\":\"https://www.youtube.com/watch?v=demo\"}}"
+        bridge.receive(ackPayload)
+
+        XCTAssertEqual(completedSuccess, true)
+        XCTAssertNil(completedReason)
+        XCTAssertEqual(bridge.state?.isPlaying, false)
+        XCTAssertEqual(bridge.commandDiagnostics.last?.success, true)
+    }
+
+    @MainActor
+    func testChromeBridgeHandlesCommandFailureReason() {
+        let bridge = ChromeMessageBridge.shared
+        let setupPayload = "{\"type\":\"mediaState\",\"browser\":\"Chrome\",\"provider\":\"YouTube\",\"title\":\"Demo\",\"channel\":\"AMORA\",\"isPlaying\":false,\"currentTime\":10.0,\"duration\":60.0,\"url\":\"https://www.youtube.com/watch?v=demo\",\"tabId\":88,\"windowId\":1,\"trackedMediaTabCount\":1,\"contentScriptReady\":true,\"hasVideo\":true}"
+        bridge.receive(setupPayload)
+
+        var completedSuccess: Bool?
+        var completedReason: String?
+        bridge.sendMediaCommand(.play) { success, reason in
+            completedSuccess = success
+            completedReason = reason
+        }
+
+        guard let diagnostic = bridge.commandDiagnostics.last else {
+            XCTFail("Diagnostic record not created")
+            return
+        }
+
+        let failPayload = "{\"type\":\"mediaCommandResult\",\"provider\":\"youtube\",\"action\":\"play\",\"requestId\":\"\(diagnostic.requestId)\",\"tabId\":88,\"success\":false,\"reason\":\"target_tab_does_not_exist\"}"
+        bridge.receive(failPayload)
+
+        XCTAssertEqual(completedSuccess, false)
+        XCTAssertEqual(completedReason, "target_tab_does_not_exist")
+        XCTAssertEqual(bridge.commandDiagnostics.last?.success, false)
+        XCTAssertEqual(bridge.commandDiagnostics.last?.failureReason, "target_tab_does_not_exist")
     }
 }

@@ -128,14 +128,68 @@ struct SettingsView: View {
             Section("Browser media") {
                 LabeledContent("Chrome", value: chromeBridge.status.rawValue)
                 LabeledContent("Safari", value: "Not Connected")
-                LabeledContent("YouTube", value: chromeBridge.state == nil ? "Not Detected" : "Detected")
-                Text("AMORA reads only the active YouTube tab in Safari or Chrome and queries its HTML5 video for title, channel, play state, and progress.")
+                LabeledContent("YouTube", value: youtubeStatus)
+                if let media = chromeBridge.state {
+                    LabeledContent("Current media", value: media.title)
+                    LabeledContent("Source", value: "YouTube — Chrome")
+                    LabeledContent("Tracked media tabs", value: "\(media.trackedMediaTabCount)")
+                    if let tabId = media.tabId {
+                        LabeledContent("Current target", value: "Tab \(tabId)")
+                    }
+                }
+                Text("AMORA tracks minimal YouTube player metadata for open Chrome video tabs. Playback remains available when the video tab or Chrome is in the background; no page contents or browsing history are stored.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Allow AMORA to control Safari or Google Chrome when macOS asks. This permission is needed for active-tab media detection and play/pause. AMORA does not scan tabs, store history, or upload page content.")
+                Text("Chrome stays Connected independently of YouTube detection. Play and pause are sent to AMORA's selected tracked media tab and update only after Chrome acknowledges the action.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                DisclosureGroup("Diagnostics") {
+                    diagnosticRow("Native Host", connected: chromeBridge.status == .connected)
+                    diagnosticRow("Service Worker", connected: chromeBridge.status == .connected)
+                    LabeledContent("Tracked Media Tabs", value: "\(chromeBridge.state?.trackedMediaTabCount ?? 0)")
+                    LabeledContent("Current Media Target", value: currentMediaTargetDescription)
+                    LabeledContent("Provider", value: chromeBridge.state == nil ? "None" : "YouTube")
+                    LabeledContent("Playing", value: chromeBridge.state.map { $0.isPlaying ? "Yes" : "No" } ?? "No")
+                    diagnosticRow("YouTube Content Script", connected: chromeBridge.contentDiagnostic?.success == true)
+                    diagnosticRow("Video Element", connected: chromeBridge.contentDiagnostic?.hasVideo == true)
+                    Button(chromeBridge.contentPingPending ? "Pinging…" : "Run Content Script Ping") {
+                        chromeBridge.runContentPing()
+                    }
+                    .disabled(chromeBridge.contentPingPending || chromeBridge.status != .connected)
+                    if let reason = chromeBridge.contentDiagnostic?.reason {
+                        Text(Self.diagnosticReason(reason))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
+        }
+    }
+
+    private var youtubeStatus: String {
+        guard let media = chromeBridge.state else { return "Not Detected" }
+        if media.isPlaying { return media.isInBackground ? "Playing in background" : "Playing" }
+        return "Paused"
+    }
+
+    private var currentMediaTargetDescription: String {
+        guard let tabId = chromeBridge.state?.tabId else { return "None" }
+        return "Tab \(tabId)"
+    }
+
+    private func diagnosticRow(_ title: String, connected: Bool) -> some View {
+        LabeledContent(title) {
+            Label(connected ? "Connected" : "Unavailable", systemImage: connected ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(connected ? .green : .secondary)
+        }
+    }
+
+    private static func diagnosticReason(_ reason: String) -> String {
+        switch reason {
+        case "content_script_unavailable": return "Content script unavailable. Reload the extension or YouTube tab."
+        case "content_video_unavailable": return "Video unavailable on the active YouTube page."
+        case "youtube_tab_unavailable": return "The active tab is not a supported YouTube page."
+        default: return reason
         }
     }
 
