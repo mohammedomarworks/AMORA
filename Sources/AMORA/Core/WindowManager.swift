@@ -21,6 +21,7 @@ final class WindowManager {
 
     // Spring-driven morph state (shared by expand + collapse so interruptions are smooth).
     private var springTimer: Timer?
+    private var lastAnimationTimestamp: CFTimeInterval = 0
     private var springPos: Double = 0
     private var springVel: Double = 0
     private var springTarget: Double = 0
@@ -50,7 +51,7 @@ final class WindowManager {
         let notch = NotchManager.notchRect(on: screen)
         let width = notch.width
         let height = notch.height + IslandMetrics.collapsedChinHeight
-        let x = notch.midX - width / 2
+        let x = (notch.midX - width / 2).rounded()
         let y = screen.frame.maxY - height
         return NSRect(x: x, y: y, width: width, height: height)
     }
@@ -60,7 +61,7 @@ final class WindowManager {
         let topInset = notch.height
         let width = IslandMetrics.expandedWidth
         let height = topInset + IslandMetrics.expandedContentHeight
-        var x = notch.midX - width / 2
+        var x = (notch.midX - width / 2).rounded()
         let minX = screen.frame.minX + IslandMetrics.screenMargin
         let maxX = screen.frame.maxX - width - IslandMetrics.screenMargin
         if maxX > minX { x = min(max(x, minX), maxX) }
@@ -106,6 +107,10 @@ final class WindowManager {
         let host = NSHostingController(rootView: DynamicIslandView())
         host.view.frame = CGRect(origin: .zero, size: frame.size)
         host.view.autoresizingMask = [.width, .height]
+        host.view.wantsLayer = true
+        host.view.layer?.backgroundColor = NSColor.clear.cgColor
+        host.view.layer?.isOpaque = false
+
         window.contentView = host.view
 
         islandWindow = window
@@ -184,12 +189,16 @@ final class WindowManager {
         expandedFrameCache = expandedFrame(on: screen)
         springTarget = target
         springTimer?.invalidate()
+        lastAnimationTimestamp = CACurrentMediaTime()
 
-        let dt = 1.0 / 120.0
-        let stiffness = 240.0
-        let damping = 26.0
+        let isExpanding = target > 0.5
+        // Fluid, organic Apple spring physics:
+        // Expanding: slightly underdamped (zeta ~0.85) for an elastic, responsive stretch downward.
+        // Collapsing: critically damped (zeta ~0.98) so it cleanly retreats into the notch with zero bounce.
+        let stiffness: Double = isExpanding ? 260.0 : 300.0
+        let damping: Double = isExpanding ? 27.5 : 34.0
 
-        springTimer = Timer.scheduledTimer(withTimeInterval: dt, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 guard let window = self.islandWindow else {
@@ -197,11 +206,25 @@ final class WindowManager {
                     self.springTimer = nil
                     return
                 }
+
+                let now = CACurrentMediaTime()
+                let elapsed = now - self.lastAnimationTimestamp
+                self.lastAnimationTimestamp = now
+                let dt = min(0.033, max(0.001, elapsed))
+
                 let force = -stiffness * (self.springPos - self.springTarget) - damping * self.springVel
                 self.springVel += force * dt
                 self.springPos += self.springVel * dt
 
-                if abs(self.springPos - self.springTarget) < 0.001 && abs(self.springVel) < 0.01 {
+                // When collapsing into the notch, prevent negative overshoot
+                if !isExpanding && self.springPos < 0.0 {
+                    self.springPos = 0.0
+                    self.springVel = 0.0
+                }
+
+                let dist = abs(self.springPos - self.springTarget)
+                let vel = abs(self.springVel)
+                if dist < 0.0015 && vel < 0.02 {
                     self.springPos = self.springTarget
                     self.springVel = 0
                     self.springTimer?.invalidate()
@@ -211,19 +234,23 @@ final class WindowManager {
                 }
 
                 IslandModel.shared.expansion = self.springPos
-                window.setFrame(self.interpolatedFrame(self.springPos), display: true)
+                window.setFrame(self.interpolatedFrame(self.springPos), display: false)
             }
         }
+        // Add to .common run loop modes so mouse movements / tracking never stall animation frames
+        RunLoop.main.add(timer, forMode: .common)
+        springTimer = timer
     }
 
     private func interpolatedFrame(_ p: Double) -> NSRect {
-        let f = CGFloat(max(0, min(1.1, p)))
+        let isExpanding = springTarget > 0.5
+        let f = CGFloat(max(0.0, min(isExpanding ? 1.04 : 1.0, p)))
         let a = collapsedFrameCache
         let b = expandedFrameCache
         return NSRect(
-            x: a.origin.x + (b.origin.x - a.origin.x) * f,
+            x: (a.origin.x + (b.origin.x - a.origin.x) * f).rounded(),
             y: a.origin.y + (b.origin.y - a.origin.y) * f,
-            width: a.width + (b.width - a.width) * f,
+            width: (a.width + (b.width - a.width) * f).rounded(),
             height: a.height + (b.height - a.height) * f
         )
     }
@@ -255,7 +282,8 @@ final class WindowManager {
             if event.keyCode == 123 || event.keyCode == 124 {
                 MainActor.assumeIsolated {
                     guard IslandModel.shared.isExpanded else { return }
-                    let direction: AMORAPageSwipe = event.keyCode == 123 ? .next : .previous
+                    // 124 is Right Arrow (next page / index + 1), 123 is Left Arrow (previous page / index - 1)
+                    let direction: AMORAPageSwipe = event.keyCode == 124 ? .next : .previous
                     NotificationCenter.default.post(
                         name: .amoraPageKeyboard,
                         object: nil,
@@ -301,12 +329,13 @@ final class WindowManager {
 
     private func handleIslandHorizontalScroll(_ event: NSEvent) {
         let phaseBegan = event.phase.contains(.began)
+        let phaseEnded = event.phase.contains(.ended) || event.phase.contains(.cancelled)
         let momentumBegan = event.momentumPhase.contains(.began)
         let momentumEnded = event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
 
         // A momentum-began event is part of the same physical gesture. Never
         // reset here: doing so is what allowed one swipe to cross several page
-        // thresholds in the previous implementation.
+        // thresholds.
         if phaseBegan {
             horizontalSwipeAccumulator = 0
             horizontalSwipeGestureActive = true
@@ -316,20 +345,44 @@ final class WindowManager {
         if momentumBegan {
             horizontalSwipeGestureActive = true
         }
+
+        // If the gesture has already triggered a page change, lock it for the remainder
+        // of this physical gesture and its momentum. Exactly ONE page transition per gesture.
         guard !horizontalSwipeHasTriggered else {
-            if momentumEnded { finishHorizontalSwipeGesture() }
+            if momentumEnded || (phaseEnded && event.momentumPhase.isEmpty) {
+                finishHorizontalSwipeGesture()
+            }
             return
         }
 
-        let delta = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaX : event.scrollingDeltaX
-        horizontalSwipeAccumulator += delta
-        let threshold: CGFloat = 42
+        // If gesture ends before crossing threshold, clean up accumulator.
+        if phaseEnded && (event.momentumPhase.isEmpty || momentumEnded) {
+            finishHorizontalSwipeGesture()
+            return
+        }
+
+        // Physical trackpad translation:
+        // Physical swipe LEFT  (translation.width < 0) -> Next page (+1)
+        // Physical swipe RIGHT (translation.width > 0) -> Previous page (-1)
+        //
+        // On macOS:
+        // When natural scrolling is ON (isDirectionInvertedFromDevice == true):
+        //   Swiping fingers LEFT produces scrollingDeltaX < 0.
+        //   Swiping fingers RIGHT produces scrollingDeltaX > 0.
+        // When natural scrolling is OFF (isDirectionInvertedFromDevice == false):
+        //   Swiping fingers LEFT produces scrollingDeltaX > 0.
+        //   Swiping fingers RIGHT produces scrollingDeltaX < 0.
+        // Normalizing to physical translation (translation.width):
+        let translationX = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
+        horizontalSwipeAccumulator += translationX
+
+        let threshold: CGFloat = 36
         guard abs(horizontalSwipeAccumulator) >= threshold else {
             return
         }
 
-        // After normalizing the device direction, a leftward two-finger
-        // gesture is negative and advances the pager.
+        // translation.width < 0 -> next page / page index + 1
+        // translation.width > 0 -> previous page / page index - 1
         let direction: AMORAPageSwipe = horizontalSwipeAccumulator < 0 ? .next : .previous
         NotificationCenter.default.post(
             name: .amoraPageSwipe,
@@ -383,6 +436,7 @@ final class WindowManager {
 
     func showDashboard(section: DashboardView.DashboardSection = .overview) {
         if let window = dashboardWindow {
+            window.contentView = NSHostingController(rootView: DashboardView(initialSection: section)).view
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             AppState.shared.isDashboardOpen = true

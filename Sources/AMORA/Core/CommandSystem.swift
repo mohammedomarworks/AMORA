@@ -15,6 +15,7 @@ enum AMORACommand: Equatable {
     case showBattery
     case showClipboard
     case showNotes
+    case showFileShelf
     case showSystem
     case showDashboard
     case showSettings
@@ -85,6 +86,9 @@ struct AMORACommandParser {
             return .showClipboard
         }
         if normalized == "show notes" || normalized == "open notes" { return .showNotes }
+        if normalized == "show file shelf" || normalized == "open file shelf" || normalized == "file shelf" || normalized == "show files" || normalized == "pinned files" {
+            return .showFileShelf
+        }
         if isSystemRequest(normalized) { return .showSystem }
         if normalized == "open dashboard" || normalized == "show dashboard" || normalized == "dashboard" {
             return .showDashboard
@@ -295,6 +299,9 @@ final class AMORACommandRouter {
         case .showNotes:
             WindowManager.shared.showDashboard(section: .notes)
             result = .success(message: "Here are your notes.")
+        case .showFileShelf:
+            WindowManager.shared.showDashboard(section: .fileShelf)
+            result = .success(message: "Here are your pinned files.")
         case .showSystem:
             SystemMonitorService.shared.refresh()
             WindowManager.shared.showDashboard(section: .overview)

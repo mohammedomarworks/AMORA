@@ -32,7 +32,11 @@ private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
 /// so it merges with the notch) and whose BOTTOM corners are rounded. The radius
 /// animates with the morph, so the notch appears to grow a rounder chin as it
 /// expands downward into the island.
-struct BottomRoundedRectangle: Shape {
+/// The single geometric source of truth for AMORA's Dynamic Island silhouette.
+/// Top edge is flat/square (anchored flush against the physical top bezel and notch).
+/// Bottom corners are rounded, interpolating smoothly between collapsed chin
+/// and expanded island radius.
+struct IslandShape: Shape {
     var bottomRadius: CGFloat
 
     var animatableData: CGFloat {
@@ -53,6 +57,46 @@ struct BottomRoundedRectangle: Shape {
                  startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
         p.closeSubpath()
         return p
+    }
+
+    /// Open border path that traces ONLY the free perimeter:
+    /// down the right edge, around the bottom-right corner, across the bottom,
+    /// around the bottom-left corner, and up the left edge.
+    /// Inset by half the line width so the entire stroke stays 100% inside the silhouette.
+    func borderPath(in rect: CGRect, inset: CGFloat = 0.5) -> Path {
+        let r = min(max(bottomRadius - inset, 0), min(rect.width - 2 * inset, rect.height - 2 * inset) / 2)
+        let rightX = rect.maxX - inset
+        let leftX = rect.minX + inset
+        let bottomY = rect.maxY - inset
+        let topY = rect.minY
+
+        var p = Path()
+        p.move(to: CGPoint(x: rightX, y: topY))
+        p.addLine(to: CGPoint(x: rightX, y: bottomY - r))
+        p.addArc(center: CGPoint(x: rightX - r, y: bottomY - r), radius: r,
+                 startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+        p.addLine(to: CGPoint(x: leftX + r, y: bottomY))
+        p.addArc(center: CGPoint(x: leftX + r, y: bottomY - r), radius: r,
+                 startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        p.addLine(to: CGPoint(x: leftX, y: topY))
+        return p
+    }
+}
+
+/// An open outline shape derived directly from IslandShape.borderPath.
+/// The top edge (y = minY) is intentionally open and unstroked so it merges
+/// seamlessly into the physical display bezel and camera notch with zero line or seam.
+struct IslandBorderShape: Shape {
+    var bottomRadius: CGFloat
+    var inset: CGFloat = 0.5
+
+    var animatableData: CGFloat {
+        get { bottomRadius }
+        set { bottomRadius = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        IslandShape(bottomRadius: bottomRadius).borderPath(in: rect, inset: inset)
     }
 }
 /// The tiny notch-integrated element shown when collapsed: just AMORA's eyes,
@@ -127,70 +171,91 @@ struct DynamicIslandView: View {
         let tD = max(0.0, min(1.0, e))
         let t = CGFloat(tD)
         let bottomRadius = lerp(island.collapsedBottomRadius, island.expandedBottomRadius, t)
+        let shape = IslandShape(bottomRadius: bottomRadius)
 
         ZStack(alignment: .top) {
-            surface(bottomRadius: bottomRadius, tD: tD, t: t)
+            surface(shape: shape, bottomRadius: bottomRadius, tD: tD, t: t)
 
-            if e < 0.5 {
+            if e < 0.25 {
                 collapsedEyes(expansion: e)
             }
 
-            if e > 0.01 {
+            if e > 0.10 {
                 expandedContent(expansion: e, t: t)
+            }
+        }
+        .clipShape(shape)
+    }
+
+    /// One continuous pure-black surface that represents the hardware notch when
+    /// collapsed and morphs fluidly downward into the Dynamic Island when expanded.
+    private func surface(shape: IslandShape, bottomRadius: CGFloat, tD: Double, t: CGFloat) -> some View {
+        let border = IslandBorderShape(bottomRadius: bottomRadius)
+
+        // Apple-style razor-thin glass border: completely transparent near the top bezel
+        // and physical notch (y <= topInset), emerging subtly down the lateral edges and
+        // chin. Zero opacity when collapsed (tD = 0) so the notch chin merges into the bezel.
+        let borderGradient = LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0.0),
+                .init(color: .clear, location: 0.08),
+                .init(color: Color.white.opacity(0.18 * tD), location: 0.28),
+                .init(color: Color.white.opacity(0.08 * tD), location: 0.82),
+                .init(color: Color.white.opacity(0.04 * tD), location: 1.0)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+
+        return ZStack {
+            // Base fill is 100% OLED pitch black (#000000).
+            // Mini-LED local dimming zones turn completely off, matching the physical camera housing.
+            shape.fill(Color.black)
+
+            // Inner hairline border tracing the exact curved silhouette
+            border.stroke(borderGradient, lineWidth: 1.0)
+        }
+        .contentShape(shape)
+        .onTapGesture {
+            if !island.isExpanded {
+                WindowManager.shared.toggleQuickPanel()
             }
         }
     }
 
-    /// One continuous black surface — the notch when collapsed, the island when
-    /// expanded. Tapping it (collapsed only) triggers the downward morph.
-    private func surface(bottomRadius: CGFloat, tD: Double, t: CGFloat) -> some View {
-        let shape = BottomRoundedRectangle(bottomRadius: bottomRadius)
-        let stroke = LinearGradient(
-            colors: [Color.white.opacity(0.22 * tD), Color.white.opacity(0.04 * tD)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        // A faint top sheen that only appears as the island expands, giving the
-        // chin a soft glassy highlight. At tD = 0 it is fully transparent, so the
-        // collapsed notch stays pure black and merges with the bezel.
-        let sheen = LinearGradient(
-            colors: [Color.white.opacity(0.06 * tD), Color.clear],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        let filled = shape.fill(Color.black)
-        let bordered = filled
-            .overlay(shape.fill(sheen))
-            .overlay(shape.stroke(stroke, lineWidth: 1))
-        let shadowed = bordered.shadow(color: Color.black.opacity(0.55 * tD), radius: 20 * t, x: 0, y: 8 * t)
-        return shadowed
-            .contentShape(shape)
-            .onTapGesture {
-                if !island.isExpanded {
-                    WindowManager.shared.toggleQuickPanel()
-                }
-            }
-    }
-
     private func collapsedEyes(expansion e: Double) -> some View {
-        NotchEyesView(robot: robot)
-            .opacity(1 - min(1, e * 2))
+        // Eyes smoothly fade out as the notch starts expanding downward (0.0 -> 0.22)
+        // and fade back in smoothly as the island tucks back into the notch (0.22 -> 0.0)
+        let eyeProgress = min(1.0, max(0.0, e / 0.22))
+        let eyeOpacity = 1.0 - eyeProgress
+        let eyeScale = 1.0 - 0.15 * eyeProgress
+
+        return NotchEyesView(robot: robot)
+            .opacity(eyeOpacity)
+            .scaleEffect(eyeScale, anchor: .bottom)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, 4)
             .allowsHitTesting(false)
     }
 
     private func expandedContent(expansion e: Double, t: CGFloat) -> some View {
-        Group {
+        // Content smoothly unfolds between e = 0.12 and 0.72 with subtle vertical parallax
+        // and scale, feeling like it slides naturally from behind the notch.
+        let contentProgress = min(1.0, max(0.0, (e - 0.12) / 0.60))
+        let translateY = -10.0 * (1.0 - contentProgress)
+        let scale = 0.96 + 0.04 * contentProgress
+
+        return Group {
             if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed {
                 AIResponseView(embedded: true, topInset: island.topInset)
             } else {
                 QuickPanelView(embedded: true, topInset: island.topInset)
             }
         }
-            .opacity(max(0, min(1, (e - 0.4) / 0.6)))
-            .scaleEffect(0.94 + 0.06 * t, anchor: .top)
-            .allowsHitTesting(island.isExpanded && e > 0.85)
+        .opacity(contentProgress)
+        .offset(y: translateY)
+        .scaleEffect(scale, anchor: .top)
+        .allowsHitTesting(island.isExpanded && e > 0.85)
     }
 }
 

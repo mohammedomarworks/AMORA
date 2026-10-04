@@ -63,6 +63,7 @@ final class AssistantManager {
         AMORAEventCenter.shared.emit(.aiThinking)
 
         var messages = conversation.messages
+        messages.append(AIMessage(role: .user, content: "[AMORA tool policy] You may request only approved tools by returning strict JSON {\"calls\":[{\"tool\":\"...\",\"action\":\"...\",\"seconds\":null,\"text\":null,\"name\":null}]}. Approved tools: battery read; timer start/pause/resume/stop/add; music or browserMedia read/play/pause/next/previous; notes create/list; system read; application open; folder open; view show. Never request shell commands, arbitrary paths, unknown tools, or destructive actions. If no tool is needed, answer normally."))
         if let context = AIContextComposer.relevantContext(for: input) {
             messages.append(AIMessage(role: .user, content: "[System context]\n\(context)"))
         }
@@ -71,8 +72,20 @@ final class AssistantManager {
         conversation.append(userMessage)
 
         do {
-            let answer = try await provider.send(messages: messages, model: settings.model, apiKey: settings.apiKey)
+            let rawAnswer = try await provider.send(messages: messages, model: settings.model, apiKey: settings.apiKey)
             try Task.checkCancellation()
+            let answer: String
+            if let plan = try? JSONDecoder().decode(AMORAToolPlan.self, from: Data(rawAnswer.utf8)),
+               let requests = plan.requests() {
+                let results = requests.map { AMORAToolRegistry.shared.execute($0) }
+                if let confirmation = results.first(where: { $0.status == .needsConfirmation }) {
+                    answer = "I need your confirmation before I do that. \(confirmation.message)"
+                } else {
+                    answer = results.map(\.message).joined(separator: " ")
+                }
+            } else {
+                answer = rawAnswer
+            }
             let assistantMessage = AIMessage(role: .assistant, content: answer)
             conversation.append(assistantMessage)
             state = .responding
@@ -183,10 +196,45 @@ final class AMORACommandGateway {
     func submit(_ input: String, settings: AISettingsSnapshot) async -> AMORACommandResult {
         let command = parser.parse(input, context: router.currentContext())
         if case let .unknown(text) = command, !isLocalUnknown(text) {
+            if let localResults = executeKnownToolSequence(input) {
+                let message = localResults.map(\.message).joined(separator: " ")
+                return .success(message: message)
+            }
             WindowManager.shared.showQuickPanel()
             return .success(message: await assistant.submit(input, settings: settings))
         }
         return router.execute(command)
+    }
+
+    /// Handles the small set of deterministic multi-tool combinations AMORA
+    /// supports without spending an AI request on known local capabilities.
+    private func executeKnownToolSequence(_ input: String) -> [AMORAToolResult]? {
+        let text = AMORACommandParser.normalize(input)
+        var requests: [AMORAToolRequest] = []
+        if text.contains("timer"), let seconds = durationSeconds(in: text) {
+            requests.append(.init(tool: .timer, operation: .startTimer(seconds: seconds)))
+        }
+        if text.contains("youtube") || text.contains("video") {
+            if text.contains("pause") { requests.append(.init(tool: .browserMedia, operation: .pauseMedia)) }
+            else if text.contains("play") { requests.append(.init(tool: .browserMedia, operation: .playMedia)) }
+        }
+        if text.contains("battery") { requests.append(.init(tool: .battery, operation: .readBattery)) }
+        if (text.contains("what s playing") || text.contains("what is playing")) && !requests.contains(where: { $0.operation == .readMedia }) {
+            requests.append(.init(tool: .music, operation: .readMedia))
+        }
+        guard requests.count > 1, requests.count <= AMORAToolRegistry.shared.maximumCallsPerRequest else { return nil }
+        let results = requests.map { AMORAToolRegistry.shared.execute($0) }
+        return results.allSatisfy { $0.status == .success || $0.status == .unsupported } ? results : results
+    }
+
+    private func durationSeconds(in text: String) -> Int? {
+        let pattern = #"(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)"#
+        guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
+        let parts = text[range].split(separator: " ")
+        guard let value = Int(parts[0]), let unit = parts.last else { return nil }
+        if unit.hasPrefix("hour") || unit.hasPrefix("hr") { return value * 3600 }
+        if unit.hasPrefix("second") || unit.hasPrefix("sec") { return value }
+        return value * 60
     }
 
     private func isLocalUnknown(_ text: String) -> Bool {

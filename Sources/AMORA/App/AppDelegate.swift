@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionManager: PermissionManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setlinebuf(stdout)
+        setlinebuf(stderr)
         // Run as an accessory agent application so it lives seamlessly in menu bar / notch without dock clutter
         NSApp.setActivationPolicy(.accessory)
 

@@ -11,6 +11,7 @@ final class DashboardViewModel {
 
 struct DashboardView: View {
     @Bindable var vm = DashboardViewModel()
+    @State private var isDashboardFileShelfDropTargeted = false
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
     private var timer = TimerService.shared
@@ -116,6 +117,7 @@ struct DashboardView: View {
                                 .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)
+                        .disabled(music.source == .none || music.controlPending || (music.source == .youtube && (music.isPlaying ? music.browserMediaState?.capabilities.supportsPause != true : music.browserMediaState?.capabilities.supportsPlay != true)))
                     }
                     Text(music.trackTitle)
                         .font(.system(size: 11, weight: .semibold))
@@ -125,6 +127,11 @@ struct DashboardView: View {
                         .font(.system(size: 10))
                         .lineLimit(1)
                         .foregroundStyle(.white.opacity(0.6))
+                    if let status = music.controlStatus ?? music.controlError {
+                        Text(status)
+                            .font(.system(size: 9))
+                            .foregroundStyle(music.controlError == nil ? Color.secondary : Color.orange)
+                    }
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
@@ -356,6 +363,9 @@ struct DashboardView: View {
                 )
                 .shadow(color: .black.opacity(0.6), radius: 24, x: 0, y: 12)
         }
+        .onAppear {
+            fileShelf.refreshItemStates()
+        }
     }
 
     private func quickPromptChip(_ title: String, action: @escaping () -> Void) -> some View {
@@ -546,21 +556,153 @@ struct DashboardView: View {
     }
 
     private var fileShelfSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("File Shelf")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white.opacity(0.8))
-
-            VStack(spacing: 6) {
-                Image(systemName: "tray.and.arrow.down")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.white.opacity(0.4))
-                Text("Drag files here to pin for quick access")
-                    .font(.system(size: 11))
+        let serviceIdentity = ObjectIdentifier(fileShelf)
+        let _ = print("[DASHBOARD] service identity = \(serviceIdentity)")
+        let _ = print("[DASHBOARD] fileShelf.items.count = \(fileShelf.items.count)")
+        let _ = print("[DASHBOARD] fileShelf.items names = \(fileShelf.items.map { $0.name })")
+        let _ = print("[DASHBOARD] rendering count = \(fileShelf.items.count)")
+        let _ = print("[DASHBOARD] rendering names = \(fileShelf.items.map { $0.name })")
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Pinned Files")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.8))
+                if !fileShelf.items.isEmpty {
+                    Text("(\(fileShelf.items.count))")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.cyan.opacity(0.85))
+                }
+                Spacer()
+                if !fileShelf.items.isEmpty {
+                    Button("Clear All") {
+                        fileShelf.clearShelf()
+                        setFeedback("Cleared all pinned files")
+                    }
+                    .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.5))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear all pinned files")
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4])).fill(Color.white.opacity(0.15)))
+
+            if fileShelf.items.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: isDashboardFileShelfDropTargeted ? "arrow.down.doc.fill" : "tray.and.arrow.down")
+                        .font(.system(size: 22))
+                        .foregroundStyle(isDashboardFileShelfDropTargeted ? .cyan : .white.opacity(0.35))
+                        .scaleEffect(isDashboardFileShelfDropTargeted ? 1.15 : 1.0)
+                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isDashboardFileShelfDropTargeted)
+
+                    Text(isDashboardFileShelfDropTargeted ? "Drop files to pin" : "Drop files here to keep them handy")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isDashboardFileShelfDropTargeted ? .cyan : .white.opacity(0.6))
+
+                    Text("Drag any file from Finder to pin for quick access")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(
+                            isDashboardFileShelfDropTargeted ? Color.cyan : Color.white.opacity(0.12),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
+                        )
+                )
+            } else {
+                ScrollView {
+                    VStack(spacing: 4) {
+                        ForEach(fileShelf.items) { item in
+                            let _ = print("[DASHBOARD] rendering item = \(item.name)")
+                            return HStack(spacing: 8) {
+                                Image(systemName: item.isMissing ? "exclamationmark.triangle.fill" : "doc.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(item.isMissing ? Color.orange : Color.cyan)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .lineLimit(1)
+                                        .foregroundStyle(item.isMissing ? .white.opacity(0.55) : .white.opacity(0.9))
+
+                                    if item.isMissing {
+                                        Text("Missing file")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(Color.orange.opacity(0.85))
+                                    }
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    if !fileShelf.openFile(item) {
+                                        setFeedback("Could not open: \(item.name)")
+                                    }
+                                } label: {
+                                    Image(systemName: "arrow.up.forward.app")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.cyan)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Open file")
+                                .accessibilityLabel("Open \(item.name)")
+                                .disabled(item.isMissing)
+
+                                Button {
+                                    if !fileShelf.revealFile(item) {
+                                        setFeedback("Could not reveal: \(item.name)")
+                                    }
+                                } label: {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.white.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
+                                .help("Reveal in Finder")
+                                .accessibilityLabel("Reveal \(item.name) in Finder")
+                                .disabled(item.isMissing)
+
+                                Button {
+                                    fileShelf.removeItem(id: item.id)
+                                    setFeedback("Removed \(item.name)")
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.red.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
+                                .help("Remove from shelf")
+                                .accessibilityLabel("Remove \(item.name)")
+                            }
+                            .padding(6)
+                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.04)))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if !fileShelf.openFile(item) {
+                                    setFeedback("Could not open: \(item.name)")
+                                }
+                            }
+                        }
+                    }
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(isDashboardFileShelfDropTargeted ? Color.cyan : Color.clear, lineWidth: 1.5)
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onDrop(of: [.fileURL, .item], isTargeted: $isDashboardFileShelfDropTargeted) { providers in
+            print("[DASHBOARD DROP] entered")
+            print("[DASHBOARD DROP] provider count = \(providers.count)")
+            let typeIDs = providers.map { $0.registeredTypeIdentifiers }
+            print("[DASHBOARD DROP] registered type identifiers = \(typeIDs)")
+            let accepted = fileShelf.handleDrop(providers: providers) { url in
+                setFeedback("File added to shelf: \(url.lastPathComponent)")
+            }
+            return accepted
         }
     }
 }

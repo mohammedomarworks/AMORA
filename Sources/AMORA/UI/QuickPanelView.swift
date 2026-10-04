@@ -16,6 +16,8 @@ struct QuickPanelView: View {
     @Bindable var vm = QuickPanelViewModel()
     @State private var selectedPage: Page = .controls
     @State private var celebrationActive = false
+    @State private var boundaryBounceOffset: CGFloat = 0
+    @State private var isFileShelfDropTargeted = false
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
     private var timer = TimerService.shared
@@ -120,6 +122,7 @@ struct QuickPanelView: View {
 
             pageContent
                 .padding(.horizontal, 14)
+                .offset(x: boundaryBounceOffset)
 
             Spacer(minLength: 4)
 
@@ -194,7 +197,17 @@ struct QuickPanelView: View {
     private func movePage(by offset: Int) {
         guard let index = Page.allCases.firstIndex(of: selectedPage) else { return }
         let next = min(max(index + offset, 0), Page.allCases.count - 1)
-        guard next != index else { return }
+        guard next != index else {
+            // At boundary: tactile spring resistance nudge
+            let nudge: CGFloat = offset > 0 ? -10 : 10
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) {
+                boundaryBounceOffset = nudge
+            }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.7).delay(0.1)) {
+                boundaryBounceOffset = 0
+            }
+            return
+        }
         withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
             selectedPage = Page.allCases[next]
         }
@@ -566,72 +579,119 @@ struct QuickPanelView: View {
                 Text("Pinned files")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.7))
+                if !fileShelf.items.isEmpty {
+                    Text("(\(fileShelf.items.count))")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.accent.opacity(0.85))
+                }
                 Spacer()
                 if !fileShelf.items.isEmpty {
                     Button("Clear") { fileShelf.clearShelf() }
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.5))
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Clear all pinned files")
                 }
             }
 
             if fileShelf.items.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "tray.and.arrow.down")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.white.opacity(0.3))
-                    Text("Drop files into File Shelf")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.5))
+                VStack(spacing: 8) {
+                    Image(systemName: isFileShelfDropTargeted ? "arrow.down.doc.fill" : "tray.and.arrow.down")
+                        .font(.system(size: 26))
+                        .foregroundStyle(isFileShelfDropTargeted ? palette.accent : .white.opacity(0.35))
+                        .scaleEffect(isFileShelfDropTargeted ? 1.15 : 1.0)
+                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFileShelfDropTargeted)
+
+                    Text(isFileShelfDropTargeted ? "Drop files to pin" : "Drop files into File Shelf")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isFileShelfDropTargeted ? palette.accent : .white.opacity(0.55))
+
+                    Text("Drag any file from Finder here")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.35))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 20)
+                .padding(.vertical, 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(
+                            isFileShelfDropTargeted ? palette.accent : Color.white.opacity(0.12),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
+                        )
+                )
             } else {
                 ScrollView {
                     VStack(spacing: 6) {
-                        ForEach(fileShelf.items.prefix(5)) { item in
+                        ForEach(fileShelf.items) { item in
                             HStack(spacing: 8) {
-                                Image(systemName: "doc")
-                                    .foregroundStyle(palette.accent)
-                                Text(item.name)
-                                    .font(.system(size: 11))
-                                    .lineLimit(1)
-                                    .foregroundStyle(.white.opacity(0.9))
-                                Spacer()
-                                Button { NSWorkspace.shared.open(item.url) } label: {
-                                    Image(systemName: "arrow.up.forward.app")
+                                Image(systemName: item.isMissing ? "exclamationmark.triangle.fill" : "doc.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(item.isMissing ? Color.orange : palette.accent)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .lineLimit(1)
+                                        .foregroundStyle(item.isMissing ? .white.opacity(0.55) : .white.opacity(0.9))
+
+                                    if item.isMissing {
+                                        Text("Missing file")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(Color.orange.opacity(0.85))
+                                    }
                                 }
+
+                                Spacer()
+
+                                Button {
+                                    _ = fileShelf.openFile(item)
+                                } label: {
+                                    Image(systemName: "arrow.up.forward.app")
+                                        .font(.system(size: 11))
+                                }
+                                .buttonStyle(.plain)
                                 .help("Open file")
                                 .accessibilityLabel("Open \(item.name)")
-                                Button { NSWorkspace.shared.activateFileViewerSelecting([item.url]) } label: {
+                                .disabled(item.isMissing)
+
+                                Button {
+                                    _ = fileShelf.revealFile(item)
+                                } label: {
                                     Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 11))
                                 }
+                                .buttonStyle(.plain)
                                 .help("Reveal in Finder")
                                 .accessibilityLabel("Reveal \(item.name) in Finder")
-                                Button { fileShelf.removeItem(id: item.id) } label: {
+                                .disabled(item.isMissing)
+
+                                Button {
+                                    fileShelf.removeItem(id: item.id)
+                                } label: {
                                     Image(systemName: "trash")
+                                        .font(.system(size: 11))
                                         .foregroundStyle(.red.opacity(0.7))
                                 }
+                                .buttonStyle(.plain)
+                                .help("Remove from shelf")
                                 .accessibilityLabel("Remove \(item.name)")
                             }
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.75))
                             .padding(8)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.05)))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                _ = fileShelf.openFile(item)
+                            }
                         }
                     }
                 }
-                .frame(height: 170)
+                .frame(height: 180)
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-            for provider in providers {
-                _ = provider.loadObject(ofClass: NSURL.self) { object, _ in
-                    guard let url = object as? NSURL else { return }
-                    Task { @MainActor in fileShelf.addFile(url: url as URL) }
-                }
-            }
-            return !providers.isEmpty
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onDrop(of: [.fileURL, .item], isTargeted: $isFileShelfDropTargeted) { providers in
+            fileShelf.handleDrop(providers: providers)
         }
     }
 }

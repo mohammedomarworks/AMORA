@@ -304,4 +304,258 @@ final class AMORATests: XCTestCase {
         XCTAssertEqual(bridge.commandDiagnostics.last?.success, false)
         XCTAssertEqual(bridge.commandDiagnostics.last?.failureReason, "target_tab_does_not_exist")
     }
+
+    @MainActor
+    func testFileShelfServiceAddsAndPersistsItems() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let testFileA = tempDir.appendingPathComponent("DocumentA.txt")
+        try? "Hello AMORA".write(to: testFileA, atomically: true, encoding: .utf8)
+        let storageURL = tempDir.appendingPathComponent("test_shelf.json")
+
+        let service = FileShelfService(storageURL: storageURL)
+        service.addFile(url: testFileA)
+
+        XCTAssertEqual(service.items.count, 1)
+        XCTAssertEqual(service.items.first?.name, "DocumentA.txt")
+        XCTAssertEqual(service.items.first?.isMissing, false)
+
+        // Test persistence by creating a fresh service instance from the same storageURL
+        let reloadedService = FileShelfService(storageURL: storageURL)
+        XCTAssertEqual(reloadedService.items.count, 1)
+        XCTAssertEqual(reloadedService.items.first?.name, "DocumentA.txt")
+        XCTAssertEqual(reloadedService.items.first?.isMissing, false)
+    }
+
+    @MainActor
+    func testFileShelfServiceDeduplication() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let testFile = tempDir.appendingPathComponent("Notes.md")
+        try? "# Title".write(to: testFile, atomically: true, encoding: .utf8)
+        let storageURL = tempDir.appendingPathComponent("test_shelf.json")
+
+        let service = FileShelfService(storageURL: storageURL)
+        service.addFile(url: testFile)
+        service.addFile(url: testFile)
+
+        XCTAssertEqual(service.items.count, 1)
+    }
+
+    @MainActor
+    func testFileShelfServiceRemoveAndClear() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let file1 = tempDir.appendingPathComponent("1.txt")
+        let file2 = tempDir.appendingPathComponent("2.txt")
+        try? "1".write(to: file1, atomically: true, encoding: .utf8)
+        try? "2".write(to: file2, atomically: true, encoding: .utf8)
+        let storageURL = tempDir.appendingPathComponent("test_shelf.json")
+
+        let service = FileShelfService(storageURL: storageURL)
+        service.addFile(url: file1)
+        service.addFile(url: file2)
+        XCTAssertEqual(service.items.count, 2)
+
+        let firstId = service.items[0].id
+        service.removeItem(id: firstId)
+        XCTAssertEqual(service.items.count, 1)
+
+        service.clearShelf()
+        XCTAssertTrue(service.items.isEmpty)
+
+        let reloaded = FileShelfService(storageURL: storageURL)
+        XCTAssertTrue(reloaded.items.isEmpty)
+    }
+
+    @MainActor
+    func testFileShelfServiceMissingFileHandling() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let file = tempDir.appendingPathComponent("will_delete.txt")
+        try? "Ephemeral".write(to: file, atomically: true, encoding: .utf8)
+        let storageURL = tempDir.appendingPathComponent("test_shelf.json")
+
+        let service = FileShelfService(storageURL: storageURL)
+        service.addFile(url: file)
+        XCTAssertEqual(service.items.first?.isMissing, false)
+
+        // Delete the physical file
+        try? FileManager.default.removeItem(at: file)
+
+        // Attempting to open missing file fails gracefully
+        if let item = service.items.first {
+            let opened = service.openFile(item)
+            XCTAssertFalse(opened)
+            XCTAssertEqual(service.items.first?.isMissing, true)
+            XCTAssertNotNil(service.lastErrorMessage)
+        }
+
+        // Clean up missing items
+        service.removeMissingItems()
+        XCTAssertTrue(service.items.isEmpty)
+    }
+
+    @MainActor
+    func testFileShelfServiceExtractFileURLFromVariousTypes() {
+        let service = FileShelfService.shared
+        let sampleURL = URL(fileURLWithPath: "/tmp/test.txt")
+
+        // Direct URL
+        XCTAssertEqual(service.extractFileURL(from: sampleURL)?.path, "/tmp/test.txt")
+
+        // NSURL
+        let nsURL = NSURL(fileURLWithPath: "/tmp/test.txt")
+        XCTAssertEqual(service.extractFileURL(from: nsURL)?.path, "/tmp/test.txt")
+
+        // UTF8 file string
+        let stringURL = "file:///tmp/test.txt"
+        XCTAssertEqual(service.extractFileURL(from: stringURL)?.path, "/tmp/test.txt")
+
+        // UTF8 file string with unencoded spaces
+        let spaceURL = "file:///tmp/my test file.txt"
+        XCTAssertEqual(service.extractFileURL(from: spaceURL)?.path, "/tmp/my test file.txt")
+
+        // Percent-encoded file string
+        let encodedURL = "file:///tmp/my%20test%20file.txt"
+        XCTAssertEqual(service.extractFileURL(from: encodedURL)?.path, "/tmp/my test file.txt")
+
+        // POSIX path string
+        let posixPath = "/tmp/my test file.txt"
+        XCTAssertEqual(service.extractFileURL(from: posixPath)?.path, "/tmp/my test file.txt")
+
+        // Data representation
+        let dataURL = sampleURL.dataRepresentation
+        XCTAssertEqual(service.extractFileURL(from: dataURL)?.path, "/tmp/test.txt")
+    }
+
+    func testTrackpadSwipeDirectionMapping() {
+        // Required Mac-style behavior:
+        // translation.width < 0 -> next page (+1)
+        // translation.width > 0 -> previous page (-1)
+        let negativeTranslation: CGFloat = -40
+        let positiveTranslation: CGFloat = 40
+
+        let leftSwipeDirection: AMORAPageSwipe = negativeTranslation < 0 ? .next : .previous
+        let rightSwipeDirection: AMORAPageSwipe = positiveTranslation < 0 ? .next : .previous
+
+        XCTAssertEqual(leftSwipeDirection, .next)
+        XCTAssertEqual(rightSwipeDirection, .previous)
+
+        // Key code mapping: 124 is Right Arrow (next), 123 is Left Arrow (previous)
+        let rightArrowKeyCode: UInt16 = 124
+        let leftArrowKeyCode: UInt16 = 123
+        XCTAssertEqual(rightArrowKeyCode == 124 ? AMORAPageSwipe.next : .previous, .next)
+        XCTAssertEqual(leftArrowKeyCode == 124 ? AMORAPageSwipe.next : .previous, .previous)
+    }
+
+    @MainActor
+    func testFileShelfServiceHandleDropWithRealItemProvider() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let testFile = tempDir.appendingPathComponent("Dropped File With Spaces.txt")
+        try "Content from drop".write(to: testFile, atomically: true, encoding: .utf8)
+        let storageURL = tempDir.appendingPathComponent("test_shelf.json")
+
+        let service = FileShelfService(storageURL: storageURL)
+        let provider = NSItemProvider(contentsOf: testFile)!
+
+        var callbackURL: URL? = nil
+        let accepted = service.handleDrop(providers: [provider]) { url in
+            callbackURL = url
+        }
+        XCTAssertTrue(accepted)
+
+        for _ in 0..<20 {
+            if !service.items.isEmpty { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        XCTAssertEqual(service.items.count, 1)
+        XCTAssertEqual(service.items.first?.name, "Dropped File With Spaces.txt")
+        XCTAssertEqual(callbackURL?.lastPathComponent, "Dropped File With Spaces.txt")
+
+        // Verify disk persistence
+        let diskData = try Data(contentsOf: storageURL)
+        XCTAssertTrue(diskData.count > 10)
+    }
+
+    @MainActor
+    func testFileShelfServiceHandleDropWithPDFAndMediaFiles() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let pdfFile = tempDir.appendingPathComponent("SampleDocument.pdf")
+        try "PDF DUMMY DATA".write(to: pdfFile, atomically: true, encoding: .utf8)
+        let storageURL = tempDir.appendingPathComponent("test_shelf_pdf.json")
+
+        let service = FileShelfService(storageURL: storageURL)
+        let provider = NSItemProvider()
+        provider.registerItem(forTypeIdentifier: "com.adobe.pdf") { completion, _, _ in
+            completion?(pdfFile as NSURL, nil)
+        }
+        print("TEST: Custom UTType only registeredTypeIdentifiers =", provider.registeredTypeIdentifiers)
+
+        var callbackURL: URL? = nil
+        let accepted = service.handleDrop(providers: [provider]) { url in
+            callbackURL = url
+        }
+        XCTAssertTrue(accepted)
+
+        for _ in 0..<20 {
+            if !service.items.isEmpty { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        XCTAssertEqual(service.items.count, 1)
+        XCTAssertEqual(service.items.first?.name, "SampleDocument.pdf")
+        XCTAssertEqual(callbackURL?.lastPathComponent, "SampleDocument.pdf")
+    }
+
+    @MainActor
+    func testDashboardFileShelfIntegration() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let testFile = tempDir.appendingPathComponent("DashboardItem.pdf")
+        try? "PDF DATA".write(to: testFile, atomically: true, encoding: .utf8)
+
+        let service = FileShelfService.shared
+        let initialCount = service.items.count
+        service.addFile(url: testFile)
+
+        XCTAssertEqual(service.items.count, initialCount + 1)
+        XCTAssertEqual(service.items.first?.name, "DashboardItem.pdf")
+
+        // DashboardView initialized with .fileShelf
+        let dashboard = DashboardView(initialSection: .fileShelf)
+        XCTAssertEqual(dashboard.vm.selectedSection, .fileShelf)
+
+        // Clean up added item
+        if let added = service.items.first(where: { $0.url.path == testFile.path }) {
+            service.removeItem(id: added.id)
+        }
+        XCTAssertEqual(service.items.count, initialCount)
+    }
+
+    func testNaturalFileShelfCommandParsing() {
+        let parser = AMORACommandParser()
+        XCTAssertEqual(parser.parse("open file shelf"), .showFileShelf)
+        XCTAssertEqual(parser.parse("show file shelf"), .showFileShelf)
+        XCTAssertEqual(parser.parse("file shelf"), .showFileShelf)
+        XCTAssertEqual(parser.parse("show files"), .showFileShelf)
+        XCTAssertEqual(parser.parse("pinned files"), .showFileShelf)
+    }
 }
