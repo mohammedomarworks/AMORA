@@ -12,6 +12,12 @@ enum AMORACommand: Equatable {
     case pauseMusic
     case nextTrack
     case previousTrack
+    case playSpotify
+    case pauseSpotify
+    case nextSpotify
+    case previousSpotify
+    case playAppleMusic
+    case pauseAppleMusic
     case showBattery
     case showClipboard
     case showNotes
@@ -70,10 +76,31 @@ struct AMORACommandParser {
         if normalized.contains("pause timer") { return .pauseTimer }
         if normalized.contains("resume timer") { return .resumeTimer }
 
-        if normalized == "play" || normalized == "play music" || normalized == "start music" {
+        if normalized == "play spotify" || normalized == "start spotify" || normalized == "resume spotify" {
+            return .playSpotify
+        }
+        if normalized == "pause spotify" || normalized == "stop spotify" {
+            return .pauseSpotify
+        }
+        if normalized == "next spotify" || normalized == "skip spotify" || normalized == "next song spotify" || normalized == "next track spotify" || normalized == "next song on spotify" || normalized == "next track on spotify" {
+            return .nextSpotify
+        }
+        if normalized == "previous spotify" || normalized == "previous song spotify" || normalized == "previous track spotify" || normalized == "previous song on spotify" || normalized == "previous track on spotify" {
+            return .previousSpotify
+        }
+        if normalized == "play apple music" || normalized == "start apple music" {
+            return .playAppleMusic
+        }
+        if normalized == "pause apple music" || normalized == "stop apple music" {
+            return .pauseAppleMusic
+        }
+
+        if normalized == "play" || normalized == "play music" || normalized == "start music" || normalized == "play the music" || normalized == "resume music" {
             return .playMusic
         }
-        if normalized == "pause music" { return .pauseMusic }
+        if normalized == "pause music" || normalized == "pause the music" || normalized == "stop music" {
+            return .pauseMusic
+        }
         if normalized == "next" || normalized == "next song" || normalized == "next track" || normalized == "skip" {
             return .nextTrack
         }
@@ -274,6 +301,50 @@ final class AMORACommandRouter {
             TimerService.shared.stopTimer()
             context.activeTimer = false
             result = .success(message: "Timer stopped.")
+        case .playSpotify:
+            guard SpotifyProvider.shared.isInstalled else {
+                result = .failure(message: "Spotify is not installed on this Mac.")
+                break
+            }
+            if SpotifyProvider.shared.hasPermissionDenied {
+                result = .failure(message: "AMORA needs Automation permission to control Spotify. You can enable it in System Settings > Privacy & Security > Automation.")
+                break
+            }
+            MusicService.shared.play(preferredSource: .spotify)
+            context.lastModule = "music"
+            context.activeMedia = true
+            result = .success(message: "Spotify playing.")
+        case .pauseSpotify:
+            guard SpotifyProvider.shared.isRunning else {
+                result = .failure(message: "Spotify is not running.")
+                break
+            }
+            MusicService.shared.pause(preferredSource: .spotify)
+            context.activeMedia = false
+            result = .success(message: "Spotify paused.")
+        case .nextSpotify:
+            guard SpotifyProvider.shared.isRunning else {
+                result = .failure(message: "Spotify is not running.")
+                break
+            }
+            MusicService.shared.nextTrack(preferredSource: .spotify)
+            result = .success(message: "Next track on Spotify.")
+        case .previousSpotify:
+            guard SpotifyProvider.shared.isRunning else {
+                result = .failure(message: "Spotify is not running.")
+                break
+            }
+            MusicService.shared.previousTrack(preferredSource: .spotify)
+            result = .success(message: "Previous track on Spotify.")
+        case .playAppleMusic:
+            MusicService.shared.play(preferredSource: .appleMusic)
+            context.lastModule = "music"
+            context.activeMedia = true
+            result = .success(message: "Apple Music playing.")
+        case .pauseAppleMusic:
+            MusicService.shared.pause(preferredSource: .appleMusic)
+            context.activeMedia = false
+            result = .success(message: "Apple Music paused.")
         case .playMusic:
             MusicService.shared.play()
             context.lastModule = "music"

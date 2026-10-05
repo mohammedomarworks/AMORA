@@ -51,7 +51,7 @@ struct AMORAToolResult: Equatable, Sendable {
         case let .addTimerTime(seconds): guard TimerService.shared.isRunning else { return .init(tool: .timer, status: .needsInformation, message: "There isn't an active timer to extend.") }; TimerService.shared.addTime(seconds: seconds); return .init(tool: .timer, status: .success, message: "Added \(Self.durationText(seconds)) to the timer.")
         case .readMedia:
             MusicService.shared.checkCurrentTrack(); guard MusicService.shared.isAvailable else { return .init(tool: .music, status: .unsupported, message: "I couldn't find active media.") }
-            let source = MusicService.shared.source == .youtube ? "YouTube" : "Music"; let title = MusicService.shared.trackTitle
+            let source = MusicService.shared.source.displayName; let title = MusicService.shared.trackTitle
             return .init(tool: .music, status: .success, message: "\(MusicService.shared.isPlaying ? "Playing" : "Paused"): \(title) on \(source).", data: ["title": title, "source": source, "playing": MusicService.shared.isPlaying ? "true" : "false"])
         case .playMedia: return mediaControl(playing: true)
         case .pauseMedia: return mediaControl(playing: false)

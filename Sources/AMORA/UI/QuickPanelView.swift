@@ -248,7 +248,7 @@ struct QuickPanelView: View {
             // Music Card
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
-                    Image(systemName: music.source == .youtube ? "play.rectangle.fill" : "music.note")
+                    Image(systemName: music.source == .spotify ? "waveform" : (music.source == .youtube ? "play.rectangle.fill" : "music.note"))
                         .font(.system(size: 16))
                         .foregroundStyle(palette.accent)
                         .frame(width: 36, height: 36)
@@ -256,11 +256,25 @@ struct QuickPanelView: View {
                         .opacity(music.isPlaying ? 0.7 + robot.antennaPhase * 0.3 : 1)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(music.source == .youtube ? "YouTube" : music.trackTitle)
-                            .font(.system(size: 12, weight: .semibold))
-                            .lineLimit(1)
-                            .foregroundStyle(.white)
-                        if music.source == .youtube {
+                        if music.source == .spotify {
+                            Text("Spotify")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundStyle(palette.accent)
+                            Text(music.trackTitle)
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                                .foregroundStyle(.white)
+                            if !music.artist.isEmpty {
+                                Text(music.artist)
+                                    .font(.system(size: 10))
+                                    .lineLimit(1)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        } else if music.source == .youtube {
+                            Text("YouTube")
+                                .font(.system(size: 12, weight: .semibold))
+                                .lineLimit(1)
+                                .foregroundStyle(.white)
                             Text(music.trackTitle)
                                 .font(.system(size: 10))
                                 .lineLimit(1)
@@ -271,11 +285,26 @@ struct QuickPanelView: View {
                                 .font(.system(size: 9))
                                 .lineLimit(1)
                                 .foregroundStyle(.white.opacity(0.55))
-                        } else if !music.artist.isEmpty {
-                            Text(music.artist)
-                                .font(.system(size: 10))
+                        } else if music.source == .appleMusic {
+                            Text(music.trackTitle)
+                                .font(.system(size: 12, weight: .semibold))
                                 .lineLimit(1)
-                                .foregroundStyle(.white.opacity(0.6))
+                                .foregroundStyle(.white)
+                            if !music.artist.isEmpty {
+                                Text(music.artist)
+                                    .font(.system(size: 10))
+                                    .lineLimit(1)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        } else {
+                            Text(music.unavailableMessage ?? "No Media Playing")
+                                .font(.system(size: 12, weight: .semibold))
+                                .lineLimit(1)
+                                .foregroundStyle(.white)
+                            Text("Apple Music • Spotify • YouTube")
+                                .font(.system(size: 9))
+                                .lineLimit(1)
+                                .foregroundStyle(.white.opacity(0.45))
                         }
                     }
 
@@ -290,7 +319,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Previous track")
-                        .disabled(music.source == .none || (music.source == .youtube && music.browserMediaState?.capabilities.supportsPrevious != true))
+                        .disabled(!music.capabilities.supportsPrevious || !music.isAvailable)
 
                         Button {
                             music.togglePlayPause()
@@ -300,7 +329,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
-                        .disabled(music.source == .none || music.controlPending || (music.source == .youtube && (music.browserMediaState?.isPlaying == true ? music.browserMediaState?.capabilities.supportsPause != true : music.browserMediaState?.capabilities.supportsPlay != true)))
+                        .disabled(!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none))
 
                         Button {
                             music.nextTrack()
@@ -310,7 +339,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Next track")
-                        .disabled(music.source == .none || (music.source == .youtube && music.browserMediaState?.capabilities.supportsNext != true))
+                        .disabled(!music.capabilities.supportsNext || !music.isAvailable)
                     }
                     .foregroundStyle(.white.opacity(0.9))
                     if let status = music.controlStatus ?? music.controlError {

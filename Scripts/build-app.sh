@@ -69,6 +69,8 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <false/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>AMORA uses Apple Events to control playback in Apple Music and Spotify.</string>
 </dict>
 </plist>
 EOF

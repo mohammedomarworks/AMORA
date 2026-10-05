@@ -125,6 +125,30 @@ struct SettingsView: View {
                 Toggle("Quick Notes", isOn: $settings.notesEnabled)
                 Toggle("System Monitor", isOn: $settings.systemMonitorEnabled)
             }
+            Section("Desktop Music") {
+                LabeledContent("Active Provider", value: music.source.displayName)
+                LabeledContent("Spotify Desktop", value: spotifyStatusDescription)
+                if !SpotifyProvider.shared.isInstalled {
+                    Text("Spotify is not installed on this Mac.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if SpotifyProvider.shared.hasPermissionDenied {
+                    HStack {
+                        Text("Automation permission is required to control Spotify.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Button("Open Settings") {
+                            SpotifyProvider.openAutomationSettings()
+                        }
+                        .font(.caption)
+                    }
+                }
+                LabeledContent("Apple Music", value: appleMusicStatusDescription)
+                if music.isAvailable {
+                    LabeledContent("Current Track", value: "\(music.trackTitle) — \(music.artist)")
+                }
+            }
             Section("Browser media") {
                 LabeledContent("Chrome", value: chromeBridge.status.rawValue)
                 LabeledContent("Safari", value: "Not Connected")
@@ -164,6 +188,26 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var music: MusicService { MusicService.shared }
+
+    private var spotifyStatusDescription: String {
+        let provider = SpotifyProvider.shared
+        guard provider.isInstalled else { return "Not Installed" }
+        if provider.hasPermissionDenied { return "Permission Required" }
+        if provider.isRunning {
+            if let track = provider.currentTrack {
+                return track.isPlaying ? "Playing" : "Paused"
+            }
+            return "Running"
+        }
+        return "Not Running"
+    }
+
+    private var appleMusicStatusDescription: String {
+        let isRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+        return isRunning ? "Running" : "Not Running"
     }
 
     private var youtubeStatus: String {

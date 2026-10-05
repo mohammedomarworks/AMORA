@@ -9,6 +9,7 @@ final class PermissionManager {
 
     enum Permission: String, CaseIterable, Sendable {
         case accessibility = "Accessibility"
+        case automation = "Automation"
         case calendar = "Calendar"
         case files = "Files"
         case notifications = "Notifications"
@@ -26,7 +27,15 @@ final class PermissionManager {
         return AXIsProcessTrusted()
     }
 
+    func checkAutomation(bundleIdentifier: String = "com.spotify.client") -> Bool {
+        SpotifyProvider.checkAutomationPermission()
+    }
+
     func openSystemSettings(for permission: Permission? = nil) {
+        if permission == .automation {
+            SpotifyProvider.openAutomationSettings()
+            return
+        }
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") else { return }
         NSWorkspace.shared.open(url)
     }
@@ -35,6 +44,8 @@ final class PermissionManager {
         switch permission {
         case .accessibility:
             return checkAccessibility()
+        case .automation:
+            return checkAutomation()
         default:
             return false
         }

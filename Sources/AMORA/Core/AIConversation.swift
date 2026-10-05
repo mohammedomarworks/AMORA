@@ -28,9 +28,9 @@ enum AIContextComposer {
             let timer = TimerService.shared
             if timer.isRunning { facts.append("Active timer: \(timer.remainingSeconds) seconds remaining\(timer.isPaused ? ", paused" : "")") }
         }
-        if normalized.contains("music") || normalized.contains("song") || normalized.contains("track") {
+        if normalized.contains("music") || normalized.contains("song") || normalized.contains("track") || normalized.contains("spotify") {
             let music = MusicService.shared
-            if !music.trackTitle.isEmpty { facts.append("Current music: \(music.trackTitle) by \(music.artist)") }
+            if !music.trackTitle.isEmpty { facts.append("Current music: \(music.trackTitle) by \(music.artist) on \(music.source.displayName)") }
         }
         return facts.isEmpty ? nil : "Relevant local context (use only if helpful):\n" + facts.joined(separator: "\n")
     }

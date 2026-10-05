@@ -105,9 +105,24 @@ struct DashboardView: View {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 // Music Card
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Image(systemName: "music.note")
-                            .foregroundStyle(.pink)
+                    HStack(spacing: 6) {
+                        Image(systemName: music.source == .spotify ? "waveform" : (music.source == .youtube ? "play.rectangle.fill" : "music.note"))
+                            .foregroundStyle(music.source == .spotify ? Color.green : (music.source == .youtube ? Color.red : Color.pink))
+                        if music.source == .spotify {
+                            Text("SPOTIFY")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.green)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.green.opacity(0.15)))
+                        } else if music.source == .youtube {
+                            Text("YOUTUBE")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.red)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.red.opacity(0.15)))
+                        }
                         Spacer()
                         Button {
                             music.togglePlayPause()
@@ -117,13 +132,13 @@ struct DashboardView: View {
                                 .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)
-                        .disabled(music.source == .none || music.controlPending || (music.source == .youtube && (music.isPlaying ? music.browserMediaState?.capabilities.supportsPause != true : music.browserMediaState?.capabilities.supportsPlay != true)))
+                        .disabled(!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none))
                     }
                     Text(music.trackTitle)
                         .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
                         .foregroundStyle(.white)
-                    Text(music.artist.isEmpty ? "Music" : music.artist)
+                    Text(music.artist.isEmpty ? (music.source == .spotify ? "Spotify" : "Music") : music.artist)
                         .font(.system(size: 10))
                         .lineLimit(1)
                         .foregroundStyle(.white.opacity(0.6))

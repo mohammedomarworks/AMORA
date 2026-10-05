@@ -558,4 +558,290 @@ final class AMORATests: XCTestCase {
         XCTAssertEqual(parser.parse("show files"), .showFileShelf)
         XCTAssertEqual(parser.parse("pinned files"), .showFileShelf)
     }
+
+    // MARK: - Spotify Desktop Tests
+
+    func testSpotifyAppleScriptParsingPlayingAndPaused() {
+        let rawPlaying = "playing|||Starboy|||The Weeknd|||Starboy|||230000|||65.4"
+        let playingTrack = SpotifyProvider.parseAppleScriptOutput(rawPlaying)
+        XCTAssertNotNil(playingTrack)
+        XCTAssertEqual(playingTrack?.title, "Starboy")
+        XCTAssertEqual(playingTrack?.artist, "The Weeknd")
+        XCTAssertEqual(playingTrack?.album, "Starboy")
+        XCTAssertEqual(playingTrack?.duration, 230.0)
+        XCTAssertEqual(playingTrack?.position, 65.4)
+        XCTAssertEqual(playingTrack?.isPlaying, true)
+
+        let rawPaused = "paused|||Blinding Lights|||The Weeknd|||After Hours|||200000|||12.5"
+        let pausedTrack = SpotifyProvider.parseAppleScriptOutput(rawPaused)
+        XCTAssertNotNil(pausedTrack)
+        XCTAssertEqual(pausedTrack?.title, "Blinding Lights")
+        XCTAssertEqual(pausedTrack?.artist, "The Weeknd")
+        XCTAssertEqual(pausedTrack?.album, "After Hours")
+        XCTAssertEqual(pausedTrack?.duration, 200.0)
+        XCTAssertEqual(pausedTrack?.position, 12.5)
+        XCTAssertEqual(pausedTrack?.isPlaying, false)
+    }
+
+    func testSpotifyAppleScriptParsingMalformedAndStoppedResponses() {
+        XCTAssertNil(SpotifyProvider.parseAppleScriptOutput("stopped|||||||||0|||0"))
+        XCTAssertNil(SpotifyProvider.parseAppleScriptOutput(""))
+        XCTAssertNil(SpotifyProvider.parseAppleScriptOutput("not_running"))
+        XCTAssertNil(SpotifyProvider.parseAppleScriptOutput("paused|||ERROR: Spotify got an error: User canceled."))
+        XCTAssertNil(SpotifyProvider.parseAppleScriptOutput("playing|||"))
+        XCTAssertNil(SpotifyProvider.parseAppleScriptOutput("invalid_response_without_tokens"))
+
+        let fallbackTrack = SpotifyProvider.parseAppleScriptOutput("paused|||Track Name|||Artist Name|||Album Name|||invalid_dur|||invalid_pos")
+        XCTAssertNotNil(fallbackTrack)
+        XCTAssertEqual(fallbackTrack?.title, "Track Name")
+        XCTAssertEqual(fallbackTrack?.artist, "Artist Name")
+        XCTAssertEqual(fallbackTrack?.album, "Album Name")
+        XCTAssertEqual(fallbackTrack?.duration, 0)
+        XCTAssertEqual(fallbackTrack?.position, 0)
+        XCTAssertEqual(fallbackTrack?.isPlaying, false)
+    }
+
+    func testSpotifyNotificationUserInfoParsing() {
+        let userInfo: [AnyHashable: Any] = [
+            "Name": "Naal Naal Ve",
+            "Artist": "Darshan Raval",
+            "Album": "Naal Naal Ve",
+            "Player State": "Playing",
+            "Duration": 187806,
+            "Playback Position": 41.428,
+            "Track ID": "spotify:track:2TFbVOp5TlWXjYYordWhC6"
+        ]
+        let track = SpotifyProvider.parseNotificationUserInfo(userInfo)
+        XCTAssertNotNil(track)
+        XCTAssertEqual(track?.title, "Naal Naal Ve")
+        XCTAssertEqual(track?.artist, "Darshan Raval")
+        XCTAssertEqual(track?.album, "Naal Naal Ve")
+        XCTAssertEqual(track?.duration, 187.806)
+        XCTAssertEqual(track?.position, 41.428)
+        XCTAssertEqual(track?.isPlaying, true)
+        XCTAssertEqual(track?.trackId, "spotify:track:2TFbVOp5TlWXjYYordWhC6")
+
+        // Notification without name (e.g. stopped) returns nil
+        let stoppedInfo: [AnyHashable: Any] = [
+            "Player State": "Stopped"
+        ]
+        XCTAssertNil(SpotifyProvider.parseNotificationUserInfo(stoppedInfo))
+    }
+
+    func testSpotifyProviderCapabilitiesExplicit() {
+        let spotifyCaps = SpotifyProvider.capabilities
+        XCTAssertTrue(spotifyCaps.supportsPlay)
+        XCTAssertTrue(spotifyCaps.supportsPause)
+        XCTAssertTrue(spotifyCaps.supportsNext)
+        XCTAssertTrue(spotifyCaps.supportsPrevious)
+        XCTAssertTrue(spotifyCaps.supportsSeek)
+
+        let ytCaps = MediaCapabilities.youtube
+        XCTAssertTrue(ytCaps.supportsPlay)
+        XCTAssertTrue(ytCaps.supportsPause)
+        XCTAssertFalse(ytCaps.supportsNext)
+        XCTAssertFalse(ytCaps.supportsPrevious)
+        XCTAssertFalse(ytCaps.supportsSeek)
+
+        let noneCaps = MediaCapabilities.none
+        XCTAssertFalse(noneCaps.supportsPlay)
+        XCTAssertFalse(noneCaps.supportsPause)
+        XCTAssertFalse(noneCaps.supportsNext)
+        XCTAssertFalse(noneCaps.supportsPrevious)
+        XCTAssertFalse(noneCaps.supportsSeek)
+    }
+
+    func testSpotifyUnavailableErrorDescriptions() {
+        XCTAssertEqual(SpotifyError.notInstalled.localizedDescription, "Spotify is not installed on this Mac.")
+        XCTAssertEqual(SpotifyError.notRunning.localizedDescription, "Spotify is not currently running.")
+        XCTAssertTrue(SpotifyError.permissionDenied.localizedDescription.contains("Automation permission"))
+        XCTAssertEqual(SpotifyError.timedOut.localizedDescription, "Spotify took too long to respond.")
+        XCTAssertEqual(SpotifyError.scriptExecutionFailed("Apple Event timed out").localizedDescription, "Spotify control failed: Apple Event timed out")
+    }
+
+    func testNaturalSpotifyCommandParsing() {
+        let parser = AMORACommandParser()
+        XCTAssertEqual(parser.parse("play spotify"), .playSpotify)
+        XCTAssertEqual(parser.parse("start spotify"), .playSpotify)
+        XCTAssertEqual(parser.parse("resume spotify"), .playSpotify)
+        XCTAssertEqual(parser.parse("pause spotify"), .pauseSpotify)
+        XCTAssertEqual(parser.parse("stop spotify"), .pauseSpotify)
+        XCTAssertEqual(parser.parse("next spotify"), .nextSpotify)
+        XCTAssertEqual(parser.parse("skip spotify"), .nextSpotify)
+        XCTAssertEqual(parser.parse("previous spotify"), .previousSpotify)
+        XCTAssertEqual(parser.parse("next song on spotify"), .nextSpotify)
+        XCTAssertEqual(parser.parse("previous track on spotify"), .previousSpotify)
+
+        XCTAssertEqual(parser.parse("play apple music"), .playAppleMusic)
+        XCTAssertEqual(parser.parse("pause apple music"), .pauseAppleMusic)
+        XCTAssertEqual(parser.parse("pause the music"), .pauseMusic)
+        XCTAssertEqual(parser.parse("play the music"), .playMusic)
+        XCTAssertEqual(parser.parse("next song"), .nextTrack)
+        XCTAssertEqual(parser.parse("previous song"), .previousTrack)
+    }
+
+    func testSpotifyCommandRouting() {
+        let router = AMORACommandRouter.shared
+
+        // If Spotify is not running, pauseSpotify returns failure with clear explanation
+        if !SpotifyProvider.shared.isRunning {
+            let pauseResult = router.execute(.pauseSpotify)
+            XCTAssertEqual(pauseResult, .failure(message: "Spotify is not running."))
+
+            let nextResult = router.execute(.nextSpotify)
+            XCTAssertEqual(nextResult, .failure(message: "Spotify is not running."))
+        }
+
+        // Test playSpotify returns success if Spotify is installed
+        if SpotifyProvider.shared.isInstalled && !SpotifyProvider.shared.hasPermissionDenied {
+            let playResult = router.execute(.playSpotify)
+            XCTAssertEqual(playResult, .success(message: "Spotify playing."))
+        }
+    }
+
+    func testProviderSelectionPolicy() {
+        let spotifyPlayingTrack = SpotifyTrack(
+            title: "Spotify Track",
+            artist: "Spotify Artist",
+            album: "Spotify Album",
+            duration: 180,
+            position: 20,
+            isPlaying: true
+        )
+        let spotifyPausedTrack = SpotifyTrack(
+            title: "Spotify Track",
+            artist: "Spotify Artist",
+            album: "Spotify Album",
+            duration: 180,
+            position: 20,
+            isPlaying: false
+        )
+
+        let youtubePlaying = BrowserMediaState(
+            browser: .chrome,
+            provider: .youtube,
+            title: "YouTube Video",
+            artistOrChannel: "Channel",
+            isPlaying: true,
+            currentTime: 45,
+            duration: 300,
+            url: "https://youtube.com/watch?v=test",
+            thumbnailURL: nil,
+            lastUpdated: Date(),
+            controlAvailable: true,
+            capabilities: .youtube,
+            tabId: 1,
+            windowId: 1,
+            isActive: true,
+            isInBackground: false,
+            trackedMediaTabCount: 1,
+            contentScriptReady: true,
+            hasVideo: true
+        )
+        let youtubePaused = BrowserMediaState(
+            browser: .chrome,
+            provider: .youtube,
+            title: "YouTube Video",
+            artistOrChannel: "Channel",
+            isPlaying: false,
+            currentTime: 45,
+            duration: 300,
+            url: "https://youtube.com/watch?v=test",
+            thumbnailURL: nil,
+            lastUpdated: Date(),
+            controlAvailable: true,
+            capabilities: .youtube,
+            tabId: 1,
+            windowId: 1,
+            isActive: true,
+            isInBackground: false,
+            trackedMediaTabCount: 1,
+            contentScriptReady: true,
+            hasVideo: true
+        )
+
+        let appleMusicPlaying = AppleMusicTrack(
+            title: "Apple Track",
+            artist: "Apple Artist",
+            album: "Apple Album",
+            duration: 210,
+            position: 30,
+            isPlaying: true
+        )
+
+        // 1. Actively playing Spotify beats paused YouTube
+        let sel1 = MusicService.selectActiveProvider(
+            browserMedia: youtubePaused,
+            spotifyTrack: spotifyPlayingTrack,
+            isSpotifyRunning: true,
+            appleMusicTrack: nil,
+            previousSource: .none,
+            preferredSource: nil
+        )
+        XCTAssertEqual(sel1.source, .spotify)
+        XCTAssertEqual(sel1.title, "Spotify Track")
+        XCTAssertTrue(sel1.isPlaying)
+
+        // 2. Actively playing YouTube beats paused Spotify
+        let sel2 = MusicService.selectActiveProvider(
+            browserMedia: youtubePlaying,
+            spotifyTrack: spotifyPausedTrack,
+            isSpotifyRunning: true,
+            appleMusicTrack: nil,
+            previousSource: .none,
+            preferredSource: nil
+        )
+        XCTAssertEqual(sel2.source, .youtube)
+        XCTAssertEqual(sel2.title, "YouTube Video")
+        XCTAssertTrue(sel2.isPlaying)
+
+        // 3. Actively playing Apple Music beats paused Spotify
+        let sel3 = MusicService.selectActiveProvider(
+            browserMedia: nil,
+            spotifyTrack: spotifyPausedTrack,
+            isSpotifyRunning: true,
+            appleMusicTrack: appleMusicPlaying,
+            previousSource: .none,
+            preferredSource: nil
+        )
+        XCTAssertEqual(sel3.source, .appleMusic)
+        XCTAssertEqual(sel3.title, "Apple Track")
+        XCTAssertTrue(sel3.isPlaying)
+
+        // 4. Paused continuity: when none is playing, preserve recent active provider
+        let sel4 = MusicService.selectActiveProvider(
+            browserMedia: youtubePaused,
+            spotifyTrack: spotifyPausedTrack,
+            isSpotifyRunning: true,
+            appleMusicTrack: nil,
+            previousSource: .spotify,
+            preferredSource: nil
+        )
+        XCTAssertEqual(sel4.source, .spotify)
+        XCTAssertFalse(sel4.isPlaying)
+
+        let sel5 = MusicService.selectActiveProvider(
+            browserMedia: youtubePaused,
+            spotifyTrack: spotifyPausedTrack,
+            isSpotifyRunning: true,
+            appleMusicTrack: nil,
+            previousSource: .youtube,
+            preferredSource: nil
+        )
+        XCTAssertEqual(sel5.source, .youtube)
+        XCTAssertFalse(sel5.isPlaying)
+
+        // 5. Fallback to none when Spotify quits / is not running
+        let sel6 = MusicService.selectActiveProvider(
+            browserMedia: nil,
+            spotifyTrack: nil,
+            isSpotifyRunning: false,
+            appleMusicTrack: nil,
+            previousSource: .spotify,
+            preferredSource: nil
+        )
+        XCTAssertEqual(sel6.source, .none)
+        XCTAssertEqual(sel6.title, "No Media Playing")
+        XCTAssertFalse(sel6.isAvailable)
+    }
 }
