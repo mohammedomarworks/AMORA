@@ -2,6 +2,22 @@ import Cocoa
 import QuartzCore
 import SwiftUI
 
+/// Custom NSWindow for AMORA's Dynamic Island. Standard borderless windows
+/// have `canBecomeKey = false` and `canBecomeMain = false` by default in AppKit,
+/// which prevents child text fields (such as the Workspace AI search bar)
+/// from gaining focus, displaying a cursor, or accepting keyboard input.
+/// When expanded or transitioning, this window enables key and main status.
+@MainActor
+final class DynamicIslandWindow: NSWindow {
+    override var canBecomeKey: Bool {
+        IslandModel.shared.isExpanded || IslandModel.shared.targetState != .collapsed
+    }
+
+    override var canBecomeMain: Bool {
+        IslandModel.shared.isExpanded || IslandModel.shared.targetState != .collapsed
+    }
+}
+
 /// Owns every on-screen surface AMORA presents. The notch experience is a SINGLE
 /// window that physically occupies the hardware notch when collapsed and morphs
 /// downward into a Dynamic Island when expanded — there is no separate pill or panel.
@@ -128,7 +144,7 @@ final class WindowManager {
         }
 
         let frame = collapsedFrame(on: screen)
-        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = DynamicIslandWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -245,6 +261,7 @@ final class WindowManager {
             IslandModel.shared.expansion = 0.0
             return
         }
+        islandWindow?.makeFirstResponder(nil)
         IslandModel.shared.targetState = .collapsed
         AppState.shared.isQuickPanelOpen = false
         AppState.shared.isDashboardOpen = false
@@ -373,6 +390,7 @@ final class WindowManager {
             AppState.shared.isDashboardOpen = true
             AppState.shared.isQuickPanelOpen = false
             islandWindow?.setFrame(workspaceFrame(on: screen), display: true)
+            islandWindow?.makeKey()
         } else if springTarget >= 0.5 {
             IslandModel.shared.displayState = .quick
             IslandModel.shared.targetState = .quick

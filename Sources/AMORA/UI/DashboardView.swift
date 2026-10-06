@@ -13,6 +13,7 @@ struct DashboardView: View {
     var embedded: Bool = false
     var topInset: CGFloat = 0
     @Bindable var vm: DashboardViewModel
+    @FocusState private var isInputFocused: Bool
     @State private var isDashboardFileShelfDropTargeted = false
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
@@ -331,6 +332,7 @@ struct DashboardView: View {
                     TextField("Try ‘start a 25 minute timer’…", text: $vm.commandInput)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
+                        .focused($isInputFocused)
                         .onChange(of: vm.commandInput) { _, value in
                             vm.suggestions = suggestions(for: value)
                         }
@@ -351,6 +353,10 @@ struct DashboardView: View {
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    isInputFocused = true
+                }
 
                 if !vm.suggestions.isEmpty {
                     HStack(spacing: 6) {

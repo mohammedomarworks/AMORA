@@ -300,7 +300,7 @@ struct DynamicIslandView: View {
         .opacity(contentProgress)
         .offset(y: translateY)
         .scaleEffect(scale, anchor: .top)
-        .allowsHitTesting(island.displayState == .workspace && e >= 1.85)
+        .allowsHitTesting((island.displayState == .workspace || island.targetState == .workspace) && e >= 1.5)
     }
 }
 

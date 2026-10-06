@@ -1053,4 +1053,44 @@ final class AMORATests: XCTestCase {
         }
         XCTAssertEqual(service.items.count, initialCount)
     }
+
+    @MainActor
+    func testDynamicIslandWindowKeyAndMainCapability() {
+        let window = DynamicIslandWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 40),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        // When collapsed, the island should not become key or steal focus from other apps
+        IslandModel.shared.expansion = 0.0
+        IslandModel.shared.targetState = .collapsed
+        IslandModel.shared.displayState = .collapsed
+        XCTAssertFalse(window.canBecomeKey, "Collapsed island window must not become key")
+        XCTAssertFalse(window.canBecomeMain, "Collapsed island window must not become main")
+
+        // When transitioning or expanded to Workspace, it must be able to become key for text input
+        IslandModel.shared.targetState = .workspace
+        XCTAssertTrue(window.canBecomeKey, "Workspace island window must be able to become key for text field focus")
+        XCTAssertTrue(window.canBecomeMain, "Workspace island window must be able to become main")
+
+        // When transitioning or expanded to Quick Island, it must also be able to become key
+        IslandModel.shared.targetState = .quick
+        XCTAssertTrue(window.canBecomeKey, "Quick island window must be able to become key")
+        XCTAssertTrue(window.canBecomeMain, "Quick island window must be able to become main")
+
+        // When expansion > 0.05 even if targetState was collapsed, it remains keyable during transitions
+        IslandModel.shared.targetState = .collapsed
+        IslandModel.shared.expansion = 2.0
+        XCTAssertTrue(window.canBecomeKey)
+        XCTAssertTrue(window.canBecomeMain)
+
+        // Restore to default state
+        IslandModel.shared.expansion = 0.0
+        IslandModel.shared.targetState = .collapsed
+        IslandModel.shared.displayState = .collapsed
+        XCTAssertFalse(window.canBecomeKey)
+        XCTAssertFalse(window.canBecomeMain)
+    }
 }
