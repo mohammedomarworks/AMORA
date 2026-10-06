@@ -715,12 +715,19 @@ struct QuickPanelView: View {
                     }
                 }
                 .frame(height: 180)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(isFileShelfDropTargeted ? palette.accent : Color.clear, lineWidth: 2)
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onDrop(of: [.fileURL, .item], isTargeted: $isFileShelfDropTargeted) { providers in
-            fileShelf.handleDrop(providers: providers)
+            let accepted = fileShelf.handleDrop(providers: providers) { _ in
+                triggerCelebration()
+            }
+            return accepted
         }
     }
 }

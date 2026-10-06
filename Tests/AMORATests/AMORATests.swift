@@ -844,4 +844,213 @@ final class AMORATests: XCTestCase {
         XCTAssertEqual(sel6.title, "No Media Playing")
         XCTAssertFalse(sel6.isAvailable)
     }
+
+    // MARK: - Outside Dismissal & Drag-and-Drop State Machine Tests
+
+    func testOutsideDismissalStateMachineNormalClickCloses() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let p = CGPoint(x: 100, y: 100)
+
+        // 1. Outside click: mouseDown outside -> pendingOutsideClick, returns .none (does not close immediately)
+        let actionDown = manager.handleMouseDown(at: p, isInsideWindow: false)
+        XCTAssertEqual(actionDown, .none)
+        XCTAssertEqual(manager.state, .pendingOutsideClick(startPoint: p, timestamp: 0))
+        XCTAssertTrue(manager.isPendingOutsideClick)
+        XCTAssertFalse(manager.isExternalDragInProgress)
+
+        // 2. Mouse up at same point: returns .dismiss, state resets to .idle
+        let actionUp = manager.handleMouseUp(at: p, isInsideWindow: false)
+        XCTAssertEqual(actionUp, .dismiss)
+        XCTAssertEqual(manager.state, .idle)
+    }
+
+    func testOutsideDismissalStateMachineTinyMovementCloses() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let pDown = CGPoint(x: 100, y: 100)
+        let pJitter = CGPoint(x: 102, y: 102) // distance = sqrt(8) ≈ 2.83 pt < 8.0 pt
+
+        manager.handleMouseDown(at: pDown, isInsideWindow: false)
+
+        // Tiny movement below threshold remains pending
+        let actionDrag = manager.handleMouseDragged(to: pJitter, isInsideWindow: false)
+        XCTAssertEqual(actionDrag, .none)
+        XCTAssertTrue(manager.isPendingOutsideClick)
+        XCTAssertFalse(manager.isExternalDragInProgress)
+
+        // Mouse up after tiny movement still dismisses
+        let actionUp = manager.handleMouseUp(at: pJitter, isInsideWindow: false)
+        XCTAssertEqual(actionUp, .dismiss)
+        XCTAssertEqual(manager.state, .idle)
+    }
+
+    func testOutsideDismissalStateMachineMovementBeyondThresholdClassifiesAsExternalDrag() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let pDown = CGPoint(x: 100, y: 100)
+        let pDrag = CGPoint(x: 115, y: 100) // distance = 15 pt >= 8.0 pt
+
+        manager.handleMouseDown(at: pDown, isInsideWindow: false)
+
+        let actionDrag = manager.handleMouseDragged(to: pDrag, isInsideWindow: false)
+        XCTAssertEqual(actionDrag, .none)
+        XCTAssertEqual(manager.state, .externalDrag(startPoint: pDown, timestamp: 0))
+        XCTAssertTrue(manager.isExternalDragInProgress)
+        XCTAssertFalse(manager.isPendingOutsideClick)
+    }
+
+    func testOutsideDismissalStateMachineExternalDragDoesNotClose() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let pDown = CGPoint(x: 100, y: 100)
+        let pDrag = CGPoint(x: 120, y: 100)
+        let pDrop = CGPoint(x: 300, y: 300)
+
+        manager.handleMouseDown(at: pDown, isInsideWindow: false)
+        manager.handleMouseDragged(to: pDrag, isInsideWindow: false)
+
+        // Continuing drag does not dismiss
+        let actionDragMore = manager.handleMouseDragged(to: pDrop, isInsideWindow: true)
+        XCTAssertEqual(actionDragMore, .none)
+        XCTAssertTrue(manager.isExternalDragInProgress)
+
+        // Mouse up at drop target does NOT dismiss
+        let actionUp = manager.handleMouseUp(at: pDrop, isInsideWindow: true)
+        XCTAssertEqual(actionUp, .none)
+        XCTAssertEqual(manager.state, .idle)
+        XCTAssertFalse(manager.isExternalDragInProgress)
+    }
+
+    func testOutsideDismissalStateMachineDragStateResetsAfterMouseUp() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let pDown = CGPoint(x: 100, y: 100)
+        let pDrag = CGPoint(x: 150, y: 150)
+
+        manager.handleMouseDown(at: pDown, isInsideWindow: false)
+        manager.handleMouseDragged(to: pDrag, isInsideWindow: false)
+        XCTAssertTrue(manager.isExternalDragInProgress)
+
+        manager.handleMouseUp(at: pDrag, isInsideWindow: false)
+        XCTAssertEqual(manager.state, .idle)
+        XCTAssertFalse(manager.isExternalDragInProgress)
+        XCTAssertFalse(manager.isPendingOutsideClick)
+    }
+
+    func testOutsideDismissalStateMachineNormalClickWorksAfterDrag() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let pDown1 = CGPoint(x: 100, y: 100)
+        let pDrag1 = CGPoint(x: 150, y: 100)
+
+        // 1. Complete an external drag
+        manager.handleMouseDown(at: pDown1, isInsideWindow: false)
+        manager.handleMouseDragged(to: pDrag1, isInsideWindow: false)
+        manager.handleMouseUp(at: pDrag1, isInsideWindow: true)
+        XCTAssertEqual(manager.state, .idle)
+
+        // 2. Perform normal click outside -> must dismiss
+        let pClick = CGPoint(x: 400, y: 400)
+        let actionDown = manager.handleMouseDown(at: pClick, isInsideWindow: false)
+        XCTAssertEqual(actionDown, .none)
+        let actionUp = manager.handleMouseUp(at: pClick, isInsideWindow: false)
+        XCTAssertEqual(actionUp, .dismiss)
+        XCTAssertEqual(manager.state, .idle)
+    }
+
+    func testOutsideDismissalStateMachineRepeatedDragAndClickSequences() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+
+        for i in 1...5 {
+            // Drag gesture
+            manager.handleMouseDown(at: CGPoint(x: 50, y: 50), isInsideWindow: false)
+            manager.handleMouseDragged(to: CGPoint(x: 100, y: 50), isInsideWindow: false)
+            XCTAssertTrue(manager.isExternalDragInProgress)
+            let dragAction = manager.handleMouseUp(at: CGPoint(x: 200, y: 200), isInsideWindow: true)
+            XCTAssertEqual(dragAction, .none, "Iteration \(i) drag should not dismiss")
+            XCTAssertEqual(manager.state, .idle)
+
+            // Outside click gesture
+            manager.handleMouseDown(at: CGPoint(x: 300, y: 300), isInsideWindow: false)
+            let clickAction = manager.handleMouseUp(at: CGPoint(x: 300, y: 300), isInsideWindow: false)
+            XCTAssertEqual(clickAction, .dismiss, "Iteration \(i) click should dismiss")
+            XCTAssertEqual(manager.state, .idle)
+        }
+    }
+
+    func testOutsideDismissalStateMachineInsideClicksIgnored() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let pInside = CGPoint(x: 700, y: 800)
+
+        let actionDown = manager.handleMouseDown(at: pInside, isInsideWindow: true)
+        XCTAssertEqual(actionDown, .none)
+        XCTAssertEqual(manager.state, .idle)
+
+        let actionUp = manager.handleMouseUp(at: pInside, isInsideWindow: true)
+        XCTAssertEqual(actionUp, .none)
+        XCTAssertEqual(manager.state, .idle)
+    }
+
+    func testOutsideDismissalStateMachineCheckMovementPromotesToExternalDrag() {
+        let manager = OutsideDismissalManager(dragThreshold: 8.0)
+        let pDown = CGPoint(x: 100, y: 100)
+
+        manager.handleMouseDown(at: pDown, isInsideWindow: false)
+        XCTAssertTrue(manager.isPendingOutsideClick)
+
+        // Check small movement
+        manager.checkMovement(at: CGPoint(x: 104, y: 100))
+        XCTAssertTrue(manager.isPendingOutsideClick)
+
+        // Check movement exceeding threshold
+        manager.checkMovement(at: CGPoint(x: 110, y: 100))
+        XCTAssertTrue(manager.isExternalDragInProgress)
+    }
+
+    @MainActor
+    func testFileShelfDropHandlingWithRealFilesAndFolders() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let files: [(name: String, isDirectory: Bool)] = [
+            ("document.pdf", false),
+            ("photo.png", false),
+            ("clip.mp4", false),
+            ("archive.zip", false),
+            ("notes.txt", false),
+            ("MyFolder", true)
+        ]
+
+        let service = FileShelfService.shared
+        let initialCount = service.items.count
+
+        for file in files {
+            let fileURL = tempDir.appendingPathComponent(file.name)
+            if file.isDirectory {
+                try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: true)
+            } else {
+                try "Sample Content".write(to: fileURL, atomically: true, encoding: .utf8)
+            }
+
+            guard let provider = NSItemProvider(contentsOf: fileURL) else {
+                XCTFail("Could not create NSItemProvider for \(file.name)")
+                continue
+            }
+            let exp = expectation(description: "Added \(file.name)")
+
+            let accepted = service.handleDrop(providers: [provider]) { addedURL in
+                XCTAssertEqual(addedURL.lastPathComponent, file.name)
+                exp.fulfill()
+            }
+            XCTAssertTrue(accepted)
+
+            await fulfillment(of: [exp], timeout: 3.0)
+            XCTAssertEqual(service.items.first?.name, file.name)
+        }
+
+        // Clean up
+        for file in files {
+            let fileURL = tempDir.appendingPathComponent(file.name)
+            if let item = service.items.first(where: { $0.url.path == fileURL.path }) {
+                service.removeItem(id: item.id)
+            }
+        }
+        XCTAssertEqual(service.items.count, initialCount)
+    }
 }

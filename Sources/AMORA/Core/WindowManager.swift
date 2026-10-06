@@ -31,6 +31,10 @@ final class WindowManager {
     private var horizontalSwipeAccumulator: CGFloat = 0
     private var horizontalSwipeGestureActive = false
     private var horizontalSwipeHasTriggered = false
+    private var monitorStartTime: CFTimeInterval = 0
+    private let dismissalManager = OutsideDismissalManager(dragThreshold: 8.0)
+    private var dragTrackingTimer: Timer?
+    private var initialDragPasteboardChangeCount: Int = 0
 
     private init() {}
 
@@ -390,11 +394,61 @@ final class WindowManager {
 
     private func setupClickOutsideMonitor() {
         removeClickOutsideMonitor()
-        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        monitorStartTime = CACurrentMediaTime()
+        dismissalManager.reset()
+
+        let mask: NSEvent.EventTypeMask = [
+            .leftMouseDown,
+            .leftMouseDragged,
+            .leftMouseUp,
+            .rightMouseDown
+        ]
+
+        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self, let window = self.islandWindow, IslandModel.shared.isExpanded else { return }
-                if !window.frame.contains(NSEvent.mouseLocation) {
-                    self.collapseIsland()
+                guard CACurrentMediaTime() - self.monitorStartTime > 0.3 else { return }
+
+                let point = NSEvent.mouseLocation
+                let isInside = window.frame.contains(point)
+                let now = CACurrentMediaTime()
+
+                switch event.type {
+                case .leftMouseDown:
+                    let action = self.dismissalManager.handleMouseDown(at: point, isInsideWindow: isInside, timestamp: now)
+                    if action == .dismiss {
+                        self.stopDragTrackingTimer()
+                        self.collapseIsland()
+                    } else if self.dismissalManager.isPendingOutsideClick {
+                        self.startDragTrackingTimer(from: point)
+                    }
+
+                case .leftMouseDragged:
+                    let action = self.dismissalManager.handleMouseDragged(to: point, isInsideWindow: isInside, timestamp: now)
+                    if self.dismissalManager.isExternalDragInProgress {
+                        self.stopDragTrackingTimer()
+                    }
+                    if action == .dismiss {
+                        self.stopDragTrackingTimer()
+                        self.collapseIsland()
+                    }
+
+                case .leftMouseUp:
+                    self.stopDragTrackingTimer()
+                    let action = self.dismissalManager.handleMouseUp(at: point, isInsideWindow: isInside, timestamp: now)
+                    if action == .dismiss {
+                        self.collapseIsland()
+                    }
+
+                case .rightMouseDown:
+                    self.stopDragTrackingTimer()
+                    if !isInside && !self.dismissalManager.isExternalDragInProgress {
+                        self.dismissalManager.reset()
+                        self.collapseIsland()
+                    }
+
+                default:
+                    break
                 }
             }
         }
@@ -444,10 +498,45 @@ final class WindowManager {
         }
     }
 
+    private func startDragTrackingTimer(from startPoint: CGPoint) {
+        stopDragTrackingTimer()
+        initialDragPasteboardChangeCount = NSPasteboard(name: .drag).changeCount
+
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard self.dismissalManager.isPendingOutsideClick else {
+                    self.stopDragTrackingTimer()
+                    return
+                }
+
+                let currentPoint = NSEvent.mouseLocation
+                let movedState = self.dismissalManager.checkMovement(at: currentPoint)
+                let currentDragPbCount = NSPasteboard(name: .drag).changeCount
+
+                if case .externalDrag = movedState {
+                    self.stopDragTrackingTimer()
+                } else if currentDragPbCount != self.initialDragPasteboardChangeCount {
+                    self.dismissalManager.handleMouseDragged(to: currentPoint, isInsideWindow: false)
+                    self.stopDragTrackingTimer()
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        dragTrackingTimer = timer
+    }
+
+    private func stopDragTrackingTimer() {
+        dragTrackingTimer?.invalidate()
+        dragTrackingTimer = nil
+    }
+
     private func removeClickOutsideMonitor() {
         if let m = clickOutsideMonitor { NSEvent.removeMonitor(m); clickOutsideMonitor = nil }
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
         if let m = scrollMonitor { NSEvent.removeMonitor(m); scrollMonitor = nil }
+        stopDragTrackingTimer()
+        dismissalManager.reset()
         horizontalSwipeAccumulator = 0
         horizontalSwipeGestureActive = false
         horizontalSwipeHasTriggered = false
