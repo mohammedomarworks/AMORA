@@ -1,24 +1,36 @@
 import SwiftUI
 import Observation
 
+enum IslandDisplayState: Int, CaseIterable, Equatable {
+    case collapsed = 0
+    case quick = 1
+    case workspace = 2
+}
+
 /// Shared morph state for the single notch window. `expansion` is driven by
-/// WindowManager's spring (0 = collapsed into the physical notch, 1 = fully
-/// expanded Dynamic Island) and read here to interpolate corner radius, the
-/// collapsed eyes, and the expanded content — keeping AppKit's window-frame
-/// morph and the SwiftUI surface in lockstep.
+/// WindowManager's spring (0 = collapsed into the physical notch, 1 = compact
+/// Quick Island, 2 = expanded Workspace) and read here to interpolate corner
+/// radius, the collapsed eyes, and the expanded content — keeping AppKit's
+/// window-frame morph and the SwiftUI surface in lockstep.
 @Observable @MainActor
 final class IslandModel {
     static let shared = IslandModel()
 
+    /// 0.0 = collapsed into notch, 1.0 = compact quick island, 2.0 = expanded workspace
     var expansion: Double = 0
-    var isExpanded: Bool = false
+    var displayState: IslandDisplayState = .collapsed
+    var targetState: IslandDisplayState = .collapsed
 
     /// Height of the physical notch; expanded content is inset by this so it
     /// clears the camera housing and never hides behind it.
     var topInset: CGFloat = 0
     var notchWidth: CGFloat = 200
     var collapsedBottomRadius: CGFloat = 10
-    var expandedBottomRadius: CGFloat = 30
+    var quickBottomRadius: CGFloat = 30
+    var workspaceBottomRadius: CGFloat = 36
+
+    var isExpanded: Bool { expansion > 0.05 }
+    var isWorkspace: Bool { expansion > 1.05 }
 
     private init() {}
 }
@@ -166,22 +178,34 @@ struct DynamicIslandView: View {
             }
     }
 
+    private func bottomRadius(for e: Double) -> CGFloat {
+        if e <= 1.0 {
+            let t = CGFloat(max(0.0, min(1.0, e)))
+            return lerp(island.collapsedBottomRadius, island.quickBottomRadius, t)
+        } else {
+            let t = CGFloat(max(0.0, min(1.0, e - 1.0)))
+            return lerp(island.quickBottomRadius, island.workspaceBottomRadius, t)
+        }
+    }
+
     @ViewBuilder
     private func content(expansion e: Double) -> some View {
-        let tD = max(0.0, min(1.0, e))
-        let t = CGFloat(tD)
-        let bottomRadius = lerp(island.collapsedBottomRadius, island.expandedBottomRadius, t)
-        let shape = IslandShape(bottomRadius: bottomRadius)
+        let radius = bottomRadius(for: e)
+        let shape = IslandShape(bottomRadius: radius)
 
         ZStack(alignment: .top) {
-            surface(shape: shape, bottomRadius: bottomRadius, tD: tD, t: t)
+            surface(shape: shape, bottomRadius: radius, e: e)
 
             if e < 0.25 {
                 collapsedEyes(expansion: e)
             }
 
-            if e > 0.10 {
-                expandedContent(expansion: e, t: t)
+            if e > 0.10 && e < 1.70 {
+                quickContent(expansion: e)
+            }
+
+            if e > 1.05 {
+                workspaceContent(expansion: e)
             }
         }
         .clipShape(shape)
@@ -189,8 +213,9 @@ struct DynamicIslandView: View {
 
     /// One continuous pure-black surface that represents the hardware notch when
     /// collapsed and morphs fluidly downward into the Dynamic Island when expanded.
-    private func surface(shape: IslandShape, bottomRadius: CGFloat, tD: Double, t: CGFloat) -> some View {
+    private func surface(shape: IslandShape, bottomRadius: CGFloat, e: Double) -> some View {
         let border = IslandBorderShape(bottomRadius: bottomRadius)
+        let tD = min(1.0, max(0.0, e))
 
         // Apple-style razor-thin glass border: completely transparent near the top bezel
         // and physical notch (y <= topInset), emerging subtly down the lateral edges and
@@ -217,8 +242,8 @@ struct DynamicIslandView: View {
         }
         .contentShape(shape)
         .onTapGesture {
-            if !island.isExpanded {
-                WindowManager.shared.toggleQuickPanel()
+            if island.displayState == .collapsed {
+                WindowManager.shared.expandIsland()
             }
         }
     }
@@ -238,12 +263,15 @@ struct DynamicIslandView: View {
             .allowsHitTesting(false)
     }
 
-    private func expandedContent(expansion e: Double, t: CGFloat) -> some View {
-        // Content smoothly unfolds between e = 0.12 and 0.72 with subtle vertical parallax
-        // and scale, feeling like it slides naturally from behind the notch.
-        let contentProgress = min(1.0, max(0.0, (e - 0.12) / 0.60))
-        let translateY = -10.0 * (1.0 - contentProgress)
-        let scale = 0.96 + 0.04 * contentProgress
+    private func quickContent(expansion e: Double) -> some View {
+        // When e is 0.12..0.72: unfolds and fades in (0 -> 1)
+        // When e is 1.0..1.50: dissolves out (1 -> 0) as it morphs into workspace
+        let fadeIn = min(1.0, max(0.0, (e - 0.12) / 0.60))
+        let fadeOut = e > 1.0 ? max(0.0, 1.0 - (e - 1.0) / 0.40) : 1.0
+        let opacity = fadeIn * fadeOut
+
+        let translateY = e <= 1.0 ? -10.0 * (1.0 - fadeIn) : 0.0
+        let scale = e <= 1.0 ? (0.96 + 0.04 * fadeIn) : (1.0 + 0.04 * (e - 1.0))
 
         return Group {
             if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed {
@@ -252,10 +280,27 @@ struct DynamicIslandView: View {
                 QuickPanelView(embedded: true, topInset: island.topInset)
             }
         }
+        .opacity(opacity)
+        .offset(y: translateY)
+        .scaleEffect(scale, anchor: .top)
+        .allowsHitTesting(island.displayState == .quick && e >= 0.85 && e <= 1.15)
+    }
+
+    private func workspaceContent(expansion e: Double) -> some View {
+        // Content smoothly emerges between e = 1.15 and 1.85 with subtle scale and parallax
+        let contentProgress = min(1.0, max(0.0, (e - 1.15) / 0.70))
+        let translateY = -12.0 * (1.0 - contentProgress)
+        let scale = 0.96 + 0.04 * contentProgress
+
+        return DashboardView(
+            viewModel: WindowManager.shared.dashboardViewModel,
+            embedded: true,
+            topInset: island.topInset
+        )
         .opacity(contentProgress)
         .offset(y: translateY)
         .scaleEffect(scale, anchor: .top)
-        .allowsHitTesting(island.isExpanded && e > 0.85)
+        .allowsHitTesting(island.displayState == .workspace && e >= 1.85)
     }
 }
 
@@ -278,13 +323,13 @@ struct AIResponseView: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 Spacer()
-                Button { WindowManager.shared.showDashboard() } label: {
+                Button { WindowManager.shared.showWorkspace() } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.75))
                 }
                 .buttonStyle(.plain)
-                .help("Open response in Dashboard")
+                .help("Expand to Workspace")
                 Button { WindowManager.shared.collapseIsland() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))

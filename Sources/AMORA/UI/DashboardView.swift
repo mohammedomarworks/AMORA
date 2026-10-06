@@ -10,7 +10,9 @@ final class DashboardViewModel {
 }
 
 struct DashboardView: View {
-    @Bindable var vm = DashboardViewModel()
+    var embedded: Bool = false
+    var topInset: CGFloat = 0
+    @Bindable var vm: DashboardViewModel
     @State private var isDashboardFileShelfDropTargeted = false
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
@@ -25,11 +27,21 @@ struct DashboardView: View {
     private var assistant = AssistantManager.shared
     private var gateway = AMORACommandGateway()
     private let parser = AMORACommandParser()
+    private var settings = AppState.shared.settings
+    private var palette: ThemePalette { settings.palette }
 
-    init(initialSection: DashboardSection = .overview) {
+    init(initialSection: DashboardSection = .overview, embedded: Bool = false, topInset: CGFloat = 0) {
         let model = DashboardViewModel()
         model.selectedSection = initialSection
         _vm = Bindable(wrappedValue: model)
+        self.embedded = embedded
+        self.topInset = topInset
+    }
+
+    init(viewModel: DashboardViewModel, embedded: Bool = true, topInset: CGFloat = 0) {
+        _vm = Bindable(wrappedValue: viewModel)
+        self.embedded = embedded
+        self.topInset = topInset
     }
 
     enum DashboardSection: String, CaseIterable {
@@ -46,12 +58,21 @@ struct DashboardView: View {
         return "Good evening!"
     }
 
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.white.opacity(0.06))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(palette.accent.opacity(0.08), lineWidth: 0.5)
+            )
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
+        let content = VStack(spacing: 14) {
             // Header
             HStack(spacing: 14) {
                 AMORARobotView(robot: robot, compact: false)
-                    .frame(width: 48, height: 44)
+                    .frame(width: 44, height: 40)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
@@ -61,10 +82,10 @@ struct DashboardView: View {
 
                         Text("ONLINE")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(palette.accent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.cyan.opacity(0.15)))
+                            .background(Capsule().fill(palette.accent.opacity(0.15)))
                     }
 
                     Text(greeting)
@@ -78,7 +99,7 @@ struct DashboardView: View {
                     WindowManager.shared.showSettings()
                 } label: {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.8))
                         .padding(8)
                         .background(Circle().fill(Color.white.opacity(0.08)))
@@ -87,22 +108,44 @@ struct DashboardView: View {
                 .help("Settings")
 
                 Button {
+                    WindowManager.shared.contractToQuickIsland()
+                } label: {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .padding(8)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help("Collapse to Quick Island")
+                .accessibilityLabel("Collapse to quick island")
+
+                Button {
                     WindowManager.shared.closeDashboard()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white.opacity(0.8))
                         .padding(8)
                         .background(Circle().fill(Color.white.opacity(0.08)))
                 }
                 .buttonStyle(.plain)
                 .help("Close")
+                .accessibilityLabel("Close workspace")
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 18)
+            .padding(.horizontal, embedded ? 20 : 18)
+            .padding(.top, embedded ? (topInset + 10) : 18)
 
-            // Primary Stat Cards 2x2 Grid
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            // Primary Stat Cards
+            LazyVGrid(columns: embedded ? [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ] : [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 10) {
                 // Music Card
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
@@ -230,7 +273,7 @@ struct DashboardView: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, embedded ? 20 : 18)
 
             // Section Switcher
             Picker("", selection: $vm.selectedSection) {
@@ -239,7 +282,7 @@ struct DashboardView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding(.horizontal, 18)
+            .padding(.horizontal, embedded ? 20 : 18)
 
             // Section Detail View
             VStack {
@@ -254,8 +297,8 @@ struct DashboardView: View {
                     fileShelfSection
                 }
             }
-            .padding(.horizontal, 18)
-            .frame(maxHeight: 180)
+            .padding(.horizontal, embedded ? 20 : 18)
+            .frame(minHeight: embedded ? 180 : nil, maxHeight: embedded ? 220 : 180)
 
             Spacer(minLength: 4)
 
@@ -358,28 +401,38 @@ struct DashboardView: View {
                     }
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, embedded ? 20 : 18)
             .padding(.bottom, 16)
         }
-        .frame(width: 480, height: 600)
-        .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.09, blue: 0.13).opacity(AppState.shared.settings.transparency))
-                .overlay(
+
+        if embedded {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .onAppear {
+                    fileShelf.refreshItemStates()
+                }
+        } else {
+            content
+                .frame(width: 480, height: 600)
+                .background {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.2), Color.white.opacity(0.05)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
+                        .fill(Color(red: 0.07, green: 0.09, blue: 0.13).opacity(AppState.shared.settings.transparency))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.2), Color.white.opacity(0.05)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
                         )
-                )
-                .shadow(color: .black.opacity(0.6), radius: 24, x: 0, y: 12)
-        }
-        .onAppear {
-            fileShelf.refreshItemStates()
+                        .shadow(color: .black.opacity(0.6), radius: 24, x: 0, y: 12)
+                }
+                .onAppear {
+                    fileShelf.refreshItemStates()
+                }
         }
     }
 

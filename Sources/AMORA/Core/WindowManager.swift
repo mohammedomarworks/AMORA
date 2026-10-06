@@ -10,8 +10,8 @@ final class WindowManager {
     static let shared = WindowManager()
 
     private var islandWindow: NSWindow?
-    private var dashboardWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    let dashboardViewModel = DashboardViewModel()
 
     private var notchManager: NotchManager?
     private var clickOutsideMonitor: Any?
@@ -19,14 +19,15 @@ final class WindowManager {
     private var scrollMonitor: Any?
     private var screenConfigurationObserver: Any?
 
-    // Spring-driven morph state (shared by expand + collapse so interruptions are smooth).
+    // Spring-driven morph state (shared across collapsed, quick, and workspace states).
     private var springTimer: Timer?
     private var lastAnimationTimestamp: CFTimeInterval = 0
     private var springPos: Double = 0
     private var springVel: Double = 0
     private var springTarget: Double = 0
     private var collapsedFrameCache: NSRect = .zero
-    private var expandedFrameCache: NSRect = .zero
+    private var quickFrameCache: NSRect = .zero
+    private var workspaceFrameCache: NSRect = .zero
     private var horizontalSwipeAccumulator: CGFloat = 0
     private var horizontalSwipeGestureActive = false
     private var horizontalSwipeHasTriggered = false
@@ -39,9 +40,10 @@ final class WindowManager {
         /// notch itself — not a floating pill below it.
         static let collapsedChinHeight: CGFloat = 6
         static let collapsedBottomRadius: CGFloat = 10
-        static let expandedWidth: CGFloat = 340
-        static let expandedContentHeight: CGFloat = 452
-        static let expandedBottomRadius: CGFloat = 30
+        static let quickWidth: CGFloat = 340
+        static let quickContentHeight: CGFloat = 452
+        static let quickBottomRadius: CGFloat = 30
+        static let workspaceBottomRadius: CGFloat = 36
         static let screenMargin: CGFloat = 8
     }
 
@@ -56,14 +58,40 @@ final class WindowManager {
         return NSRect(x: x, y: y, width: width, height: height)
     }
 
-    private func expandedFrame(on screen: NSScreen) -> NSRect {
+    private func quickFrame(on screen: NSScreen) -> NSRect {
         let notch = NotchManager.notchRect(on: screen)
         let topInset = notch.height
-        let width = IslandMetrics.expandedWidth
-        let height = topInset + IslandMetrics.expandedContentHeight
+        let width = IslandMetrics.quickWidth
+        let height = topInset + IslandMetrics.quickContentHeight
         var x = (notch.midX - width / 2).rounded()
         let minX = screen.frame.minX + IslandMetrics.screenMargin
         let maxX = screen.frame.maxX - width - IslandMetrics.screenMargin
+        if maxX > minX { x = min(max(x, minX), maxX) }
+        let y = screen.frame.maxY - height
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func workspaceFrame(on screen: NSScreen) -> NSRect {
+        let notch = NotchManager.notchRect(on: screen)
+
+        // Responsive sizing:
+        // Target width ~800–1000 pt, clamped to screen bounds
+        let screenWidth = screen.frame.width
+        let screenHeight = screen.frame.height
+        let screenMargin = IslandMetrics.screenMargin
+
+        let maxWidth = screenWidth - (screenMargin * 2)
+        let desiredWidth = min(960, max(800, screenWidth * 0.64))
+        let width = min(desiredWidth, maxWidth).rounded()
+
+        // Target height ~600–700 pt, clamped to screen bounds (clearing dock/bottom edge)
+        let maxHeight = screenHeight - 44
+        let desiredHeight = min(680, max(580, screenHeight * 0.70))
+        let height = min(desiredHeight, maxHeight).rounded()
+
+        var x = (notch.midX - width / 2).rounded()
+        let minX = screen.frame.minX + screenMargin
+        let maxX = screen.frame.maxX - width - screenMargin
         if maxX > minX { x = min(max(x, minX), maxX) }
         let y = screen.frame.maxY - height
         return NSRect(x: x, y: y, width: width, height: height)
@@ -75,7 +103,8 @@ final class WindowManager {
         model.topInset = notch.height
         model.notchWidth = notch.width
         model.collapsedBottomRadius = IslandMetrics.collapsedBottomRadius
-        model.expandedBottomRadius = IslandMetrics.expandedBottomRadius
+        model.quickBottomRadius = IslandMetrics.quickBottomRadius
+        model.workspaceBottomRadius = IslandMetrics.workspaceBottomRadius
     }
 
     // MARK: - Collapsed island (the physical notch itself)
@@ -128,29 +157,37 @@ final class WindowManager {
         )
         guard UserDefaults.standard.bool(forKey: "AMORADebugGeometry") else { return }
         print("[AMORA] collapsedHitRect=\(collapsedFrame(on: screen))")
-        print("[AMORA] expandedRect=\(expandedFrame(on: screen))")
+        print("[AMORA] quickRect=\(quickFrame(on: screen))")
+        print("[AMORA] workspaceRect=\(workspaceFrame(on: screen))")
         if let w = islandWindow { print("[AMORA] windowFrame=\(w.frame)") }
     }
 
-    // MARK: - Expand / collapse (the downward morph)
+    // MARK: - Expand / collapse (three-state downward morph)
 
     func toggleQuickPanel() {
-        if IslandModel.shared.isExpanded { collapseIsland() } else { expandIsland() }
+        if IslandModel.shared.isExpanded {
+            collapseIsland()
+        } else {
+            expandIsland()
+        }
     }
 
     func showQuickPanel() { expandIsland() }
     func closeQuickPanel() { collapseIsland() }
 
-    var isQuickPanelVisible: Bool { IslandModel.shared.isExpanded }
+    var isQuickPanelVisible: Bool { IslandModel.shared.displayState == .quick }
+    var isDashboardVisible: Bool { IslandModel.shared.displayState == .workspace }
 
+    /// State 2: Quick Island
     func expandIsland() {
         if islandWindow == nil { showNotchWindow() }
         guard let window = islandWindow,
               let screen = NotchManager.notchedScreen ?? NSScreen.main else { return }
         configureIslandModel(for: screen)
 
-        IslandModel.shared.isExpanded = true
+        IslandModel.shared.targetState = .quick
         AppState.shared.isQuickPanelOpen = true
+        AppState.shared.isDashboardOpen = false
         AppState.shared.stateManager.transition(to: .expanded)
         AMORAContext.shared.beginInteraction()
         AMORAEventCenter.shared.emit(.opened)
@@ -158,45 +195,100 @@ final class WindowManager {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         setupClickOutsideMonitor()
-        animateIsland(to: 1)
+        animateIsland(to: 1.0)
     }
 
+    /// State 3: Workspace (enlarged Dynamic Island containing Dashboard functionality)
+    func showWorkspace(section: DashboardView.DashboardSection = .overview) {
+        dashboardViewModel.selectedSection = section
+        if islandWindow == nil { showNotchWindow() }
+        guard let window = islandWindow,
+              let screen = NotchManager.notchedScreen ?? NSScreen.main else { return }
+        configureIslandModel(for: screen)
+
+        IslandModel.shared.targetState = .workspace
+        AppState.shared.isDashboardOpen = true
+        AppState.shared.isQuickPanelOpen = false
+        AppState.shared.stateManager.transition(to: .expanded)
+        AMORAContext.shared.beginInteraction()
+        AMORAEventCenter.shared.emit(.opened)
+
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        setupClickOutsideMonitor()
+        animateIsland(to: 2.0)
+    }
+
+    /// Contract from Workspace (State 3) back to Quick Island (State 2)
+    func contractToQuickIsland() {
+        guard islandWindow != nil,
+              let screen = NotchManager.notchedScreen ?? NSScreen.main else { return }
+        configureIslandModel(for: screen)
+
+        IslandModel.shared.targetState = .quick
+        AppState.shared.isDashboardOpen = false
+        AppState.shared.isQuickPanelOpen = true
+        animateIsland(to: 1.0)
+    }
+
+    /// State 1: Collapsed physical notch
     func collapseIsland() {
         guard islandWindow != nil else {
             AppState.shared.isQuickPanelOpen = false
-            IslandModel.shared.isExpanded = false
+            AppState.shared.isDashboardOpen = false
+            IslandModel.shared.displayState = .collapsed
+            IslandModel.shared.targetState = .collapsed
+            IslandModel.shared.expansion = 0.0
             return
         }
-        IslandModel.shared.isExpanded = false
+        IslandModel.shared.targetState = .collapsed
         AppState.shared.isQuickPanelOpen = false
+        AppState.shared.isDashboardOpen = false
         AssistantManager.shared.dismissResponse()
         removeClickOutsideMonitor()
         AMORAContext.shared.endInteraction()
         AMORAEventCenter.shared.emit(.closed)
-        animateIsland(to: 0)
+        animateIsland(to: 0.0)
     }
 
     // MARK: - Spring morph driver
 
-    /// Drives a single spring on a normalized progress `springPos` (0 = collapsed,
-    /// 1 = expanded). Each tick resizes the window frame AND publishes the progress
-    /// to `IslandModel`, so the AppKit frame morph and the SwiftUI content stay in
-    /// perfect sync. Keeping `springPos`/`springVel` across calls makes a reversal
-    /// mid-animation (expand → click-outside) continue smoothly from where it is.
+    /// Drives a continuous spring across normalized progress `springPos`:
+    ///   0.0 = State 1 (Collapsed Notch)
+    ///   1.0 = State 2 (Quick Island)
+    ///   2.0 = State 3 (Expanded Workspace)
+    ///
+    /// Every tick resizes the single host NSWindow and updates `IslandModel.expansion`
+    /// to keep AppKit frame morph and SwiftUI content interpolation in exact lockstep.
     private func animateIsland(to target: Double) {
         guard let screen = NotchManager.notchedScreen ?? NSScreen.main else { return }
         collapsedFrameCache = collapsedFrame(on: screen)
-        expandedFrameCache = expandedFrame(on: screen)
+        quickFrameCache = quickFrame(on: screen)
+        workspaceFrameCache = workspaceFrame(on: screen)
         springTarget = target
         springTimer?.invalidate()
         lastAnimationTimestamp = CACurrentMediaTime()
 
-        let isExpanding = target > 0.5
-        // Fluid, organic Apple spring physics:
-        // Expanding: slightly underdamped (zeta ~0.85) for an elastic, responsive stretch downward.
-        // Collapsing: critically damped (zeta ~0.98) so it cleanly retreats into the notch with zero bounce.
-        let stiffness: Double = isExpanding ? 260.0 : 300.0
-        let damping: Double = isExpanding ? 27.5 : 34.0
+        // Physics tuning based on direction and target
+        let stiffness: Double
+        let damping: Double
+        if target <= 0.05 {
+            // Collapsing into the physical notch: critically damped so it docks seamlessly into bezel with zero bounce
+            stiffness = 310.0
+            damping = 35.0
+        } else if target >= 1.95 {
+            // Expanding into large workspace: fluid, responsive spring
+            stiffness = 240.0
+            damping = 27.0
+        } else if springPos > 1.2 {
+            // Contracting from workspace down to quick island: controlled retraction
+            stiffness = 270.0
+            damping = 31.0
+        } else {
+            // Expanding from notch to quick island: elastic stretch
+            stiffness = 260.0
+            damping = 27.5
+        }
 
         let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -217,14 +309,14 @@ final class WindowManager {
                 self.springPos += self.springVel * dt
 
                 // When collapsing into the notch, prevent negative overshoot
-                if !isExpanding && self.springPos < 0.0 {
+                if self.springTarget <= 0.05 && self.springPos < 0.0 {
                     self.springPos = 0.0
                     self.springVel = 0.0
                 }
 
                 let dist = abs(self.springPos - self.springTarget)
                 let vel = abs(self.springVel)
-                if dist < 0.0015 && vel < 0.02 {
+                if dist < 0.002 && vel < 0.02 {
                     self.springPos = self.springTarget
                     self.springVel = 0
                     self.springTimer?.invalidate()
@@ -237,36 +329,64 @@ final class WindowManager {
                 window.setFrame(self.interpolatedFrame(self.springPos), display: false)
             }
         }
-        // Add to .common run loop modes so mouse movements / tracking never stall animation frames
         RunLoop.main.add(timer, forMode: .common)
         springTimer = timer
     }
 
     private func interpolatedFrame(_ p: Double) -> NSRect {
-        let isExpanding = springTarget > 0.5
-        let f = CGFloat(max(0.0, min(isExpanding ? 1.04 : 1.0, p)))
+        guard let screen = NotchManager.notchedScreen ?? NSScreen.main else {
+            return quickFrameCache
+        }
         let a = collapsedFrameCache
-        let b = expandedFrameCache
-        return NSRect(
-            x: (a.origin.x + (b.origin.x - a.origin.x) * f).rounded(),
-            y: a.origin.y + (b.origin.y - a.origin.y) * f,
-            width: (a.width + (b.width - a.width) * f).rounded(),
-            height: a.height + (b.height - a.height) * f
-        )
+        let b = quickFrameCache
+        let c = workspaceFrameCache
+
+        if p <= 1.0 {
+            // Interpolating between collapsed (0) and quick (1)
+            let f = CGFloat(max(0.0, min(1.05, p)))
+            let width = (a.width + (b.width - a.width) * f).rounded()
+            let height = (a.height + (b.height - a.height) * f).rounded()
+            let x = (a.origin.x + (b.origin.x - a.origin.x) * f).rounded()
+            let y = screen.frame.maxY - height
+            return NSRect(x: x, y: y, width: width, height: height)
+        } else {
+            // Interpolating between quick (1) and workspace (2)
+            let f = CGFloat(max(0.0, min(1.05, p - 1.0)))
+            let width = (b.width + (c.width - b.width) * f).rounded()
+            let height = (b.height + (c.height - b.height) * f).rounded()
+            let x = (b.origin.x + (c.origin.x - b.origin.x) * f).rounded()
+            let y = screen.frame.maxY - height
+            return NSRect(x: x, y: y, width: width, height: height)
+        }
     }
 
     private func finishIslandAnimation() {
         guard let screen = NotchManager.notchedScreen ?? NSScreen.main else { return }
-        if springTarget >= 0.5 {
-            IslandModel.shared.expansion = 1
-            islandWindow?.setFrame(expandedFrame(on: screen), display: true)
+        if springTarget >= 1.5 {
+            IslandModel.shared.displayState = .workspace
+            IslandModel.shared.targetState = .workspace
+            IslandModel.shared.expansion = 2.0
+            AppState.shared.isDashboardOpen = true
+            AppState.shared.isQuickPanelOpen = false
+            islandWindow?.setFrame(workspaceFrame(on: screen), display: true)
+        } else if springTarget >= 0.5 {
+            IslandModel.shared.displayState = .quick
+            IslandModel.shared.targetState = .quick
+            IslandModel.shared.expansion = 1.0
+            AppState.shared.isDashboardOpen = false
+            AppState.shared.isQuickPanelOpen = true
+            islandWindow?.setFrame(quickFrame(on: screen), display: true)
         } else {
-            IslandModel.shared.expansion = 0
+            IslandModel.shared.displayState = .collapsed
+            IslandModel.shared.targetState = .collapsed
+            IslandModel.shared.expansion = 0.0
+            AppState.shared.isDashboardOpen = false
+            AppState.shared.isQuickPanelOpen = false
             islandWindow?.setFrame(collapsedFrame(on: screen), display: true)
         }
     }
 
-    // MARK: - Click-outside + ESC to collapse
+    // MARK: - Click-outside + Keyboard / Scroll Monitors
 
     private func setupClickOutsideMonitor() {
         removeClickOutsideMonitor()
@@ -279,28 +399,35 @@ final class WindowManager {
             }
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            // Arrow keys only paginate in Quick Island mode (never hijack in Workspace mode)
             if event.keyCode == 123 || event.keyCode == 124 {
-                MainActor.assumeIsolated {
-                    guard IslandModel.shared.isExpanded else { return }
-                    // 124 is Right Arrow (next page / index + 1), 123 is Left Arrow (previous page / index - 1)
-                    let direction: AMORAPageSwipe = event.keyCode == 124 ? .next : .previous
-                    NotificationCenter.default.post(
-                        name: .amoraPageKeyboard,
-                        object: nil,
-                        userInfo: [AMORAPageSwipe.directionKey: direction]
-                    )
+                if IslandModel.shared.displayState == .quick {
+                    MainActor.assumeIsolated {
+                        let direction: AMORAPageSwipe = event.keyCode == 124 ? .next : .previous
+                        NotificationCenter.default.post(
+                            name: .amoraPageKeyboard,
+                            object: nil,
+                            userInfo: [AMORAPageSwipe.directionKey: direction]
+                        )
+                    }
+                    return nil
                 }
-                return nil
+                return event
             }
             guard event.keyCode == 53 else { return event } // ESC
             MainActor.assumeIsolated {
-                if IslandModel.shared.isExpanded { self?.collapseIsland() }
+                guard let self else { return }
+                if IslandModel.shared.displayState == .workspace {
+                    self.contractToQuickIsland()
+                } else if IslandModel.shared.isExpanded {
+                    self.collapseIsland()
+                }
             }
             return nil
         }
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
             guard let self,
-                  IslandModel.shared.isExpanded,
+                  IslandModel.shared.displayState == .quick,
                   let window = self.islandWindow,
                   window.frame.contains(NSEvent.mouseLocation),
                   event.hasPreciseScrollingDeltas else { return event }
@@ -312,8 +439,7 @@ final class WindowManager {
             MainActor.assumeIsolated {
                 self.handleIslandHorizontalScroll(event)
             }
-            // Consume only horizontal, precise events over the expanded island.
-            // Vertical scrolling and all events outside this window continue normally.
+            // Consume only horizontal, precise events over the quick island.
             return nil
         }
     }
@@ -333,9 +459,6 @@ final class WindowManager {
         let momentumBegan = event.momentumPhase.contains(.began)
         let momentumEnded = event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
 
-        // A momentum-began event is part of the same physical gesture. Never
-        // reset here: doing so is what allowed one swipe to cross several page
-        // thresholds.
         if phaseBegan {
             horizontalSwipeAccumulator = 0
             horizontalSwipeGestureActive = true
@@ -346,8 +469,6 @@ final class WindowManager {
             horizontalSwipeGestureActive = true
         }
 
-        // If the gesture has already triggered a page change, lock it for the remainder
-        // of this physical gesture and its momentum. Exactly ONE page transition per gesture.
         guard !horizontalSwipeHasTriggered else {
             if momentumEnded || (phaseEnded && event.momentumPhase.isEmpty) {
                 finishHorizontalSwipeGesture()
@@ -355,24 +476,11 @@ final class WindowManager {
             return
         }
 
-        // If gesture ends before crossing threshold, clean up accumulator.
         if phaseEnded && (event.momentumPhase.isEmpty || momentumEnded) {
             finishHorizontalSwipeGesture()
             return
         }
 
-        // Physical trackpad translation:
-        // Physical swipe LEFT  (translation.width < 0) -> Next page (+1)
-        // Physical swipe RIGHT (translation.width > 0) -> Previous page (-1)
-        //
-        // On macOS:
-        // When natural scrolling is ON (isDirectionInvertedFromDevice == true):
-        //   Swiping fingers LEFT produces scrollingDeltaX < 0.
-        //   Swiping fingers RIGHT produces scrollingDeltaX > 0.
-        // When natural scrolling is OFF (isDirectionInvertedFromDevice == false):
-        //   Swiping fingers LEFT produces scrollingDeltaX > 0.
-        //   Swiping fingers RIGHT produces scrollingDeltaX < 0.
-        // Normalizing to physical translation (translation.width):
         let translationX = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
         horizontalSwipeAccumulator += translationX
 
@@ -381,8 +489,6 @@ final class WindowManager {
             return
         }
 
-        // translation.width < 0 -> next page / page index + 1
-        // translation.width > 0 -> previous page / page index - 1
         let direction: AMORAPageSwipe = horizontalSwipeAccumulator < 0 ? .next : .previous
         NotificationCenter.default.post(
             name: .amoraPageSwipe,
@@ -414,7 +520,12 @@ final class WindowManager {
                       let screen = NotchManager.notchedScreen ?? NSScreen.main,
                       let window = self.islandWindow else { return }
                 self.configureIslandModel(for: screen)
-                let target = IslandModel.shared.isExpanded ? self.expandedFrame(on: screen) : self.collapsedFrame(on: screen)
+                let target: NSRect
+                switch IslandModel.shared.displayState {
+                case .workspace: target = self.workspaceFrame(on: screen)
+                case .quick: target = self.quickFrame(on: screen)
+                case .collapsed: target = self.collapsedFrame(on: screen)
+                }
                 window.setFrame(target, display: true)
                 self.logGeometry(for: screen)
             }
@@ -423,50 +534,25 @@ final class WindowManager {
 
     func minimizeAll() {
         islandWindow?.orderOut(nil)
-        dashboardWindow?.orderOut(nil)
     }
 
     func restoreAll() {
         if !IslandModel.shared.isExpanded {
             islandWindow?.orderFrontRegardless()
+        } else {
+            islandWindow?.makeKeyAndOrderFront(nil)
         }
     }
 
-    // MARK: - Dashboard (full presence level) + Settings
+    // MARK: - Dashboard / Workspace Bridge + Settings
 
+    /// Preserves existing callers (menu bar, command system, AI tools) by opening the Workspace state.
     func showDashboard(section: DashboardView.DashboardSection = .overview) {
-        if let window = dashboardWindow {
-            window.contentView = NSHostingController(rootView: DashboardView(initialSection: section)).view
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            AppState.shared.isDashboardOpen = true
-            return
-        }
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 600),
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "AMORA"
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
-        window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.center()
-        window.contentView = NSHostingController(rootView: DashboardView(initialSection: section)).view
-
-        dashboardWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        AppState.shared.isDashboardOpen = true
+        showWorkspace(section: section)
     }
 
     func closeDashboard() {
-        dashboardWindow?.orderOut(nil)
-        AppState.shared.isDashboardOpen = false
+        contractToQuickIsland()
     }
 
     func showSettings() {

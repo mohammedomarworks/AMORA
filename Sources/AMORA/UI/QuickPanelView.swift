@@ -90,7 +90,7 @@ struct QuickPanelView: View {
                 Spacer()
 
                 Button {
-                    WindowManager.shared.showDashboard()
+                    WindowManager.shared.showWorkspace()
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 11, weight: .semibold))
@@ -99,8 +99,8 @@ struct QuickPanelView: View {
                         .background(Circle().fill(Color.white.opacity(0.1)))
                 }
                 .buttonStyle(.plain)
-                .help("Open Full Dashboard")
-                .accessibilityLabel("Open full dashboard")
+                .help("Expand to Workspace")
+                .accessibilityLabel("Expand to workspace")
 
                 Button {
                     WindowManager.shared.toggleQuickPanel()
@@ -135,9 +135,9 @@ struct QuickPanelView: View {
                 Spacer()
 
                 Button {
-                    WindowManager.shared.showDashboard()
+                    WindowManager.shared.showWorkspace()
                 } label: {
-                    Text("Open Dashboard →")
+                    Text("Expand to Workspace →")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(palette.accent)
                 }
