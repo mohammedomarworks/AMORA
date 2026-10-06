@@ -63,7 +63,7 @@ final class AssistantManager {
         AMORAEventCenter.shared.emit(.aiThinking)
 
         var messages = conversation.messages
-        messages.append(AIMessage(role: .user, content: "[AMORA tool policy] You may request only approved tools by returning strict JSON {\"calls\":[{\"tool\":\"...\",\"action\":\"...\",\"seconds\":null,\"text\":null,\"name\":null}]}. Approved tools: battery read; timer start/pause/resume/stop/add; music or browserMedia read/play/pause/next/previous; notes create/list; system read; application open; folder open; view show. Never request shell commands, arbitrary paths, unknown tools, or destructive actions. If no tool is needed, answer normally."))
+        messages.append(AIMessage(role: .user, content: "[AMORA action policy] You must execute actions by returning strict JSON {\"actions\":[{\"action\":\"...\",\"name\":\"...\",\"location\":\"...\",\"duration\":10}]}. Approved actions: media.play, media.pause, media.next, media.previous; app.open (with name); folder.open (with location: 'downloads', 'documents', 'desktop', or 'home'); workspace.open; timer.start (with duration in seconds); timer.cancel (no duration); timer.pause; timer.resume. If the user asks to cancel, stop, end, or turn off a timer, output {\"actions\":[{\"action\":\"timer.cancel\"}]}. Do not ask for duration on cancellation. Never request shell commands, arbitrary paths, unknown tools, or destructive actions. If no action is needed, answer normally."))
         if let context = AIContextComposer.relevantContext(for: input) {
             messages.append(AIMessage(role: .user, content: "[System context]\n\(context)"))
         }
@@ -71,12 +71,58 @@ final class AssistantManager {
         messages.append(userMessage)
         conversation.append(userMessage)
 
+        let normalizedInput = AMORACommandParser.normalize(input)
+        let isTimerCancellationInput = normalizedInput.contains("timer") &&
+            (normalizedInput.contains("cancel") || normalizedInput.contains("stop") || normalizedInput.contains("end") || normalizedInput.contains("turn off") || normalizedInput.contains("clear"))
+        let isTimerPauseInput = normalizedInput.contains("timer") && normalizedInput.contains("pause")
+        let isTimerResumeInput = normalizedInput.contains("timer") && normalizedInput.contains("resume")
+
         do {
             let rawAnswer = try await provider.send(messages: messages, model: settings.model, apiKey: settings.apiKey)
             try Task.checkCancellation()
             let answer: String
-            if let plan = try? JSONDecoder().decode(AMORAToolPlan.self, from: Data(rawAnswer.utf8)),
-               let requests = plan.requests() {
+            let extractedJSONData = Self.extractJSONData(from: rawAnswer)
+            if let data = extractedJSONData,
+               var actionPlan = try? JSONDecoder().decode(AmoraActionPlan.self, from: data),
+               !actionPlan.actions.isEmpty {
+                // Prevent stale conversation history containing durations from overriding a cancellation intent
+                if isTimerCancellationInput {
+                    let sanitizedActions = actionPlan.actions.map { call in
+                        if call.action == "timer.start" {
+                            return AmoraActionPlan.ActionCall(action: "timer.cancel")
+                        }
+                        return call
+                    }
+                    actionPlan = AmoraActionPlan(actions: sanitizedActions)
+                }
+                let resolved = actionPlan.resolveActions()
+                var results: [AmoraActionResult] = []
+                for item in resolved {
+                    switch item {
+                    case .success(let action):
+                        let result = await AmoraActionEngine.shared.execute(action)
+                        results.append(result)
+                    case .failure(let error):
+                        results.append(.invalidInput(actionId: "unknown", message: error.message))
+                    }
+                }
+                if let confirmation = results.first(where: { $0.status == .needsConfirmation }) {
+                    answer = "I need your confirmation before I do that. \(confirmation.message)"
+                } else {
+                    answer = results.map(\.message).joined(separator: " ")
+                }
+            } else if isTimerCancellationInput {
+                let result = await AmoraActionEngine.shared.execute(.cancelTimer)
+                answer = result.message
+            } else if isTimerPauseInput {
+                let result = await AmoraActionEngine.shared.execute(.pauseTimer)
+                answer = result.message
+            } else if isTimerResumeInput {
+                let result = await AmoraActionEngine.shared.execute(.resumeTimer)
+                answer = result.message
+            } else if let data = extractedJSONData,
+                      let plan = try? JSONDecoder().decode(AMORAToolPlan.self, from: data),
+                      let requests = plan.requests() {
                 let results = requests.map { AMORAToolRegistry.shared.execute($0) }
                 if let confirmation = results.first(where: { $0.status == .needsConfirmation }) {
                     answer = "I need your confirmation before I do that. \(confirmation.message)"
@@ -114,6 +160,49 @@ final class AssistantManager {
             AMORAContext.shared.setAIResponse(response)
             return response!
         }
+    }
+
+    private static func cleanJSONString(_ str: String) -> String {
+        var cleaned = str.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Fix missing opening quote on keys after comma, e.g. ,key": -> ,"key":
+        cleaned = cleaned.replacingOccurrences(of: #",([a-zA-Z0-9_]+)":"#, with: #",\"$1\":"#, options: .regularExpression)
+        // Fix missing opening quote on keys after brace, e.g. {key": -> {"key":
+        cleaned = cleaned.replacingOccurrences(of: #"\{([a-zA-Z0-9_]+)":"#, with: #"{\"$1\":"#, options: .regularExpression)
+        return cleaned
+    }
+
+    private static func extractJSONData(from text: String) -> Data? {
+        let cleanedDirect = cleanJSONString(text)
+        if let data = cleanedDirect.data(using: .utf8),
+           (try? JSONSerialization.jsonObject(with: data)) != nil {
+            return data
+        }
+        if let startFence = text.range(of: "```json"),
+           let endFence = text.range(of: "```", range: startFence.upperBound..<text.endIndex) {
+            let jsonStr = cleanJSONString(String(text[startFence.upperBound..<endFence.lowerBound]))
+            if let data = jsonStr.data(using: .utf8),
+               (try? JSONSerialization.jsonObject(with: data)) != nil {
+                return data
+            }
+        }
+        if let startFence = text.range(of: "```"),
+           let endFence = text.range(of: "```", range: startFence.upperBound..<text.endIndex) {
+            let jsonStr = cleanJSONString(String(text[startFence.upperBound..<endFence.lowerBound]))
+            if let data = jsonStr.data(using: .utf8),
+               (try? JSONSerialization.jsonObject(with: data)) != nil {
+                return data
+            }
+        }
+        if let firstOpen = text.firstIndex(of: "{"),
+           let lastClose = text.lastIndex(of: "}"),
+           firstOpen < lastClose {
+            let jsonStr = cleanJSONString(String(text[firstOpen...lastClose]))
+            if let data = jsonStr.data(using: .utf8),
+               (try? JSONSerialization.jsonObject(with: data)) != nil {
+                return data
+            }
+        }
+        return nil
     }
 
     private func error(for availability: AIAvailability) -> AIProviderError {
@@ -201,7 +290,11 @@ final class AMORACommandGateway {
                 return .success(message: message)
             }
             WindowManager.shared.showQuickPanel()
-            return .success(message: await assistant.submit(input, settings: settings))
+            let answer = await assistant.submit(input, settings: settings)
+            if assistant.state == .failed || assistant.state == .cancelled {
+                return .failure(message: answer)
+            }
+            return .success(message: answer)
         }
         return router.execute(command)
     }

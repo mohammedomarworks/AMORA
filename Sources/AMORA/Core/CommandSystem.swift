@@ -52,6 +52,16 @@ struct AMORACommandParser {
         let normalized = Self.normalize(original)
         guard !normalized.isEmpty else { return .unknown(text: "") }
 
+        if isTimerCancel(normalized) {
+            return .stopTimer
+        }
+        if isTimerPause(normalized) {
+            return .pauseTimer
+        }
+        if isTimerResume(normalized) {
+            return .resumeTimer
+        }
+
         if let duration = duration(in: normalized), isTimerStart(normalized) {
             return .startTimer(duration: duration)
         }
@@ -70,11 +80,6 @@ struct AMORACommandParser {
         if normalized == "resume" || normalized == "resume it" {
             return context.activeTimer ? .resumeTimer : .unknown(text: normalized)
         }
-        if normalized.contains("stop timer") || normalized == "stop it" || normalized == "cancel timer" {
-            return .stopTimer
-        }
-        if normalized.contains("pause timer") { return .pauseTimer }
-        if normalized.contains("resume timer") { return .resumeTimer }
 
         if normalized == "play spotify" || normalized == "start spotify" || normalized == "resume spotify" {
             return .playSpotify
@@ -117,7 +122,7 @@ struct AMORACommandParser {
             return .showFileShelf
         }
         if isSystemRequest(normalized) { return .showSystem }
-        if normalized == "open dashboard" || normalized == "show dashboard" || normalized == "dashboard" {
+        if normalized == "open dashboard" || normalized == "show dashboard" || normalized == "dashboard" || normalized == "open workspace" || normalized == "show workspace" || normalized == "workspace" {
             return .showDashboard
         }
         if normalized == "open settings" || normalized == "show settings" || normalized == "settings" {
@@ -176,8 +181,31 @@ struct AMORACommandParser {
         return seconds.rounded()
     }
 
+    private func isTimerCancel(_ text: String) -> Bool {
+        let cancelPatterns = [
+            "cancel the timer", "cancel my timer", "cancel timer",
+            "stop the timer", "stop my timer", "stop timer",
+            "end the timer", "end my timer", "end timer",
+            "turn off the timer", "turn off my timer", "turn off timer",
+            "clear the timer", "clear my timer", "clear timer",
+            "stop it", "cancel it", "turn it off"
+        ]
+        return cancelPatterns.contains { text.contains($0) || text == $0 }
+    }
+
+    private func isTimerPause(_ text: String) -> Bool {
+        let pausePatterns = ["pause the timer", "pause my timer", "pause timer"]
+        return pausePatterns.contains { text.contains($0) || text == $0 }
+    }
+
+    private func isTimerResume(_ text: String) -> Bool {
+        let resumePatterns = ["resume the timer", "resume my timer", "resume timer"]
+        return resumePatterns.contains { text.contains($0) || text == $0 }
+    }
+
     private func isTimerStart(_ text: String) -> Bool {
         if text.hasPrefix("help") || text.contains("plan") || text.contains("how can") { return false }
+        if isTimerCancel(text) || isTimerPause(text) || isTimerResume(text) { return false }
         return text.contains("timer") || text.contains("focus session") || text.contains("pomodoro")
     }
 
@@ -213,17 +241,29 @@ struct AMORACommandParser {
     }
 
     private func folderName(from text: String) -> String? {
-        let allowed = ["downloads", "documents", "desktop"]
-        guard text.hasPrefix("open ") else { return nil }
-        let name = String(text.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-        return allowed.contains(name) ? name : nil
+        let target: String
+        if text.hasPrefix("open ") {
+            target = String(text.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+        } else if text.hasPrefix("show ") {
+            target = String(text.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+        } else {
+            return nil
+        }
+        switch target {
+        case "downloads", "download": return "downloads"
+        case "documents", "document", "docs": return "documents"
+        case "desktop": return "desktop"
+        case "home": return "home"
+        default: return nil
+        }
     }
 
     private func applicationName(from text: String) -> String? {
         guard text.hasPrefix("open ") else { return nil }
         let name = String(text.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-        let allowed = ["safari", "finder", "terminal", "vs code"]
-        return allowed.contains(name) ? name : nil
+        let forbidden = ["downloads", "documents", "desktop", "home", "dashboard", "settings", "clipboard", "notes", "file shelf", "workspace"]
+        if forbidden.contains(name) { return nil }
+        return name.isEmpty ? nil : name
     }
 }
 
@@ -295,7 +335,7 @@ final class AMORACommandRouter {
             result = .success(message: "Back to it.")
         case .stopTimer:
             guard TimerService.shared.isRunning else {
-                result = .failure(message: "There isn't an active timer.")
+                result = .failure(message: "I don't see an active timer. Would you like to start one?")
                 break
             }
             TimerService.shared.stopTimer()
@@ -395,7 +435,11 @@ final class AMORACommandRouter {
             if text == "" {
                 result = .needsInformation(prompt: "What should I do?")
             } else if text.contains("timer") || text.contains("focus session") || text.contains("pomodoro") {
-                result = .needsInformation(prompt: "How long should I set it for?")
+                if text.contains("cancel") || text.contains("stop") || text.contains("end") || text.contains("turn off") || text.contains("clear") {
+                    result = .failure(message: "I don't see an active timer. Would you like to start one?")
+                } else {
+                    result = .needsInformation(prompt: "How long should I set it for?")
+                }
             } else if text == "open project" {
                 result = .needsInformation(prompt: "Which project?")
             } else {
@@ -412,22 +456,19 @@ final class AMORACommandRouter {
     }
 
     private func openApplication(named name: String) -> AMORACommandResult {
-        let normalized = AMORACommandParser.normalize(name)
-        let known: [String: String] = ["safari": "com.apple.Safari", "finder": "com.apple.finder", "terminal": "com.apple.Terminal", "vs code": "com.microsoft.VSCode"]
-        guard let bundleID = known[normalized], let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+        let launcher = NativeAmoraApplicationLauncher()
+        guard let url = launcher.resolveApplicationURL(named: name) else {
             return .failure(message: "I couldn't find that app.")
         }
-        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
         return .success(message: "Opening \(name.capitalized).")
     }
 
     private func openFolder(named name: String) -> AMORACommandResult {
-        let folders: [String: URL] = [
-            "downloads": FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0],
-            "documents": FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0],
-            "desktop": FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-        ]
-        guard let url = folders[name], NSWorkspace.shared.open(url) else {
+        let opener = NativeAmoraFolderOpener()
+        guard let url = opener.resolveFolderURL(for: name), NSWorkspace.shared.open(url) else {
             return .failure(message: "I couldn't open that folder.")
         }
         return .success(message: "Opening \(name.capitalized).")
