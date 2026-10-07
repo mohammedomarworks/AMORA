@@ -38,7 +38,9 @@ final class BatteryService {
 
     private init() {
         refresh()
-        startMonitoring()
+        if NSClassFromString("XCTestCase") == nil {
+            startMonitoring()
+        }
     }
 
     func startMonitoring() {
@@ -48,6 +50,11 @@ final class BatteryService {
                 self?.refresh()
             }
         }
+    }
+
+    func stopMonitoring() {
+        timer?.invalidate()
+        timer = nil
     }
 
     func refresh() {

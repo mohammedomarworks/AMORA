@@ -9,27 +9,28 @@ final class DashboardViewModel {
     var suggestions: [String] = []
 }
 
+@MainActor
 struct DashboardView: View {
     var embedded: Bool = false
     var topInset: CGFloat = 0
     @Bindable var vm: DashboardViewModel
     @FocusState private var isInputFocused: Bool
     @State private var isDashboardFileShelfDropTargeted = false
-    private var robot = AMORARobot.shared
-    private var battery = BatteryService.shared
-    private var timer = TimerService.shared
-    private var music = MusicService.shared
-    private var systemMonitor = SystemMonitorService.shared
-    private var clipboard = ClipboardService.shared
-    private var notes = NotesService.shared
-    private var fileShelf = FileShelfService.shared
-    private var commandRouter = AMORACommandRouter.shared
-    private var commandHistory = AMORACommandHistory.shared
-    private var assistant = AssistantManager.shared
-    private var coordinator = AmoraActionExecutionCoordinator.shared
-    private var gateway = AMORACommandGateway()
-    private let parser = AMORACommandParser()
-    private var settings = AppState.shared.settings
+    private var robot: AMORARobot { AMORARobot.shared }
+    private var battery: BatteryService { BatteryService.shared }
+    private var timer: TimerService { TimerService.shared }
+    private var music: MusicService { MusicService.shared }
+    private var systemMonitor: SystemMonitorService { SystemMonitorService.shared }
+    private var clipboard: ClipboardService { ClipboardService.shared }
+    private var notes: NotesService { NotesService.shared }
+    private var fileShelf: FileShelfService { FileShelfService.shared }
+    private var commandRouter: AMORACommandRouter { AMORACommandRouter.shared }
+    private var commandHistory: AMORACommandHistory { AMORACommandHistory.shared }
+    private var assistant: AssistantManager { AssistantManager.shared }
+    private var coordinator: AmoraActionExecutionCoordinator { AmoraActionExecutionCoordinator.shared }
+    private var gateway: AMORACommandGateway { AMORACommandGateway() }
+    private var parser: AMORACommandParser { AMORACommandParser() }
+    private var settings: SettingsStore { AppState.shared.settings }
     private var palette: ThemePalette { settings.palette }
 
     init(initialSection: DashboardSection = .overview, embedded: Bool = false, topInset: CGFloat = 0) {

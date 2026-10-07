@@ -16,7 +16,9 @@ final class SystemMonitorService {
 
     private init() {
         refresh()
-        startMonitoring()
+        if NSClassFromString("XCTestCase") == nil {
+            startMonitoring()
+        }
     }
 
     func startMonitoring() {
@@ -26,6 +28,11 @@ final class SystemMonitorService {
                 self?.refresh()
             }
         }
+    }
+
+    func stopMonitoring() {
+        timer?.invalidate()
+        timer = nil
     }
 
     func refresh() {

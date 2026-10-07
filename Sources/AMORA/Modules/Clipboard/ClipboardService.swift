@@ -27,7 +27,9 @@ final class ClipboardService {
     private init() {
         lastChangeCount = NSPasteboard.general.changeCount
         checkClipboard()
-        startPolling()
+        if NSClassFromString("XCTestCase") == nil {
+            startPolling()
+        }
     }
 
     func startPolling() {
@@ -37,6 +39,11 @@ final class ClipboardService {
                 self?.checkClipboard()
             }
         }
+    }
+
+    func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
     }
 
     func checkClipboard() {

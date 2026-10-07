@@ -200,7 +200,9 @@ final class MusicService {
         }
 
         checkCurrentTrack()
-        startPolling()
+        if NSClassFromString("XCTestCase") == nil {
+            startPolling()
+        }
     }
 
     func startPolling() {
@@ -210,6 +212,11 @@ final class MusicService {
                 self?.checkCurrentTrack()
             }
         }
+    }
+
+    func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
     }
 
     // MARK: - Provider Selection & State Resolution

@@ -1032,15 +1032,18 @@ final class AMORATests: XCTestCase {
                 XCTFail("Could not create NSItemProvider for \(file.name)")
                 continue
             }
-            let exp = expectation(description: "Added \(file.name)")
-
-            let accepted = service.handleDrop(providers: [provider]) { addedURL in
-                XCTAssertEqual(addedURL.lastPathComponent, file.name)
-                exp.fulfill()
+            var addedURL: URL? = nil
+            let accepted = service.handleDrop(providers: [provider]) { url in
+                addedURL = url
             }
             XCTAssertTrue(accepted)
 
-            await fulfillment(of: [exp], timeout: 3.0)
+            for _ in 0..<60 {
+                if addedURL != nil { break }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+
+            XCTAssertEqual(addedURL?.lastPathComponent, file.name)
             XCTAssertEqual(service.items.first?.name, file.name)
         }
 

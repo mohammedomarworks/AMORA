@@ -42,6 +42,7 @@ final class AMORARobot {
     }
 
     private func startAnimations() {
+        guard NSClassFromString("XCTestCase") == nil else { return }
         animationTimer?.invalidate()
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
