@@ -308,10 +308,17 @@ final class AMORACommandRouter {
                 result = .failure(message: "A timer is already running.")
                 break
             }
+            let coordinator = AmoraActionExecutionCoordinator.shared
+            coordinator.beginSequence([.startTimer(duration: duration)])
+            coordinator.willExecuteItem(at: 0)
             TimerService.shared.startTimer(seconds: Int(duration))
             context.lastModule = "timer"
             context.activeTimer = true
-            result = .success(message: "Let's focus. \(Self.durationText(duration)) starts now.")
+            let msg = "Let's focus. \(Self.durationText(duration)) starts now."
+            let successRes = AmoraActionResult.success(actionId: "timer.start", message: msg)
+            coordinator.didCompleteItem(at: 0, result: successRes)
+            coordinator.finishSequence(results: [successRes])
+            result = .success(message: msg)
         case let .addTimerTime(duration):
             guard TimerService.shared.isRunning else {
                 result = .needsInformation(prompt: "There isn't an active timer to extend.")
@@ -338,9 +345,16 @@ final class AMORACommandRouter {
                 result = .failure(message: "I don't see an active timer. Would you like to start one?")
                 break
             }
+            let coordinator = AmoraActionExecutionCoordinator.shared
+            coordinator.beginSequence([.cancelTimer])
+            coordinator.willExecuteItem(at: 0)
             TimerService.shared.stopTimer()
             context.activeTimer = false
-            result = .success(message: "Timer stopped.")
+            let msg = "Timer stopped."
+            let successRes = AmoraActionResult.success(actionId: "timer.cancel", message: msg)
+            coordinator.didCompleteItem(at: 0, result: successRes)
+            coordinator.finishSequence(results: [successRes])
+            result = .success(message: msg)
         case .playSpotify:
             guard SpotifyProvider.shared.isInstalled else {
                 result = .failure(message: "Spotify is not installed on this Mac.")
@@ -350,10 +364,17 @@ final class AMORACommandRouter {
                 result = .failure(message: "AMORA needs Automation permission to control Spotify. You can enable it in System Settings > Privacy & Security > Automation.")
                 break
             }
+            let coordinator = AmoraActionExecutionCoordinator.shared
+            coordinator.beginSequence([.playMusic])
+            coordinator.willExecuteItem(at: 0)
             MusicService.shared.play(preferredSource: .spotify)
             context.lastModule = "music"
             context.activeMedia = true
-            result = .success(message: "Spotify playing.")
+            let msg = "Spotify playing."
+            let successRes = AmoraActionResult.success(actionId: "media.play", message: msg)
+            coordinator.didCompleteItem(at: 0, result: successRes)
+            coordinator.finishSequence(results: [successRes])
+            result = .success(message: msg)
         case .pauseSpotify:
             guard SpotifyProvider.shared.isRunning else {
                 result = .failure(message: "Spotify is not running.")
@@ -456,21 +477,41 @@ final class AMORACommandRouter {
     }
 
     private func openApplication(named name: String) -> AMORACommandResult {
+        let coordinator = AmoraActionExecutionCoordinator.shared
+        coordinator.beginSequence([.openApplication(name: name)])
+        coordinator.willExecuteItem(at: 0)
+
         let launcher = NativeAmoraApplicationLauncher()
         guard let url = launcher.resolveApplicationURL(named: name) else {
+            let res = AmoraActionResult.unavailable(actionId: "app.open", message: "I couldn't find that app.")
+            coordinator.didFailItem(at: 0, result: res)
+            coordinator.finishSequence(results: [res])
             return .failure(message: "I couldn't find that app.")
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        let successRes = AmoraActionResult.success(actionId: "app.open", message: "Opening \(name.capitalized).")
+        coordinator.didCompleteItem(at: 0, result: successRes)
+        coordinator.finishSequence(results: [successRes])
         return .success(message: "Opening \(name.capitalized).")
     }
 
     private func openFolder(named name: String) -> AMORACommandResult {
+        let coordinator = AmoraActionExecutionCoordinator.shared
+        coordinator.beginSequence([.openFolder(location: name)])
+        coordinator.willExecuteItem(at: 0)
+
         let opener = NativeAmoraFolderOpener()
         guard let url = opener.resolveFolderURL(for: name), NSWorkspace.shared.open(url) else {
+            let res = AmoraActionResult.unavailable(actionId: "folder.open", message: "I couldn't open that folder.")
+            coordinator.didFailItem(at: 0, result: res)
+            coordinator.finishSequence(results: [res])
             return .failure(message: "I couldn't open that folder.")
         }
+        let successRes = AmoraActionResult.success(actionId: "folder.open", message: "Opening \(name.capitalized).")
+        coordinator.didCompleteItem(at: 0, result: successRes)
+        coordinator.finishSequence(results: [successRes])
         return .success(message: "Opening \(name.capitalized).")
     }
 

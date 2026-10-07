@@ -26,6 +26,7 @@ struct DashboardView: View {
     private var commandRouter = AMORACommandRouter.shared
     private var commandHistory = AMORACommandHistory.shared
     private var assistant = AssistantManager.shared
+    private var coordinator = AmoraActionExecutionCoordinator.shared
     private var gateway = AMORACommandGateway()
     private let parser = AMORACommandParser()
     private var settings = AppState.shared.settings
@@ -305,14 +306,16 @@ struct DashboardView: View {
 
             // Bottom Command Bar / Assistant Input
             VStack(spacing: 6) {
-                if let feedback = vm.assistantFeedback {
+                if coordinator.state != .idle {
+                    ActionExecutionView(compact: true)
+                } else if let feedback = vm.assistantFeedback {
                     Text(feedback)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.cyan)
                         .transition(.opacity)
                 }
 
-                if assistant.state == .thinking {
+                if coordinator.state == .idle && assistant.state == .thinking {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small).tint(.cyan)
                         Text("Thinking…").font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.65))

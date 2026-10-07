@@ -82,6 +82,30 @@ public struct AmoraActionResult: Equatable, Sendable {
     ) -> AmoraActionResult {
         .init(actionId: actionId, status: .needsConfirmation, message: prompt, data: data)
     }
+
+    /// Combines multiple action results into a clean, human-readable, truthful response.
+    public static func combineMessages(from results: [AmoraActionResult]) -> String {
+        guard !results.isEmpty else { return "No actions performed." }
+        if results.count == 1 {
+            return results[0].message
+        }
+
+        let successes = results.filter { $0.status == .success }
+        let failures = results.filter { $0.status != .success }
+
+        if failures.isEmpty {
+            return results.map(\.message).joined(separator: " ")
+        }
+
+        if successes.isEmpty {
+            return results.map(\.message).joined(separator: " ")
+        }
+
+        // Mixed success and failure
+        let successText = successes.map(\.message).joined(separator: " ")
+        let failureText = failures.map(\.message).joined(separator: " ")
+        return "\(successText) However, \(failureText)"
+    }
 }
 
 /// Validation result produced prior to action execution.

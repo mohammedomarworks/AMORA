@@ -149,6 +149,7 @@ struct DynamicIslandView: View {
     @Bindable var robot = AMORARobot.shared
     @Bindable var island = IslandModel.shared
     @Bindable var assistant = AssistantManager.shared
+    @Bindable var coordinator = AmoraActionExecutionCoordinator.shared
     private var appState: AppState { AppState.shared }
 
     var body: some View {
@@ -274,7 +275,7 @@ struct DynamicIslandView: View {
         let scale = e <= 1.0 ? (0.96 + 0.04 * fadeIn) : (1.0 + 0.04 * (e - 1.0))
 
         return Group {
-            if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed {
+            if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed || coordinator.state != .idle {
                 AIResponseView(embedded: true, topInset: island.topInset)
             } else {
                 QuickPanelView(embedded: true, topInset: island.topInset)
@@ -310,6 +311,7 @@ struct AIResponseView: View {
     var embedded = false
     var topInset: CGFloat = 0
     @Bindable private var assistant = AssistantManager.shared
+    @Bindable private var coordinator = AmoraActionExecutionCoordinator.shared
     private var palette: ThemePalette { AppState.shared.settings.palette }
 
     private var responseText: String { assistant.response ?? "" }
@@ -330,7 +332,10 @@ struct AIResponseView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Expand to Workspace")
-                Button { WindowManager.shared.collapseIsland() } label: {
+                Button {
+                    coordinator.reset()
+                    WindowManager.shared.collapseIsland()
+                } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white.opacity(0.75))
@@ -339,7 +344,9 @@ struct AIResponseView: View {
                 .accessibilityLabel("Close AI response")
             }
 
-            if assistant.state == .thinking {
+            if coordinator.state != .idle {
+                ActionExecutionView(compact: false)
+            } else if assistant.state == .thinking {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small).tint(palette.accent)
                     Text("Thinking…")
@@ -363,10 +370,13 @@ struct AIResponseView: View {
 
                 HStack {
                     Spacer()
-                    Button("Close") { WindowManager.shared.collapseIsland() }
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .buttonStyle(.plain)
+                    Button("Close") {
+                        coordinator.reset()
+                        WindowManager.shared.collapseIsland()
+                    }
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .buttonStyle(.plain)
                 }
             }
         }
