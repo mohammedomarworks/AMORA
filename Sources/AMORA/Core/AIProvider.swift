@@ -108,6 +108,21 @@ struct AISettingsSnapshot: Sendable {
     let provider: AIProviderKind
     let model: String
     let apiKey: String?
+    let contextAwarenessEnabled: Bool
+
+    init(
+        enabled: Bool,
+        provider: AIProviderKind,
+        model: String,
+        apiKey: String?,
+        contextAwarenessEnabled: Bool = true
+    ) {
+        self.enabled = enabled
+        self.provider = provider
+        self.model = model
+        self.apiKey = apiKey
+        self.contextAwarenessEnabled = contextAwarenessEnabled
+    }
 }
 
 struct HTTPAIProvider: AIProvider {

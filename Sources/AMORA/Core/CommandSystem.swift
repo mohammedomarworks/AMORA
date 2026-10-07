@@ -205,6 +205,7 @@ struct AMORACommandParser {
 
     private func isTimerStart(_ text: String) -> Bool {
         if text.hasPrefix("help") || text.contains("plan") || text.contains("how can") { return false }
+        if text.contains("how much") || text.contains("what is") || text.contains("what's") || text.contains("whats") || text.contains("is my") || text.contains("is there") || text.contains("status") || text.contains("remaining") || text.contains("left") { return false }
         if isTimerCancel(text) || isTimerPause(text) || isTimerResume(text) { return false }
         return text.contains("timer") || text.contains("focus session") || text.contains("pomodoro")
     }

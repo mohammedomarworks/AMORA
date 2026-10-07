@@ -262,6 +262,13 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Context Awareness") {
+                Toggle("Context Awareness", isOn: $settings.contextAwarenessEnabled)
+                Text("AMORA can use current Mac state such as the active app, media, timer, and battery to give more helpful answers.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

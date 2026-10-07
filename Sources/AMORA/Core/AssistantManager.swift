@@ -90,7 +90,7 @@ If the user asks to cancel, stop, end, or turn off a timer, output {"actions":[{
 Never request shell commands, arbitrary paths, unknown tools, or destructive actions.
 If no action is needed, answer normally.
 """))
-        if let context = AIContextComposer.relevantContext(for: input) {
+        if settings.contextAwarenessEnabled, let context = AIContextComposer.relevantContext(for: input) {
             messages.append(AIMessage(role: .user, content: "[System context]\n\(context)"))
         }
         let userMessage = AIMessage(role: .user, content: input)
@@ -121,7 +121,9 @@ If no action is needed, answer normally.
                     }
                     actionPlan = AmoraActionPlan(actions: sanitizedActions)
                 }
-                let results = await AmoraActionEngine.shared.executePlan(actionPlan)
+                let actionContext = AmoraActionContext(snapshot: AmoraContextProvider.shared.currentSnapshot)
+                let results = await AmoraActionEngine.shared.executePlan(actionPlan, context: actionContext)
+                AmoraContextProvider.shared.captureSnapshot()
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if isTimerCancellationInput {
                 let results = await AmoraActionEngine.shared.executeSequence([.cancelTimer])
@@ -324,15 +326,27 @@ final class AMORACommandGateway {
         let command = isCompound ? .unknown(text: input) : parser.parse(input, context: router.currentContext())
 
         // 2. If AI is enabled and genuinely available on-device, query assistant
+        var shouldQueryAssistant = false
         if settings.enabled && assistant.providerAvailability == .available {
+            let isContextQuestion = normalized.hasPrefix("how ") ||
+                normalized.hasPrefix("what ") ||
+                normalized.hasPrefix("is ") ||
+                normalized.hasPrefix("which ") ||
+                normalized.hasPrefix("who ") ||
+                input.contains("?")
             if case let .unknown(text) = command, (isCompound || !isLocalUnknown(text)) {
-                WindowManager.shared.showQuickPanel()
-                let answer = await assistant.submit(input, settings: settings)
-                if assistant.state == .failed || assistant.state == .cancelled {
-                    return .failure(message: answer)
-                }
-                return .success(message: answer)
+                shouldQueryAssistant = true
+            } else if isContextQuestion && command == .showBattery {
+                shouldQueryAssistant = true
             }
+        }
+        if shouldQueryAssistant {
+            WindowManager.shared.showQuickPanel()
+            let answer = await assistant.submit(input, settings: settings)
+            if assistant.state == .failed || assistant.state == .cancelled {
+                return .failure(message: answer)
+            }
+            return .success(message: answer)
         }
 
         // 3. Fallback for AI or tools if supported
@@ -650,6 +664,20 @@ final class AMORACommandGateway {
     }
 
     private func isLocalUnknown(_ text: String) -> Bool {
-        text.isEmpty || text.contains("timer") || text.contains("focus session") || text.contains("pomodoro") || text == "open project"
+        if text.isEmpty || text == "open project" { return true }
+        let isQuestion = text.contains("how much") ||
+            text.contains("what is") ||
+            text.contains("what's") ||
+            text.contains("whats") ||
+            text.contains("is my") ||
+            text.contains("is there") ||
+            text.contains("status") ||
+            text.contains("remaining") ||
+            text.contains("left") ||
+            text.contains("?")
+        if isQuestion {
+            return false
+        }
+        return text.contains("timer") || text.contains("focus session") || text.contains("pomodoro")
     }
 }

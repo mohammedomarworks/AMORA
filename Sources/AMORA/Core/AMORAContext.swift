@@ -25,7 +25,9 @@ final class AMORAContext {
     var lastInteractionDate: Date?
     var assistantState: AssistantState = .idle
     var currentAIResponse: String?
-    var displayName: String?
+    var currentSnapshot: AmoraContextSnapshot {
+        AmoraContextProvider.shared.currentSnapshot
+    }
     private var isRefreshing = false
 
     private init() {}
@@ -34,6 +36,7 @@ final class AMORAContext {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+        AmoraContextProvider.shared.captureSnapshot()
         let battery = BatteryService.shared
         batteryLevel = battery.hasBattery ? battery.level : nil
         isCharging = battery.isCharging
@@ -54,6 +57,7 @@ final class AMORAContext {
     func record(_ event: AMORAEvent) {
         currentEvent = event
         currentEventDate = Date()
+        AmoraContextProvider.shared.handleEvent(event)
 
         switch event {
         case .opened:
