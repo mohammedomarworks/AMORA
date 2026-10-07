@@ -182,6 +182,28 @@ public struct AmoraContextSnapshot: Equatable, Codable, Sendable {
         self.formattedLocalTime = formattedLocalTime
     }
 
+    /// Returns a new snapshot updating specific context domains while preserving others.
+    public func updating(
+        currentApplication: AmoraApplicationContext? = nil,
+        media: AmoraMediaContext? = nil,
+        timer: AmoraTimerContext? = nil,
+        battery: AmoraBatteryContext? = nil,
+        amora: AmoraUIContext? = nil,
+        fileShelf: AmoraFileShelfContext? = nil,
+        formattedLocalTime: String? = nil
+    ) -> AmoraContextSnapshot {
+        AmoraContextSnapshot(
+            timestamp: self.timestamp,
+            currentApplication: currentApplication ?? self.currentApplication,
+            media: media ?? self.media,
+            timer: timer ?? self.timer,
+            battery: battery ?? self.battery,
+            amora: amora ?? self.amora,
+            fileShelf: fileShelf ?? self.fileShelf,
+            formattedLocalTime: formattedLocalTime ?? self.formattedLocalTime
+        )
+    }
+
     // Convenience properties for fast access
     public var frontmostApplication: String? { currentApplication?.name }
     public var frontmostApplicationBundleIdentifier: String? { currentApplication?.bundleIdentifier }

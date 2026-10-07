@@ -83,6 +83,20 @@ public struct AmoraActionResult: Equatable, Sendable {
         .init(actionId: actionId, status: .needsConfirmation, message: prompt, data: data)
     }
 
+    public static func alreadyInState(
+        actionId: String,
+        message: String,
+        data: [String: String] = [:]
+    ) -> AmoraActionResult {
+        var combinedData = data
+        combinedData["alreadyInState"] = "true"
+        return .init(actionId: actionId, status: .success, message: message, data: combinedData)
+    }
+
+    public var isAlreadyInState: Bool {
+        data["alreadyInState"] == "true"
+    }
+
     /// Combines multiple action results into a clean, human-readable, truthful response.
     public static func combineMessages(from results: [AmoraActionResult]) -> String {
         guard !results.isEmpty else { return "No actions performed." }

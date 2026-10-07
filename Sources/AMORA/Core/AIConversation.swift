@@ -109,7 +109,9 @@ public enum AIContextComposer {
             normalized.contains("youtube") ||
             normalized.contains("playing") ||
             normalized.contains("media") ||
-            normalized.contains("audio")
+            normalized.contains("audio") ||
+            normalized.contains("play") ||
+            normalized.contains("pause")
 
         if asksMedia, let media = snapshot.media {
             if media.isPlaying {
@@ -138,7 +140,9 @@ public enum AIContextComposer {
             normalized.contains("island state") ||
             normalized.contains("workspace state") ||
             normalized.contains("dynamic island") ||
-            normalized.contains("amora state")
+            normalized.contains("amora state") ||
+            normalized.contains("workspace") ||
+            normalized.contains("dashboard")
 
         if asksUI, let amora = snapshot.amora {
             facts.append("AMORA Dynamic Island state: \(amora.state)")

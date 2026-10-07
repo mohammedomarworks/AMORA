@@ -4,10 +4,15 @@ import Foundation
 @MainActor
 public final class AmoraActionEngine: Sendable {
     public let registry: AmoraActionRegistry
+    public let decider: any AmoraActionDeciding
     public static let shared = AmoraActionEngine.makeDefault()
 
-    public init(registry: AmoraActionRegistry) {
+    public init(
+        registry: AmoraActionRegistry,
+        decider: any AmoraActionDeciding = AmoraActionDecisionEngine()
+    ) {
         self.registry = registry
+        self.decider = decider
     }
 
     /// Factory configuring the action engine with production dependencies.
@@ -16,7 +21,8 @@ public final class AmoraActionEngine: Sendable {
         appLauncher: any AmoraApplicationLaunching = NativeAmoraApplicationLauncher(),
         folderOpener: any AmoraFolderOpening = NativeAmoraFolderOpener(),
         workspaceController: any AmoraWorkspaceControlling = DefaultAmoraWorkspaceController(),
-        timerController: any AmoraTimerControlling = DefaultAmoraTimerController()
+        timerController: any AmoraTimerControlling = DefaultAmoraTimerController(),
+        decider: any AmoraActionDeciding = AmoraActionDecisionEngine()
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
         registerDefaultActions(
@@ -27,7 +33,7 @@ public final class AmoraActionEngine: Sendable {
             workspaceController: workspaceController,
             timerController: timerController
         )
-        return AmoraActionEngine(registry: registry)
+        return AmoraActionEngine(registry: registry, decider: decider)
     }
 
     /// Executes a strongly typed `AmoraAction`.
@@ -58,7 +64,15 @@ public final class AmoraActionEngine: Sendable {
             break
         }
 
-        // 2. Confirmation check
+        // 2. Context-aware decision check
+        let decision = decider.decide(action: action, context: context)
+        if case let .alreadyInState(actionId, message, data) = decision {
+            let result = AmoraActionResult.alreadyInState(actionId: actionId, message: message, data: data)
+            AMORAEventCenter.shared.emit(.commandSucceeded)
+            return result
+        }
+
+        // 3. Confirmation check
         if !context.isConfirmed {
             let confirmation = definition.confirmationRequirement(action)
             switch confirmation {
@@ -98,6 +112,7 @@ public final class AmoraActionEngine: Sendable {
             coordinator.beginSequence(actions)
         }
         var results: [AmoraActionResult] = []
+        var currentContext = context
 
         for (index, action) in actions.enumerated() {
             if coordinator.isCancelled {
@@ -138,7 +153,16 @@ public final class AmoraActionEngine: Sendable {
                 break
             }
 
-            // 2. Confirmation requirement check
+            // 2. Context-aware decision check
+            let decision = decider.decide(action: action, context: currentContext)
+            if case let .alreadyInState(actionId, message, data) = decision {
+                let result = AmoraActionResult.alreadyInState(actionId: actionId, message: message, data: data)
+                coordinator.didCompleteItem(at: index, result: result)
+                results.append(result)
+                continue
+            }
+
+            // 3. Confirmation requirement check
             if actionPrompt == nil {
                 let confirmationReq = definition.confirmationRequirement(action)
                 if case .required(let prompt) = confirmationReq {
@@ -146,7 +170,7 @@ public final class AmoraActionEngine: Sendable {
                 }
             }
 
-            var itemContext = context
+            var itemContext = currentContext
             if let prompt = actionPrompt, !itemContext.isConfirmed {
                 let confirmed = await coordinator.requestConfirmation(for: action, prompt: prompt, at: index)
                 if !confirmed {
@@ -168,10 +192,13 @@ public final class AmoraActionEngine: Sendable {
                 itemContext.isConfirmed = true
             }
 
-            // 3. Execution handler
+            // 4. Execution handler
             let result = await definition.handler(action, itemContext)
             if result.status == .success {
                 coordinator.didCompleteItem(at: index, result: result)
+                if let snap = currentContext.snapshot {
+                    currentContext.snapshot = decider.updatingSnapshot(snap, afterExecuting: action)
+                }
             } else {
                 coordinator.didFailItem(at: index, result: result)
             }
@@ -232,6 +259,25 @@ public final class AmoraActionEngine: Sendable {
             return .invalid(reason: "Action '\(action.identifier)' is not registered.")
         }
         return definition.validator(action)
+    }
+
+    /// Evaluates an array of strongly typed actions against context to produce planned decisions prior to execution.
+    public func plan(
+        actions: [AmoraAction],
+        context: AmoraActionContext = .init()
+    ) -> [AmoraActionPlanDecision] {
+        decider.plan(actions: actions, context: context)
+    }
+
+    /// Evaluates an `AmoraActionPlan` against context to produce planned decisions prior to execution.
+    public func plan(
+        _ plan: AmoraActionPlan,
+        context: AmoraActionContext = .init()
+    ) -> [AmoraActionPlanDecision] {
+        let actions = plan.actions.compactMap { call -> AmoraAction? in
+            try? call.toActionRequest().resolveAction().get()
+        }
+        return decider.plan(actions: actions, context: context)
     }
 
     /// Registers standard V1 actions into the given registry.
@@ -502,7 +548,7 @@ public final class AmoraActionEngine: Sendable {
         ))
     }
 
-    private static func formatDuration(seconds: Int) -> String {
+    nonisolated public static func formatDuration(seconds: Int) -> String {
         if seconds % 3600 == 0 {
             let hours = seconds / 3600
             return "\(hours) hour\(hours == 1 ? "" : "s")"

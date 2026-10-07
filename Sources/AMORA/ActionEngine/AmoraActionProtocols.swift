@@ -78,6 +78,34 @@ public struct NativeAmoraApplicationLauncher: AmoraApplicationLaunching {
         "xcode": "com.apple.dt.Xcode"
     ]
 
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cachedURLs: [URL]? = nil
+
+    private static func discoverCandidateURLs() -> [URL] {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let cachedURLs {
+            return cachedURLs
+        }
+        let fileManager = FileManager.default
+        var urls: [URL] = []
+        for root in searchRoots {
+            guard let enumerator = fileManager.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else { continue }
+
+            for case let fileURL as URL in enumerator {
+                if fileURL.pathExtension.lowercased() == "app" {
+                    urls.append(fileURL)
+                }
+            }
+        }
+        cachedURLs = urls
+        return urls
+    }
+
     public func resolveApplicationURL(named name: String) -> URL? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -102,22 +130,7 @@ public struct NativeAmoraApplicationLauncher: AmoraApplicationLaunching {
         }
 
         // 4. Dynamic discovery across standard macOS application directories
-        let fileManager = FileManager.default
-        var candidateURLs: [URL] = []
-
-        for root in Self.searchRoots {
-            guard let enumerator = fileManager.enumerator(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { continue }
-
-            for case let fileURL as URL in enumerator {
-                if fileURL.pathExtension.lowercased() == "app" {
-                    candidateURLs.append(fileURL)
-                }
-            }
-        }
+        let candidateURLs = Self.discoverCandidateURLs()
 
         // Pass A: Exact match on filename or name without .app
         for url in candidateURLs {

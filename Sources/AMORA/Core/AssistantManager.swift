@@ -121,18 +121,29 @@ If no action is needed, answer normally.
                     }
                     actionPlan = AmoraActionPlan(actions: sanitizedActions)
                 }
-                let actionContext = AmoraActionContext(snapshot: AmoraContextProvider.shared.currentSnapshot)
+                let actionContext = AmoraActionContext(
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                )
                 let results = await AmoraActionEngine.shared.executePlan(actionPlan, context: actionContext)
                 AmoraContextProvider.shared.captureSnapshot()
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if isTimerCancellationInput {
-                let results = await AmoraActionEngine.shared.executeSequence([.cancelTimer])
+                let actionContext = AmoraActionContext(
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                )
+                let results = await AmoraActionEngine.shared.executeSequence([.cancelTimer], context: actionContext)
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if isTimerPauseInput {
-                let results = await AmoraActionEngine.shared.executeSequence([.pauseTimer])
+                let actionContext = AmoraActionContext(
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                )
+                let results = await AmoraActionEngine.shared.executeSequence([.pauseTimer], context: actionContext)
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if isTimerResumeInput {
-                let results = await AmoraActionEngine.shared.executeSequence([.resumeTimer])
+                let actionContext = AmoraActionContext(
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                )
+                let results = await AmoraActionEngine.shared.executeSequence([.resumeTimer], context: actionContext)
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if let data = extractedJSONData,
                       let plan = try? JSONDecoder().decode(AMORAToolPlan.self, from: data),
@@ -317,7 +328,10 @@ final class AMORACommandGateway {
         // 1. Direct Action Engine execution for multi-action compound requests (deterministic grammar)
         if isCompound, let directActions = Self.parseDeterministicActions(from: input) {
             WindowManager.shared.showQuickPanel()
-            let results = await AmoraActionEngine.shared.executeSequence(directActions)
+            let actionContext = AmoraActionContext(
+                snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil
+            )
+            let results = await AmoraActionEngine.shared.executeSequence(directActions, context: actionContext)
             let answer = AmoraActionResult.combineMessages(from: results)
             let allSucceeded = results.allSatisfy { $0.status == .success }
             return allSucceeded ? .success(message: answer) : .failure(message: answer)
