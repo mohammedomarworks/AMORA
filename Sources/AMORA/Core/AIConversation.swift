@@ -20,18 +20,42 @@ public enum AIContextComposer {
     @MainActor
     public static func relevantContext(
         for input: String,
-        snapshot: AmoraContextSnapshot? = nil
+        snapshot: AmoraContextSnapshot? = nil,
+        conversationContext: AmoraConversationContext? = nil
     ) -> String? {
         let actualSnapshot = snapshot ?? AmoraContextProvider.shared.captureSnapshot()
-        return composeRelevantContext(for: input, from: actualSnapshot)
+        return composeRelevantContext(for: input, from: actualSnapshot, conversationContext: conversationContext)
     }
 
     public static func composeRelevantContext(
         for input: String,
-        from snapshot: AmoraContextSnapshot
+        from snapshot: AmoraContextSnapshot,
+        conversationContext: AmoraConversationContext? = nil
     ) -> String? {
         let normalized = AMORACommandParser.normalize(input)
         var facts: [String] = []
+
+        // 0. Ephemeral Conversational Context (Follow-up understanding)
+        if let conv = conversationContext, !conv.isEmpty {
+            if let lastAction = conv.lastRelevantAction {
+                facts.append("Last action: \(lastAction.humanReadableName)")
+            }
+            if let app = conv.lastReferencedApp {
+                facts.append("Last referenced app: \(app)")
+            }
+            if let media = conv.lastReferencedMedia {
+                var desc = media.source ?? "Media"
+                if let title = media.title { desc += " (\"\(title)\")" }
+                facts.append("Last referenced media: \(desc)")
+            }
+            if let timer = conv.activeTimerReference {
+                let pausedStr = timer.isPaused == true ? " (paused)" : ""
+                facts.append("Active timer reference: \(Int(timer.duration))s\(pausedStr)")
+            }
+            if let section = conv.currentWorkspaceSection {
+                facts.append("Current Workspace section: \(section)")
+            }
+        }
 
         // 1. Current Application Context
         let asksApp = normalized.contains("what app") ||

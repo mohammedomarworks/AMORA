@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Observation
 
-enum AMORACommand: Equatable {
+public enum AMORACommand: Equatable, Sendable {
     case startTimer(duration: TimeInterval)
     case addTimerTime(duration: TimeInterval)
     case pauseTimer
@@ -31,7 +31,7 @@ enum AMORACommand: Equatable {
     case unknown(text: String)
 }
 
-enum AMORACommandResult: Equatable {
+public enum AMORACommandResult: Equatable, Sendable {
     case success(message: String)
     case failure(message: String)
     case needsInformation(prompt: String)
@@ -39,11 +39,29 @@ enum AMORACommandResult: Equatable {
     case unsupported(message: String)
 }
 
-struct AMORACommandContext: Equatable {
-    var lastCommand: AMORACommand?
-    var lastModule: String?
-    var activeTimer = false
-    var activeMedia = false
+public struct AMORACommandContext: Equatable, Sendable {
+    public var lastCommand: AMORACommand?
+    public var lastModule: String?
+    public var activeTimer: Bool
+    public var activeMedia: Bool
+    public var conversationContext: AmoraConversationContext?
+    public var contextAwarenessEnabled: Bool
+
+    public init(
+        lastCommand: AMORACommand? = nil,
+        lastModule: String? = nil,
+        activeTimer: Bool = false,
+        activeMedia: Bool = false,
+        conversationContext: AmoraConversationContext? = nil,
+        contextAwarenessEnabled: Bool = true
+    ) {
+        self.lastCommand = lastCommand
+        self.lastModule = lastModule
+        self.activeTimer = activeTimer
+        self.activeMedia = activeMedia
+        self.conversationContext = conversationContext
+        self.contextAwarenessEnabled = contextAwarenessEnabled
+    }
 }
 
 struct AMORACommandParser {
@@ -73,11 +91,17 @@ struct AMORACommandParser {
         }
 
         if normalized == "pause" || normalized == "pause it" {
+            guard context.contextAwarenessEnabled else { return .unknown(text: normalized) }
+            if context.activeTimer && context.activeMedia {
+                // Ambiguous without specific target or prior recency
+                return .unknown(text: normalized)
+            }
             if context.activeTimer { return .pauseTimer }
             if context.activeMedia { return .pauseMusic }
             return .unknown(text: normalized)
         }
         if normalized == "resume" || normalized == "resume it" {
+            guard context.contextAwarenessEnabled else { return .unknown(text: normalized) }
             return context.activeTimer ? .resumeTimer : .unknown(text: normalized)
         }
 
@@ -297,6 +321,7 @@ final class AMORACommandRouter {
     func currentContext() -> AMORACommandContext {
         context.activeTimer = TimerService.shared.isRunning
         context.activeMedia = MusicService.shared.isPlaying
+        context.conversationContext = AmoraConversationContextManager.shared.validContext()
         return context
     }
 
@@ -470,8 +495,11 @@ final class AMORACommandRouter {
         }
 
         switch result {
-        case .success: AMORAEventCenter.shared.emit(.commandSucceeded)
-        case .failure, .unsupported, .needsInformation, .needsConfirmation: AMORAEventCenter.shared.emit(.commandFailed)
+        case .success:
+            AMORAEventCenter.shared.emit(.commandSucceeded)
+            AmoraConversationContextManager.shared.recordCommand(command, date: Date())
+        case .failure, .unsupported, .needsInformation, .needsConfirmation:
+            AMORAEventCenter.shared.emit(.commandFailed)
         }
         context.lastCommand = command
         return result

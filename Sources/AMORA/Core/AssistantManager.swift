@@ -90,8 +90,11 @@ If the user asks to cancel, stop, end, or turn off a timer, output {"actions":[{
 Never request shell commands, arbitrary paths, unknown tools, or destructive actions.
 If no action is needed, answer normally.
 """))
-        if settings.contextAwarenessEnabled, let context = AIContextComposer.relevantContext(for: input) {
-            messages.append(AIMessage(role: .user, content: "[System context]\n\(context)"))
+        if settings.contextAwarenessEnabled {
+            let convCtx = AmoraConversationContextManager.shared.validContext()
+            if let context = AIContextComposer.relevantContext(for: input, conversationContext: convCtx) {
+                messages.append(AIMessage(role: .user, content: "[System context]\n\(context)"))
+            }
         }
         let userMessage = AIMessage(role: .user, content: input)
         messages.append(userMessage)
@@ -121,29 +124,53 @@ If no action is needed, answer normally.
                     }
                     actionPlan = AmoraActionPlan(actions: sanitizedActions)
                 }
+                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
                 let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
+                    conversationContext: convContext
                 )
                 let results = await AmoraActionEngine.shared.executePlan(actionPlan, context: actionContext)
                 AmoraContextProvider.shared.captureSnapshot()
+                if settings.contextAwarenessEnabled {
+                    for callResult in actionPlan.resolveActions() {
+                        if case .success(let act) = callResult {
+                            AmoraConversationContextManager.shared.recordAction(act, date: Date())
+                        }
+                    }
+                }
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if isTimerCancellationInput {
+                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
                 let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
+                    conversationContext: convContext
                 )
                 let results = await AmoraActionEngine.shared.executeSequence([.cancelTimer], context: actionContext)
+                if settings.contextAwarenessEnabled {
+                    AmoraConversationContextManager.shared.recordAction(.cancelTimer, date: Date())
+                }
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if isTimerPauseInput {
+                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
                 let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
+                    conversationContext: convContext
                 )
                 let results = await AmoraActionEngine.shared.executeSequence([.pauseTimer], context: actionContext)
+                if settings.contextAwarenessEnabled {
+                    AmoraConversationContextManager.shared.recordAction(.pauseTimer, date: Date())
+                }
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if isTimerResumeInput {
+                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
                 let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
+                    conversationContext: convContext
                 )
                 let results = await AmoraActionEngine.shared.executeSequence([.resumeTimer], context: actionContext)
+                if settings.contextAwarenessEnabled {
+                    AmoraConversationContextManager.shared.recordAction(.resumeTimer, date: Date())
+                }
                 answer = AmoraActionResult.combineMessages(from: results)
             } else if let data = extractedJSONData,
                       let plan = try? JSONDecoder().decode(AMORAToolPlan.self, from: data),
@@ -292,7 +319,9 @@ If no action is needed, answer normally.
 
     func startNewConversation() {
         cancel()
+        AmoraActionExecutionCoordinator.shared.reset()
         conversation.reset()
+        AmoraConversationContextManager.shared.reset()
         response = nil
         state = .idle
         AMORAContext.shared.dismissAIResponse()
@@ -311,6 +340,7 @@ final class AMORACommandGateway {
     }
 
     func submit(_ input: String, settings: AISettingsSnapshot) async -> AMORACommandResult {
+        AmoraActionExecutionCoordinator.shared.reset()
         let isCompound = Self.isCompoundRequest(input)
         let normalized = AMORACommandParser.normalize(input)
         let isConfirmTest = normalized == "confirm test" || normalized == "test confirm" || normalized == "run confirmation test" || normalized == "test confirmation"
@@ -328,16 +358,55 @@ final class AMORACommandGateway {
         // 1. Direct Action Engine execution for multi-action compound requests (deterministic grammar)
         if isCompound, let directActions = Self.parseDeterministicActions(from: input) {
             WindowManager.shared.showQuickPanel()
+            let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
             let actionContext = AmoraActionContext(
-                snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil
+                snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil,
+                conversationContext: convContext
             )
             let results = await AmoraActionEngine.shared.executeSequence(directActions, context: actionContext)
+            if settings.contextAwarenessEnabled {
+                for act in directActions {
+                    AmoraConversationContextManager.shared.recordAction(act, date: Date())
+                }
+            }
             let answer = AmoraActionResult.combineMessages(from: results)
             let allSucceeded = results.allSatisfy { $0.status == .success }
             return allSucceeded ? .success(message: answer) : .failure(message: answer)
         }
 
-        let command = isCompound ? .unknown(text: input) : parser.parse(input, context: router.currentContext())
+        // Ephemeral contextual follow-up evaluation (pronouns, omitted targets, modifications, etc.)
+        if settings.contextAwarenessEnabled {
+            let convContext = AmoraConversationContextManager.shared.validContext()
+            let snapshot = AmoraContextProvider.shared.captureSnapshot()
+            let resolution = AmoraContextualFollowUpResolver.shared.resolve(
+                input: input,
+                context: convContext,
+                snapshot: snapshot,
+                contextAwarenessEnabled: settings.contextAwarenessEnabled
+            )
+            switch resolution {
+            case .ambiguous(let prompt, _):
+                return .needsInformation(prompt: prompt)
+            case .resolvedAction(let action):
+                WindowManager.shared.showQuickPanel()
+                let actionContext = AmoraActionContext(snapshot: snapshot, conversationContext: convContext)
+                let results = await AmoraActionEngine.shared.executeSequence([action], context: actionContext)
+                AmoraConversationContextManager.shared.recordAction(action, date: Date())
+                let answer = AmoraActionResult.combineMessages(from: results)
+                let allSucceeded = results.allSatisfy { $0.status == .success }
+                return allSucceeded ? .success(message: answer) : .failure(message: answer)
+            case .resolvedCommand(let cmd):
+                let result = router.execute(cmd)
+                AmoraConversationContextManager.shared.recordCommand(cmd, date: Date())
+                return result
+            case .unhandled:
+                break
+            }
+        }
+
+        var parseContext = router.currentContext()
+        parseContext.contextAwarenessEnabled = settings.contextAwarenessEnabled
+        let command = isCompound ? .unknown(text: input) : parser.parse(input, context: parseContext)
 
         // 2. If AI is enabled and genuinely available on-device, query assistant
         var shouldQueryAssistant = false

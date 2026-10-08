@@ -7,18 +7,21 @@ public struct AmoraActionContext: Equatable, Sendable {
     public var metadata: [String: String]
     public var timestamp: Date
     public var snapshot: AmoraContextSnapshot?
+    public var conversationContext: AmoraConversationContext?
 
     public init(
         isConfirmed: Bool = false,
         caller: String? = nil,
         metadata: [String: String] = [:],
         timestamp: Date = Date(),
-        snapshot: AmoraContextSnapshot? = nil
+        snapshot: AmoraContextSnapshot? = nil,
+        conversationContext: AmoraConversationContext? = nil
     ) {
         self.isConfirmed = isConfirmed
         self.caller = caller
         self.metadata = metadata
         self.timestamp = timestamp
         self.snapshot = snapshot
+        self.conversationContext = conversationContext
     }
 }
