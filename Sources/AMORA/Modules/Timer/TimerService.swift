@@ -86,6 +86,9 @@ final class TimerService {
     private func tick() {
         if remainingSeconds > 0 {
             remainingSeconds -= 1
+            if remainingSeconds == 60 {
+                AMORAEventCenter.shared.emit(.timerNearlyFinished)
+            }
             AMORAContext.shared.refreshFromServices()
         } else {
             timerFinished()

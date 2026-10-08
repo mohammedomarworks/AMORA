@@ -210,7 +210,7 @@ final class PersonalityEngine {
         case .fileReceived:
             return Reaction(key: "file", state: .happy, message: "Got it.", sound: .pop,
                             exprCooldown: 2, messageCooldown: 2, revert: 3)
-        case .clipboardUpdated, .noteCreated, .systemIdle, .systemActive:
+        case .clipboardUpdated, .noteCreated, .systemIdle, .systemActive, .timerNearlyFinished:
             return Reaction(key: "quiet", state: .idle, message: nil, sound: nil,
                             exprCooldown: 0, messageCooldown: 0, revert: 0)
         }

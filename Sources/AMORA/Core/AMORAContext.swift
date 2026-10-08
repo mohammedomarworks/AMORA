@@ -122,7 +122,7 @@ final class AMORAContext {
 /// Producers stay unaware of expressions, sounds, and island presentation.
 enum AMORAEvent: Equatable {
     case launched, opened, closed
-    case timerStarted, timerPaused, timerResumed, timerCompleted
+    case timerStarted, timerPaused, timerResumed, timerNearlyFinished, timerCompleted
     case charging, chargedFull, lowBattery, criticalBattery
     case musicStarted, musicPaused, musicChanged, musicStopped
     case clipboardUpdated, clipboardRestored, noteCreated, fileReceived
@@ -140,5 +140,6 @@ final class AMORAEventCenter {
     func emit(_ event: AMORAEvent) {
         AMORAContext.shared.record(event)
         PersonalityEngine.shared.react(to: event)
+        AmoraProactiveService.shared.handleEvent(event)
     }
 }

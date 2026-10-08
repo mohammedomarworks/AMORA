@@ -36,6 +36,25 @@ final class SettingsStore {
     var contextAwarenessEnabled: Bool = true
     var memoryEnabled: Bool = true
 
+    // Proactive AMORA
+    var proactiveAmoraEnabled: Bool = true
+    var proactiveTimerCompletedEnabled: Bool = true
+    var proactiveTimerNearlyFinishedEnabled: Bool = true
+    var proactiveMusicPlaybackEnabled: Bool = true
+    var proactiveInactivityReturnEnabled: Bool = true
+    var proactiveBatteryCriticalEnabled: Bool = true
+
+    var proactiveSettingsSnapshot: AmoraProactiveSettings {
+        AmoraProactiveSettings(
+            isEnabled: proactiveAmoraEnabled,
+            timerCompletedEnabled: proactiveTimerCompletedEnabled,
+            timerNearlyFinishedEnabled: proactiveTimerNearlyFinishedEnabled,
+            musicPlaybackEnabled: proactiveMusicPlaybackEnabled,
+            inactivityReturnEnabled: proactiveInactivityReturnEnabled,
+            batteryCriticalEnabled: proactiveBatteryCriticalEnabled
+        )
+    }
+
     // AI
     var aiProvider: String = AIProviderKind.appleOnDevice.rawValue
     var aiModel: String = "apple-on-device"
@@ -97,6 +116,24 @@ final class SettingsStore {
         if defaults.object(forKey: "AMORA_memoryEnabled") != nil {
             self.memoryEnabled = defaults.bool(forKey: "AMORA_memoryEnabled")
         }
+        if defaults.object(forKey: "AMORA_proactiveAmoraEnabled") != nil {
+            self.proactiveAmoraEnabled = defaults.bool(forKey: "AMORA_proactiveAmoraEnabled")
+        }
+        if defaults.object(forKey: "AMORA_proactiveTimerCompletedEnabled") != nil {
+            self.proactiveTimerCompletedEnabled = defaults.bool(forKey: "AMORA_proactiveTimerCompletedEnabled")
+        }
+        if defaults.object(forKey: "AMORA_proactiveTimerNearlyFinishedEnabled") != nil {
+            self.proactiveTimerNearlyFinishedEnabled = defaults.bool(forKey: "AMORA_proactiveTimerNearlyFinishedEnabled")
+        }
+        if defaults.object(forKey: "AMORA_proactiveMusicPlaybackEnabled") != nil {
+            self.proactiveMusicPlaybackEnabled = defaults.bool(forKey: "AMORA_proactiveMusicPlaybackEnabled")
+        }
+        if defaults.object(forKey: "AMORA_proactiveInactivityReturnEnabled") != nil {
+            self.proactiveInactivityReturnEnabled = defaults.bool(forKey: "AMORA_proactiveInactivityReturnEnabled")
+        }
+        if defaults.object(forKey: "AMORA_proactiveBatteryCriticalEnabled") != nil {
+            self.proactiveBatteryCriticalEnabled = defaults.bool(forKey: "AMORA_proactiveBatteryCriticalEnabled")
+        }
         if defaults.object(forKey: "AMORA_animationIntensity") != nil {
             self.animationIntensity = defaults.double(forKey: "AMORA_animationIntensity")
         }
@@ -135,6 +172,12 @@ final class SettingsStore {
         defaults.set(aiEnabled, forKey: "AMORA_aiEnabled")
         defaults.set(contextAwarenessEnabled, forKey: "AMORA_contextAwarenessEnabled")
         defaults.set(memoryEnabled, forKey: "AMORA_memoryEnabled")
+        defaults.set(proactiveAmoraEnabled, forKey: "AMORA_proactiveAmoraEnabled")
+        defaults.set(proactiveTimerCompletedEnabled, forKey: "AMORA_proactiveTimerCompletedEnabled")
+        defaults.set(proactiveTimerNearlyFinishedEnabled, forKey: "AMORA_proactiveTimerNearlyFinishedEnabled")
+        defaults.set(proactiveMusicPlaybackEnabled, forKey: "AMORA_proactiveMusicPlaybackEnabled")
+        defaults.set(proactiveInactivityReturnEnabled, forKey: "AMORA_proactiveInactivityReturnEnabled")
+        defaults.set(proactiveBatteryCriticalEnabled, forKey: "AMORA_proactiveBatteryCriticalEnabled")
         Task { await StorageManager.shared.setSecureItem(aiApiKey, forKey: "ai-api-key") }
     }
 }

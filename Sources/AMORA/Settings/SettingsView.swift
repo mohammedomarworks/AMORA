@@ -329,6 +329,20 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section("Proactive AMORA") {
+                Toggle("Proactive AMORA", isOn: $settings.proactiveAmoraEnabled)
+                if settings.proactiveAmoraEnabled {
+                    Toggle("Timer Completed", isOn: $settings.proactiveTimerCompletedEnabled)
+                    Toggle("Timer Nearly Finished", isOn: $settings.proactiveTimerNearlyFinishedEnabled)
+                    Toggle("Music Playback Changes", isOn: $settings.proactiveMusicPlaybackEnabled)
+                    Toggle("Return After Inactivity", isOn: $settings.proactiveInactivityReturnEnabled)
+                    Toggle("Critically Low Battery", isOn: $settings.proactiveBatteryCriticalEnabled)
+                }
+                Text("AMORA proactively suggests safe actions inside the Dynamic Island based on local Mac context and conservative cooldowns. Never reads screen contents, keystrokes, clipboard, or files.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

@@ -150,6 +150,7 @@ struct DynamicIslandView: View {
     @Bindable var island = IslandModel.shared
     @Bindable var assistant = AssistantManager.shared
     @Bindable var coordinator = AmoraActionExecutionCoordinator.shared
+    @Bindable var proactive = AmoraProactiveService.shared
     private var appState: AppState { AppState.shared }
 
     var body: some View {
@@ -277,6 +278,8 @@ struct DynamicIslandView: View {
         return Group {
             if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed || coordinator.state != .idle {
                 AIResponseView(embedded: true, topInset: island.topInset)
+            } else if let suggestion = proactive.currentSuggestion {
+                ProactiveSuggestionView(suggestion: suggestion, topInset: island.topInset)
             } else {
                 QuickPanelView(embedded: true, topInset: island.topInset)
             }
