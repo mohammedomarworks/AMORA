@@ -13,11 +13,17 @@ struct SettingsView: View {
             soundsTab.tabItem { Label("Sounds", systemImage: "speaker.wave.2") }
             modulesTab.tabItem { Label("Modules", systemImage: "square.grid.2x2") }
             aiTab.tabItem { Label("AI Assistant", systemImage: "sparkles") }
+            automationsTab.tabItem { Label("Automations", systemImage: "bolt.badge.clock") }
             aboutTab.tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 460, height: 420)
+        .frame(width: 480, height: 440)
         .padding()
-        .onAppear { Task { await memoryService.refresh() } }
+        .onAppear {
+            Task {
+                await memoryService.refresh()
+                await AmoraAutomationService.shared.refresh()
+            }
+        }
         // Persist when the window closes so preferences survive relaunch.
         .onDisappear { settings.save() }
         .confirmationDialog(
@@ -344,6 +350,11 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    // MARK: - Automations
+    private var automationsTab: some View {
+        AmoraAutomationSettingsView()
     }
 
     // MARK: - About

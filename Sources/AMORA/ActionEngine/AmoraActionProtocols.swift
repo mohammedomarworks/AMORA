@@ -292,3 +292,23 @@ public struct DefaultAmoraTimerController: AmoraTimerControlling {
         TimerService.shared.remainingSeconds
     }
 }
+
+/// Decoupled protocol for presenting notifications or suggestions in AMORA.
+@MainActor
+public protocol AmoraNotificationPresenting: Sendable {
+    func present(message: String)
+}
+
+/// Production implementation routing to AMORAContext, SoundService, and WindowManager.
+@MainActor
+public struct DefaultAmoraNotificationPresenter: AmoraNotificationPresenting {
+    public init() {}
+
+    public func present(message: String) {
+        AMORAContext.shared.setAIResponse(message)
+        SoundService.shared.play(.notification)
+        if IslandModel.shared.displayState == .collapsed {
+            WindowManager.shared.expandIsland()
+        }
+    }
+}

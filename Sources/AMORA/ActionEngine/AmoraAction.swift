@@ -14,6 +14,7 @@ public enum AmoraAction: Equatable, Sendable {
     case cancelTimer
     case pauseTimer
     case resumeTimer
+    case showNotification(message: String)
     case confirmTest(actionName: String, prompt: String)
 
     public var identifier: String {
@@ -29,6 +30,7 @@ public enum AmoraAction: Equatable, Sendable {
         case .cancelTimer: return "timer.cancel"
         case .pauseTimer: return "timer.pause"
         case .resumeTimer: return "timer.resume"
+        case .showNotification: return "amora.notification"
         case .confirmTest: return "system.confirm_test"
         }
     }
@@ -51,6 +53,7 @@ public enum AmoraAction: Equatable, Sendable {
         case .cancelTimer: return "Cancel Timer"
         case .pauseTimer: return "Pause Timer"
         case .resumeTimer: return "Resume Timer"
+        case .showNotification(let msg): return "Show Notification: \(msg)"
         case .confirmTest(let name, _): return "Confirm: \(name)"
         }
     }
@@ -75,6 +78,8 @@ public enum AmoraAction: Equatable, Sendable {
             return lSec.caseInsensitiveCompare(rSec) == .orderedSame
         case (.startTimer(let lDur), .startTimer(let rDur)):
             return abs(lDur - rDur) < 0.001
+        case (.showNotification(let lMsg), .showNotification(let rMsg)):
+            return lMsg == rMsg
         case (.confirmTest(let lName, let lPrompt), .confirmTest(let rName, let rPrompt)):
             return lName == rName && lPrompt == rPrompt
         default:
@@ -150,6 +155,12 @@ public struct AmoraActionRequest: Codable, Equatable, Sendable {
             return .success(.pauseTimer)
         case "timer.resume", "resume_timer", "resumetimer":
             return .success(.resumeTimer)
+        case "amora.notification", "notification.show", "shownotification", "notification":
+            guard let msg = parameters["message"] ?? parameters["text"] ?? parameters["prompt"] ?? parameters["title"],
+                  !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'message' parameter for showNotification action."))
+            }
+            return .success(.showNotification(message: msg.trimmingCharacters(in: .whitespacesAndNewlines)))
         case "system.confirm_test", "confirm_test", "test.confirm":
             let name = parameters["name"] ?? "Test Action"
             let prompt = parameters["prompt"] ?? "Are you sure you want to run this test action?"

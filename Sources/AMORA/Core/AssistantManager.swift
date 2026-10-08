@@ -36,6 +36,7 @@ final class AssistantManager {
 
     func submit(_ input: String, settings: AISettingsSnapshot) async -> String {
         cancel()
+        AmoraActionExecutionCoordinator.shared.reset()
         let task = Task { @MainActor [weak self] in
             guard let self else { return "I don't know how to help with that yet." }
             return await self.performSubmit(input, settings: settings)
@@ -50,6 +51,11 @@ final class AssistantManager {
         // Explicit memory commands intercept before general AI processing
         if let memoryCommand = AmoraMemoryCommandParser.shared.parse(input) {
             return await handleMemoryCommand(input, command: memoryCommand, settings: settings)
+        }
+
+        // Explicit automation commands intercept before general AI processing
+        if let automationCommand = AmoraAutomationCommandParser.shared.parse(input) {
+            return await handleAutomationCommand(input, command: automationCommand, settings: settings)
         }
 
         if !providerIsInjected { configure(provider: AIProviderFactory.make(for: settings)) }
@@ -376,6 +382,106 @@ If no action is needed, answer normally.
             } else {
                 await memoryStore.clearAll()
                 answer = "I've cleared all stored memories."
+            }
+        }
+
+        let userMsg = AIMessage(role: .user, content: input)
+        let assistantMsg = AIMessage(role: .assistant, content: answer)
+        conversation.append(userMsg)
+        conversation.append(assistantMsg)
+        state = .responding
+        response = answer
+        AMORAContext.shared.setAIResponse(answer)
+        AMORAEventCenter.shared.emit(.aiSucceeded)
+        return answer
+    }
+
+    func handleAutomationCommand(_ input: String, command: AmoraAutomationCommand, settings: AISettingsSnapshot) async -> String {
+        state = .thinking
+        response = nil
+        lastError = nil
+        AMORAContext.shared.setAIResponse(nil)
+        AMORAEventCenter.shared.emit(.aiThinking)
+
+        let answer: String
+        let service = AmoraAutomationService.shared
+
+        switch command {
+        case let .create(name, trigger, action):
+            do {
+                let created = try await service.create(name: name, trigger: trigger, action: action)
+                answer = "I've created your automation: \(created.name) (\(created.trigger.displayName))."
+            } catch AmoraAutomationError.duplicateAutomation {
+                answer = "You already have an automation with that name or schedule."
+            } catch {
+                answer = "I couldn't create that automation: \(error.localizedDescription)"
+            }
+
+        case .list:
+            let items = service.automations
+            if items.isEmpty {
+                answer = "You don't have any automations configured yet."
+            } else {
+                let lines = items.map { auto in
+                    let status = auto.enabled ? "Active" : "Off"
+                    return "• \(auto.name) (\(auto.trigger.displayName)) — \(status)"
+                }.joined(separator: "\n")
+                answer = "Here are your automations:\n\(lines)"
+            }
+
+        case let .turnOff(query):
+            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let matched = service.automations.first(where: {
+                $0.name.localizedCaseInsensitiveContains(trimmedQuery) ||
+                $0.trigger.displayName.localizedCaseInsensitiveContains(trimmedQuery) ||
+                trimmedQuery.localizedCaseInsensitiveContains($0.name)
+            }) {
+                if !matched.enabled {
+                    answer = "\(matched.name) is already turned off."
+                } else {
+                    _ = try? await service.toggleEnabled(id: matched.id)
+                    answer = "I've turned off your \(matched.name)."
+                }
+            } else {
+                answer = "I couldn't find an automation matching '\(query)'."
+            }
+
+        case let .turnOn(query):
+            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let matched = service.automations.first(where: {
+                $0.name.localizedCaseInsensitiveContains(trimmedQuery) ||
+                $0.trigger.displayName.localizedCaseInsensitiveContains(trimmedQuery) ||
+                trimmedQuery.localizedCaseInsensitiveContains($0.name)
+            }) {
+                if matched.enabled {
+                    answer = "\(matched.name) is already active."
+                } else {
+                    _ = try? await service.toggleEnabled(id: matched.id)
+                    answer = "I've turned on your \(matched.name)."
+                }
+            } else {
+                answer = "I couldn't find an automation matching '\(query)'."
+            }
+
+        case let .delete(query):
+            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let matched = service.automations.first(where: {
+                $0.name.localizedCaseInsensitiveContains(trimmedQuery) ||
+                $0.trigger.displayName.localizedCaseInsensitiveContains(trimmedQuery) ||
+                trimmedQuery.localizedCaseInsensitiveContains($0.name)
+            }) {
+                _ = await service.delete(id: matched.id)
+                answer = "I've deleted your \(matched.name)."
+            } else {
+                answer = "I couldn't find an automation matching '\(query)'."
+            }
+
+        case let .clearAll(confirmed):
+            if !confirmed {
+                answer = "Are you sure you want to delete all automations? Reply 'yes, delete all automations' to confirm."
+            } else {
+                _ = await service.clearAll(confirmed: true)
+                answer = "I've deleted all automations."
             }
         }
 

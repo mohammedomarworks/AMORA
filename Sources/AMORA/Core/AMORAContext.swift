@@ -141,5 +141,6 @@ final class AMORAEventCenter {
         AMORAContext.shared.record(event)
         PersonalityEngine.shared.react(to: event)
         AmoraProactiveService.shared.handleEvent(event)
+        AmoraAutomationService.shared.handleEvent(event)
     }
 }

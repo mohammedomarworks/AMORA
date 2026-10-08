@@ -313,6 +313,8 @@ struct ActionExecutionView: View {
             Image(systemName: "timer").font(.system(size: 11)).foregroundStyle(.orange)
         case .confirmTest:
             Image(systemName: "shield.lefthalf.filled").font(.system(size: 11)).foregroundStyle(.yellow)
+        case .showNotification:
+            Image(systemName: "bell.fill").font(.system(size: 11)).foregroundStyle(.indigo)
         }
     }
 

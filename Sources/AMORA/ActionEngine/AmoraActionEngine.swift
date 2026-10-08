@@ -548,6 +548,36 @@ public final class AmoraActionEngine: Sendable {
         ))
     }
 
+    /// Registers the AMORA notification action into the given registry.
+    public static func registerNotificationAction(
+        into registry: AmoraActionRegistry,
+        notificationPresenter: any AmoraNotificationPresenting = DefaultAmoraNotificationPresenter()
+    ) {
+        registry.register(AmoraActionDefinition(
+            identifier: "amora.notification",
+            name: "Show Notification",
+            description: "Presents an AMORA notification message.",
+            validator: { action in
+                guard case .showNotification(let msg) = action else {
+                    return .invalid(reason: "Invalid payload for amora.notification.")
+                }
+                let trimmed = msg.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? .invalid(reason: "Notification message cannot be empty.") : .valid
+            },
+            handler: { action, _ in
+                guard case .showNotification(let msg) = action else {
+                    return .invalidInput(actionId: "amora.notification", message: "Missing notification message.")
+                }
+                notificationPresenter.present(message: msg)
+                return .success(
+                    actionId: "amora.notification",
+                    message: msg,
+                    data: ["message": msg]
+                )
+            }
+        ))
+    }
+
     nonisolated public static func formatDuration(seconds: Int) -> String {
         if seconds % 3600 == 0 {
             let hours = seconds / 3600
