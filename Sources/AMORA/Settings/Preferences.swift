@@ -34,6 +34,7 @@ final class SettingsStore {
     var systemMonitorEnabled: Bool = true
     var aiEnabled: Bool = true
     var contextAwarenessEnabled: Bool = true
+    var memoryEnabled: Bool = true
 
     // AI
     var aiProvider: String = AIProviderKind.appleOnDevice.rawValue
@@ -45,7 +46,8 @@ final class SettingsStore {
                            provider: AIProviderKind(rawValue: aiProvider) ?? .appleOnDevice,
                            model: aiModel,
                            apiKey: aiApiKey.isEmpty ? nil : aiApiKey,
-                           contextAwarenessEnabled: contextAwarenessEnabled)
+                           contextAwarenessEnabled: contextAwarenessEnabled,
+                           memoryEnabled: memoryEnabled)
     }
 
     // Privacy
@@ -92,6 +94,9 @@ final class SettingsStore {
         if defaults.object(forKey: "AMORA_contextAwarenessEnabled") != nil {
             self.contextAwarenessEnabled = defaults.bool(forKey: "AMORA_contextAwarenessEnabled")
         }
+        if defaults.object(forKey: "AMORA_memoryEnabled") != nil {
+            self.memoryEnabled = defaults.bool(forKey: "AMORA_memoryEnabled")
+        }
         if defaults.object(forKey: "AMORA_animationIntensity") != nil {
             self.animationIntensity = defaults.double(forKey: "AMORA_animationIntensity")
         }
@@ -129,6 +134,7 @@ final class SettingsStore {
         defaults.set(aiModel, forKey: "AMORA_aiModel")
         defaults.set(aiEnabled, forKey: "AMORA_aiEnabled")
         defaults.set(contextAwarenessEnabled, forKey: "AMORA_contextAwarenessEnabled")
+        defaults.set(memoryEnabled, forKey: "AMORA_memoryEnabled")
         Task { await StorageManager.shared.setSecureItem(aiApiKey, forKey: "ai-api-key") }
     }
 }

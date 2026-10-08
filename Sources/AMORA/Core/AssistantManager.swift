@@ -9,6 +9,8 @@ final class AssistantManager {
 
     private var provider: any AIProvider
     private let providerIsInjected: Bool
+    private(set) var memoryStore: any AmoraMemoryStoring
+    private let memoryStoreIsInjected: Bool
     var providerAvailability: AIAvailability { provider.availability }
     var isProviderAvailable: Bool { provider.isAvailable }
     private(set) var state: AssistantState = .idle
@@ -17,12 +19,20 @@ final class AssistantManager {
     private(set) var conversation = AIConversation()
     private var requestTask: Task<String, Never>?
 
-    init(provider: any AIProvider, providerIsInjected: Bool = true) {
+    init(provider: any AIProvider, providerIsInjected: Bool = true, memoryStore: (any AmoraMemoryStoring)? = nil) {
         self.provider = provider
         self.providerIsInjected = providerIsInjected
+        if let memoryStore {
+            self.memoryStore = memoryStore
+            self.memoryStoreIsInjected = true
+        } else {
+            self.memoryStore = AmoraMemoryStore()
+            self.memoryStoreIsInjected = false
+        }
     }
 
     func configure(provider: any AIProvider) { self.provider = provider }
+    func configure(memoryStore: any AmoraMemoryStoring) { self.memoryStore = memoryStore }
 
     func submit(_ input: String, settings: AISettingsSnapshot) async -> String {
         cancel()
@@ -37,6 +47,11 @@ final class AssistantManager {
     }
 
     private func performSubmit(_ input: String, settings: AISettingsSnapshot) async -> String {
+        // Explicit memory commands intercept before general AI processing
+        if let memoryCommand = AmoraMemoryCommandParser.shared.parse(input) {
+            return await handleMemoryCommand(input, command: memoryCommand, settings: settings)
+        }
+
         if !providerIsInjected { configure(provider: AIProviderFactory.make(for: settings)) }
         guard settings.enabled else {
             state = .failed
@@ -94,6 +109,13 @@ If no action is needed, answer normally.
             let convCtx = AmoraConversationContextManager.shared.validContext()
             if let context = AIContextComposer.relevantContext(for: input, conversationContext: convCtx) {
                 messages.append(AIMessage(role: .user, content: "[System context]\n\(context)"))
+            }
+        }
+        if settings.memoryEnabled {
+            let relevant = await memoryStore.relevantMemories(for: input, limit: 3)
+            if !relevant.isEmpty {
+                let formatted = relevant.map { "- \($0.key): \($0.value)" }.joined(separator: "\n")
+                messages.append(AIMessage(role: .user, content: "[Relevant user memories]\n\(formatted)"))
             }
         }
         let userMessage = AIMessage(role: .user, content: input)
@@ -299,6 +321,75 @@ If no action is needed, answer normally.
         }
     }
 
+    func handleMemoryCommand(_ input: String, command: AmoraMemoryCommand, settings: AISettingsSnapshot) async -> String {
+        state = .thinking
+        response = nil
+        lastError = nil
+        AMORAContext.shared.setAIResponse(nil)
+        AMORAEventCenter.shared.emit(.aiThinking)
+
+        let answer: String
+        switch command {
+        case let .remember(key, value):
+            guard settings.memoryEnabled else {
+                answer = "Memory is turned off in Settings. Turn on Memory to save memories."
+                break
+            }
+            let validation = AmoraMemoryPrivacyValidator.shared.validate(key: key, value: value)
+            switch validation {
+            case let .rejected(reason):
+                answer = reason
+            case .allowed:
+                let saved = await memoryStore.save(key: key, value: value)
+                if saved.key.caseInsensitiveCompare(saved.value) == .orderedSame || saved.value.lowercased().contains(saved.key.lowercased()) {
+                    answer = "I'll remember that: \(saved.value)."
+                } else {
+                    answer = "I'll remember that \(saved.key): \(saved.value)."
+                }
+            }
+
+        case .list:
+            guard settings.memoryEnabled else {
+                answer = "Memory is turned off in Settings."
+                break
+            }
+            let items = await memoryStore.list()
+            if items.isEmpty {
+                answer = "I don't have any memories stored yet."
+            } else {
+                let listStr = items.map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
+                answer = "Here's what I remember about you:\n\(listStr)"
+            }
+
+        case let .forget(query):
+            let deleted = await memoryStore.deleteMatching(query: query)
+            if deleted.isEmpty {
+                answer = "I don't have a memory matching that."
+            } else {
+                let deletedNames = deleted.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+                answer = "I've forgotten that: \(deletedNames)."
+            }
+
+        case let .clearAll(confirmed):
+            if !confirmed {
+                answer = "Are you sure you want me to forget everything? This will permanently delete all stored memories. Reply 'yes, forget everything' to confirm."
+            } else {
+                await memoryStore.clearAll()
+                answer = "I've cleared all stored memories."
+            }
+        }
+
+        let userMsg = AIMessage(role: .user, content: input)
+        let assistantMsg = AIMessage(role: .assistant, content: answer)
+        conversation.append(userMsg)
+        conversation.append(assistantMsg)
+        state = .responding
+        response = answer
+        AMORAContext.shared.setAIResponse(answer)
+        AMORAEventCenter.shared.emit(.aiSucceeded)
+        return answer
+    }
+
     func cancel() {
         requestTask?.cancel()
         requestTask = nil
@@ -341,6 +432,15 @@ final class AMORACommandGateway {
 
     func submit(_ input: String, settings: AISettingsSnapshot) async -> AMORACommandResult {
         AmoraActionExecutionCoordinator.shared.reset()
+
+        if let memoryCommand = AmoraMemoryCommandParser.shared.parse(input) {
+            let answer = await assistant.handleMemoryCommand(input, command: memoryCommand, settings: settings)
+            if case .clearAll(let confirmed) = memoryCommand, !confirmed {
+                return .needsConfirmation(prompt: answer)
+            }
+            return .success(message: answer)
+        }
+
         let isCompound = Self.isCompoundRequest(input)
         let normalized = AMORACommandParser.normalize(input)
         let isConfirmTest = normalized == "confirm test" || normalized == "test confirm" || normalized == "run confirmation test" || normalized == "test confirmation"

@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var settings = AppState.shared.settings
     @Bindable var chromeBridge = ChromeMessageBridge.shared
+    @State private var memoryService = AmoraMemoryService.shared
+    @State private var showClearAllConfirmation = false
     private var palette: ThemePalette { settings.palette }
 
     var body: some View {
@@ -13,10 +15,23 @@ struct SettingsView: View {
             aiTab.tabItem { Label("AI Assistant", systemImage: "sparkles") }
             aboutTab.tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 460, height: 400)
+        .frame(width: 460, height: 420)
         .padding()
+        .onAppear { Task { await memoryService.refresh() } }
         // Persist when the window closes so preferences survive relaunch.
         .onDisappear { settings.save() }
+        .confirmationDialog(
+            "Clear All Memories?",
+            isPresented: $showClearAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear All", role: .destructive) {
+                Task { await memoryService.clearAll() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete all stored memories. This action cannot be undone.")
+        }
     }
 
     // MARK: - General (Appearance + Behavior)
@@ -268,6 +283,51 @@ struct SettingsView: View {
                 Text("AMORA can use current Mac state such as the active app, media, timer, and battery to give more helpful answers.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Memory") {
+                Toggle("Memory", isOn: $settings.memoryEnabled)
+                Text("Memories are stored locally and can be reviewed or deleted at any time.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                DisclosureGroup("Stored Memories (\(memoryService.memories.count))") {
+                    if memoryService.memories.isEmpty {
+                        Text("No memories stored yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(memoryService.memories) { item in
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.key)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text(item.value)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button(role: .destructive) {
+                                    Task { await memoryService.delete(id: item.id) }
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                            .padding(.vertical, 2)
+                        }
+
+                        Button("Clear All Memories", role: .destructive) {
+                            showClearAllConfirmation = true
+                        }
+                        .font(.caption)
+                        .padding(.top, 4)
+                    }
+                }
             }
         }
     }
