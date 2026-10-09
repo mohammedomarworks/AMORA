@@ -60,9 +60,7 @@ final class WindowManager {
         /// notch itself — not a floating pill below it.
         static let collapsedChinHeight: CGFloat = 6
         static let collapsedBottomRadius: CGFloat = 10
-        static let quickWidth: CGFloat = 340
-        static let quickContentHeight: CGFloat = 452
-        static let quickBottomRadius: CGFloat = 30
+        static let quickBottomRadius: CGFloat = 28
         static let workspaceBottomRadius: CGFloat = 36
         static let screenMargin: CGFloat = 8
     }
@@ -80,12 +78,23 @@ final class WindowManager {
 
     private func quickFrame(on screen: NSScreen) -> NSRect {
         let notch = NotchManager.notchRect(on: screen)
-        let topInset = notch.height
-        let width = IslandMetrics.quickWidth
-        let height = topInset + IslandMetrics.quickContentHeight
+        let screenWidth = screen.frame.width
+        let screenHeight = screen.frame.height
+        let screenMargin = IslandMetrics.screenMargin
+
+        // Target visual dimensions on a typical MacBook Air:
+        // Expanded width: approximately 760–900 points, scaling down gracefully for smaller displays
+        let maxWidth = screenWidth - (screenMargin * 2)
+        let targetWidth: CGFloat = min(840, max(760, screenWidth * 0.58))
+        let width = min(targetWidth, maxWidth).rounded()
+
+        // Expanded total height: approximately 190–250 points
+        let targetTotalHeight: CGFloat = min(230, max(200, screenHeight * 0.25))
+        let height = min(targetTotalHeight, screenHeight - 44).rounded()
+
         var x = (notch.midX - width / 2).rounded()
-        let minX = screen.frame.minX + IslandMetrics.screenMargin
-        let maxX = screen.frame.maxX - width - IslandMetrics.screenMargin
+        let minX = screen.frame.minX + screenMargin
+        let maxX = screen.frame.maxX - width - screenMargin
         if maxX > minX { x = min(max(x, minX), maxX) }
         let y = screen.frame.maxY - height
         return NSRect(x: x, y: y, width: width, height: height)

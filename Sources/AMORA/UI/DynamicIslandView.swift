@@ -275,21 +275,11 @@ struct DynamicIslandView: View {
         let translateY = e <= 1.0 ? -10.0 * (1.0 - fadeIn) : 0.0
         let scale = e <= 1.0 ? (0.96 + 0.04 * fadeIn) : (1.0 + 0.04 * (e - 1.0))
 
-        return Group {
-            if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed || assistant.state == .cancelled || coordinator.state != .idle {
-                AIResponseView(embedded: true, topInset: island.topInset)
-            } else if let suggestion = proactive.currentSuggestion {
-                ProactiveSuggestionView(suggestion: suggestion, topInset: island.topInset)
-            } else {
-                QuickPanelView(embedded: true, topInset: island.topInset)
-            }
-        }
-        .animation(.easeInOut(duration: 0.22), value: assistant.state)
-        .animation(.easeInOut(duration: 0.22), value: proactive.currentSuggestion?.id)
-        .opacity(opacity)
-        .offset(y: translateY)
-        .scaleEffect(scale, anchor: .top)
-        .allowsHitTesting(island.displayState == .quick && e >= 0.85 && e <= 1.15)
+        return WideDynamicIslandContentView(topInset: island.topInset)
+            .opacity(opacity)
+            .offset(y: translateY)
+            .scaleEffect(scale, anchor: .top)
+            .allowsHitTesting(island.displayState == .quick && e >= 0.85 && e <= 1.15)
     }
 
     private func workspaceContent(expansion e: Double) -> some View {
