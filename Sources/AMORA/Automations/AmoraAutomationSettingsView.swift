@@ -40,17 +40,11 @@ struct AmoraAutomationSettingsView: View {
 
             Section("Active Automations (\(service.automations.count))") {
                 if service.automations.isEmpty {
-                    VStack(spacing: 8) {
-                        Text("No automations configured yet.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text("Create an automation or tell AMORA: “Remind me every day at 9 PM.”")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
+                    AmoraEmptyStateView(
+                        iconName: "bolt.badge.clock",
+                        title: "No Automations Yet",
+                        subtitle: "Create an automation or tell AMORA: “Remind me every day at 9 PM.”"
+                    )
                 } else {
                     ForEach(service.automations) { auto in
                         automationRow(auto)
@@ -177,9 +171,12 @@ struct AmoraAutomationSettingsView: View {
             } label: {
                 Image(systemName: "play.fill")
                     .font(.caption)
+                    .frame(minWidth: 26, minHeight: 26)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("Run manually")
+            .accessibilityLabel("Run \(auto.name) manually")
 
             // Edit button
             Button {
@@ -187,9 +184,12 @@ struct AmoraAutomationSettingsView: View {
             } label: {
                 Image(systemName: "pencil")
                     .font(.caption)
+                    .frame(minWidth: 26, minHeight: 26)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("Edit")
+            .accessibilityLabel("Edit \(auto.name)")
 
             // Delete button
             Button(role: .destructive) {
@@ -200,9 +200,12 @@ struct AmoraAutomationSettingsView: View {
                 Image(systemName: "trash")
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .frame(minWidth: 26, minHeight: 26)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("Delete")
+            .accessibilityLabel("Delete \(auto.name)")
         }
         .padding(.vertical, 4)
     }

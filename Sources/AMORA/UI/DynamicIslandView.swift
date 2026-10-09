@@ -276,7 +276,7 @@ struct DynamicIslandView: View {
         let scale = e <= 1.0 ? (0.96 + 0.04 * fadeIn) : (1.0 + 0.04 * (e - 1.0))
 
         return Group {
-            if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed || coordinator.state != .idle {
+            if assistant.state == .thinking || assistant.state == .responding || assistant.state == .failed || assistant.state == .cancelled || coordinator.state != .idle {
                 AIResponseView(embedded: true, topInset: island.topInset)
             } else if let suggestion = proactive.currentSuggestion {
                 ProactiveSuggestionView(suggestion: suggestion, topInset: island.topInset)
@@ -284,6 +284,8 @@ struct DynamicIslandView: View {
                 QuickPanelView(embedded: true, topInset: island.topInset)
             }
         }
+        .animation(.easeInOut(duration: 0.22), value: assistant.state)
+        .animation(.easeInOut(duration: 0.22), value: proactive.currentSuggestion?.id)
         .opacity(opacity)
         .offset(y: translateY)
         .scaleEffect(scale, anchor: .top)
@@ -319,23 +321,49 @@ struct AIResponseView: View {
 
     private var responseText: String { assistant.response ?? "" }
 
+    private var aiSubtitle: String {
+        if coordinator.state != .idle {
+            return "Executing action…"
+        } else if assistant.state == .thinking {
+            return "Thinking…"
+        } else if assistant.state == .failed {
+            return "Notice"
+        } else if assistant.state == .cancelled {
+            return "Cancelled"
+        } else {
+            return "Assistant"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 AMORARobotView(robot: AMORARobot.shared, compact: true)
                     .frame(width: 32, height: 28)
-                Text("AMORA")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("AMORA")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text(aiSubtitle)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(palette.accent.opacity(0.95))
+                }
                 Spacer()
                 Button { WindowManager.shared.showWorkspace() } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.75))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
                 .help("Expand to Workspace")
+                .accessibilityLabel("Expand to workspace")
+
                 Button {
+                    if assistant.state == .thinking {
+                        assistant.cancel()
+                    } else {
+                        assistant.dismissResponse()
+                    }
                     coordinator.reset()
                     WindowManager.shared.collapseIsland()
                 } label: {
@@ -343,7 +371,8 @@ struct AIResponseView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white.opacity(0.75))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
+                .help("Close")
                 .accessibilityLabel("Close AI response")
             }
 
@@ -355,9 +384,44 @@ struct AIResponseView: View {
                     Text("Thinking…")
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.75))
+                    Spacer()
+                    Button("Stop") {
+                        assistant.cancel()
+                    }
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(palette.accent)
+                    .buttonStyle(.amoraPill)
+                    .accessibilityLabel("Stop thinking")
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 28)
+                .padding(.vertical, 24)
+            } else if assistant.state == .cancelled {
+                HStack(spacing: 8) {
+                    Image(systemName: "stop.circle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Request cancelled.")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity, alignment: .center)
+            } else if assistant.state == .failed {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Unable to Complete Request")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(.orange)
+                    }
+                    Text(responseText.isEmpty ? "Something went wrong. Please check Settings." : responseText)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineSpacing(2)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                .padding(.vertical, 12)
             } else {
                 ScrollView {
                     Text(responseText)
@@ -374,12 +438,13 @@ struct AIResponseView: View {
                 HStack {
                     Spacer()
                     Button("Close") {
+                        assistant.dismissResponse()
                         coordinator.reset()
                         WindowManager.shared.collapseIsland()
                     }
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.8))
-                    .buttonStyle(.plain)
+                    .buttonStyle(.amoraPill)
                 }
             }
         }

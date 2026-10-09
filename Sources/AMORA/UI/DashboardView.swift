@@ -103,23 +103,20 @@ struct DashboardView: View {
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .padding(8)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .foregroundStyle(.white.opacity(0.85))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
                 .help("Settings")
+                .accessibilityLabel("Settings")
 
                 Button {
                     WindowManager.shared.contractToQuickIsland()
                 } label: {
                     Image(systemName: "arrow.down.right.and.arrow.up.left")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .padding(8)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .foregroundStyle(.white.opacity(0.85))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
                 .help("Collapse to Quick Island")
                 .accessibilityLabel("Collapse to quick island")
 
@@ -128,11 +125,9 @@ struct DashboardView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .padding(8)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .foregroundStyle(.white.opacity(0.85))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
                 .help("Close")
                 .accessibilityLabel("Close workspace")
             }
@@ -420,6 +415,9 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onAppear {
                     fileShelf.refreshItemStates()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        isInputFocused = true
+                    }
                 }
         } else {
             content
@@ -442,6 +440,9 @@ struct DashboardView: View {
                 }
                 .onAppear {
                     fileShelf.refreshItemStates()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        isInputFocused = true
+                    }
                 }
         }
     }
@@ -560,11 +561,11 @@ struct DashboardView: View {
             }
 
             if clipboard.history.isEmpty {
-                Text("No items copied yet.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
+                AmoraEmptyStateView(
+                    iconName: "doc.on.clipboard",
+                    title: "No Copied Items",
+                    subtitle: "Copied snippets will appear here automatically."
+                )
             } else {
                 ScrollView {
                     VStack(spacing: 4) {
@@ -601,11 +602,11 @@ struct DashboardView: View {
                 .foregroundStyle(.white.opacity(0.8))
 
             if notes.notes.isEmpty {
-                Text("No notes saved yet.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
+                AmoraEmptyStateView(
+                    iconName: "note.text",
+                    title: "No Notes Yet",
+                    subtitle: "Ask AMORA to save a note anytime."
+                )
             } else {
                 ScrollView {
                     VStack(spacing: 4) {
@@ -634,13 +635,7 @@ struct DashboardView: View {
     }
 
     private var fileShelfSection: some View {
-        let serviceIdentity = ObjectIdentifier(fileShelf)
-        let _ = print("[DASHBOARD] service identity = \(serviceIdentity)")
-        let _ = print("[DASHBOARD] fileShelf.items.count = \(fileShelf.items.count)")
-        let _ = print("[DASHBOARD] fileShelf.items names = \(fileShelf.items.map { $0.name })")
-        let _ = print("[DASHBOARD] rendering count = \(fileShelf.items.count)")
-        let _ = print("[DASHBOARD] rendering names = \(fileShelf.items.map { $0.name })")
-        return VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Pinned Files")
                     .font(.system(size: 11, weight: .bold))
@@ -692,8 +687,7 @@ struct DashboardView: View {
                 ScrollView {
                     VStack(spacing: 4) {
                         ForEach(fileShelf.items) { item in
-                            let _ = print("[DASHBOARD] rendering item = \(item.name)")
-                            return HStack(spacing: 8) {
+                            HStack(spacing: 8) {
                                 Image(systemName: item.isMissing ? "exclamationmark.triangle.fill" : "doc.fill")
                                     .font(.system(size: 12))
                                     .foregroundStyle(item.isMissing ? Color.orange : Color.cyan)
@@ -773,10 +767,6 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onDrop(of: [.fileURL, .item], isTargeted: $isDashboardFileShelfDropTargeted) { providers in
-            print("[DASHBOARD DROP] entered")
-            print("[DASHBOARD DROP] provider count = \(providers.count)")
-            let typeIDs = providers.map { $0.registeredTypeIdentifiers }
-            print("[DASHBOARD DROP] registered type identifiers = \(typeIDs)")
             let accepted = fileShelf.handleDrop(providers: providers) { url in
                 setFeedback("File added to shelf: \(url.lastPathComponent)")
             }

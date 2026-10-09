@@ -33,17 +33,18 @@ struct ActionExecutionView: View {
                         coordinator.cancelExecution()
                     }
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.red.opacity(0.85))
-                    .buttonStyle(.plain)
+                    .buttonStyle(.amoraPill(fill: Color.red.opacity(0.15), foreground: .red.opacity(0.9)))
+                    .accessibilityLabel("Stop action execution")
                 } else if coordinator.state == .completed || coordinator.state == .failed {
                     Button {
                         coordinator.reset()
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(.white.opacity(0.7))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.amoraHeaderCircle)
+                    .accessibilityLabel("Dismiss action notice")
                 }
             }
 
@@ -58,21 +59,15 @@ struct ActionExecutionView: View {
                             coordinator.cancelPendingAction()
                         }
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.white.opacity(0.12)))
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.75)))
+                        .accessibilityLabel("Cancel action")
 
                         Button("Confirm") {
                             coordinator.confirmPendingAction()
                         }
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(palette.accent))
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPill(fill: palette.accent, foreground: .white))
+                        .accessibilityLabel("Confirm action")
                     }
                 }
                 .padding(8)
@@ -126,11 +121,8 @@ struct ActionExecutionView: View {
                         coordinator.cancelExecution()
                     }
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.red.opacity(0.9))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.red.opacity(0.15)))
-                    .buttonStyle(.plain)
+                    .buttonStyle(.amoraPill(fill: Color.red.opacity(0.15), foreground: .red.opacity(0.9)))
+                    .accessibilityLabel("Stop action execution")
                 }
             }
 
@@ -184,21 +176,15 @@ struct ActionExecutionView: View {
                             coordinator.cancelPendingAction()
                         }
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.12)))
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.8)))
+                        .accessibilityLabel("Cancel action")
 
                         Button("Confirm") {
                             coordinator.confirmPendingAction()
                         }
                         .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(palette.accent))
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPill(fill: palette.accent, foreground: .white))
+                        .accessibilityLabel("Confirm action")
                     }
                     .padding(.top, 4)
                 }
@@ -224,8 +210,8 @@ struct ActionExecutionView: View {
                         WindowManager.shared.collapseIsland()
                     }
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .buttonStyle(.plain)
+                    .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
+                    .accessibilityLabel("Close action view")
                 }
             }
         }

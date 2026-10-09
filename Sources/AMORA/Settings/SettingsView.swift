@@ -299,10 +299,11 @@ struct SettingsView: View {
 
                 DisclosureGroup("Stored Memories (\(memoryService.memories.count))") {
                     if memoryService.memories.isEmpty {
-                        Text("No memories stored yet.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 4)
+                        AmoraEmptyStateView(
+                            iconName: "brain.head.profile",
+                            title: "No Memories Stored",
+                            subtitle: "Tell AMORA “Remember that I prefer dark mode” to store a memory."
+                        )
                     } else {
                         ForEach(memoryService.memories) { item in
                             HStack(alignment: .top) {
@@ -321,8 +322,11 @@ struct SettingsView: View {
                                     Image(systemName: "trash")
                                         .font(.caption)
                                         .foregroundStyle(.red)
+                                        .frame(minWidth: 24, minHeight: 24)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.borderless)
+                                .accessibilityLabel("Delete memory \(item.key)")
                             }
                             .padding(.vertical, 2)
                         }
@@ -339,11 +343,21 @@ struct SettingsView: View {
             Section("Proactive AMORA") {
                 Toggle("Proactive AMORA", isOn: $settings.proactiveAmoraEnabled)
                 if settings.proactiveAmoraEnabled {
-                    Toggle("Timer Completed", isOn: $settings.proactiveTimerCompletedEnabled)
-                    Toggle("Timer Nearly Finished", isOn: $settings.proactiveTimerNearlyFinishedEnabled)
-                    Toggle("Music Playback Changes", isOn: $settings.proactiveMusicPlaybackEnabled)
-                    Toggle("Return After Inactivity", isOn: $settings.proactiveInactivityReturnEnabled)
-                    Toggle("Critically Low Battery", isOn: $settings.proactiveBatteryCriticalEnabled)
+                    Toggle(isOn: $settings.proactiveTimerCompletedEnabled) {
+                        Label("Timer Completed", systemImage: "timer")
+                    }
+                    Toggle(isOn: $settings.proactiveTimerNearlyFinishedEnabled) {
+                        Label("Timer Nearly Finished", systemImage: "hourglass.bottomhalf.filled")
+                    }
+                    Toggle(isOn: $settings.proactiveMusicPlaybackEnabled) {
+                        Label("Music Playback Changes", systemImage: "music.note")
+                    }
+                    Toggle(isOn: $settings.proactiveInactivityReturnEnabled) {
+                        Label("Return After Inactivity", systemImage: "moon.zzz")
+                    }
+                    Toggle(isOn: $settings.proactiveBatteryCriticalEnabled) {
+                        Label("Critically Low Battery", systemImage: "battery.25")
+                    }
                 }
                 Text("AMORA proactively suggests safe actions inside the Dynamic Island based on local Mac context and conservative cooldowns. Never reads screen contents, keystrokes, clipboard, or files.")
                     .font(.caption)

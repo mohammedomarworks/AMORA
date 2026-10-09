@@ -33,10 +33,9 @@ struct ProactiveSuggestionView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white.opacity(0.75))
-                        .padding(6)
-                        .background(Circle().fill(Color.white.opacity(0.1)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
+                .help("Dismiss")
                 .accessibilityLabel("Dismiss proactive suggestion")
             }
 
@@ -58,8 +57,7 @@ struct ProactiveSuggestionView: View {
                     proactive.dismissCurrentSuggestion()
                 }
                 .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.7))
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.8)))
                 .accessibilityLabel("Dismiss suggestion")
 
                 Spacer()
@@ -76,15 +74,8 @@ struct ProactiveSuggestionView: View {
                             Image(systemName: "arrow.right")
                                 .font(.system(size: 10, weight: .bold))
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(palette.accent)
-                        )
-                        .foregroundStyle(.white)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.amoraPill(fill: palette.accent, foreground: .white))
                     .accessibilityLabel(suggestion.actionTitle ?? action.humanReadableName)
                 }
             }

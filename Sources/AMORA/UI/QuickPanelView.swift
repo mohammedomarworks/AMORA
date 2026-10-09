@@ -94,11 +94,9 @@ struct QuickPanelView: View {
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(6)
-                        .background(Circle().fill(Color.white.opacity(0.1)))
+                        .foregroundStyle(.white.opacity(0.75))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
                 .help("Expand to Workspace")
                 .accessibilityLabel("Expand to workspace")
 
@@ -107,11 +105,9 @@ struct QuickPanelView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(6)
-                        .background(Circle().fill(Color.white.opacity(0.1)))
+                        .foregroundStyle(.white.opacity(0.75))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.amoraHeaderCircle)
                 .help("Close")
                 .accessibilityLabel("Close panel")
             }
@@ -179,7 +175,7 @@ struct QuickPanelView: View {
                 }
             }
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Page (Page.allCases.firstIndex(of: selectedPage)! + 1) of (Page.allCases.count)")
+            .accessibilityLabel("Page \((Page.allCases.firstIndex(of: selectedPage) ?? 0) + 1) of \(Page.allCases.count)")
         }
         .foregroundStyle(palette.accent)
         .padding(.horizontal, 14)
@@ -317,9 +313,10 @@ struct QuickPanelView: View {
                             Image(systemName: "backward.fill")
                                 .font(.system(size: 11))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPressable)
                         .accessibilityLabel("Previous track")
                         .disabled(!music.capabilities.supportsPrevious || !music.isAvailable)
+                        .opacity((!music.capabilities.supportsPrevious || !music.isAvailable) ? 0.35 : 1.0)
 
                         Button {
                             music.togglePlayPause()
@@ -327,9 +324,10 @@ struct QuickPanelView: View {
                             Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 13))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPressable)
                         .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
                         .disabled(!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none))
+                        .opacity((!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none)) ? 0.35 : 1.0)
 
                         Button {
                             music.nextTrack()
@@ -337,9 +335,10 @@ struct QuickPanelView: View {
                             Image(systemName: "forward.fill")
                                 .font(.system(size: 11))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPressable)
                         .accessibilityLabel("Next track")
                         .disabled(!music.capabilities.supportsNext || !music.isAvailable)
+                        .opacity((!music.capabilities.supportsNext || !music.isAvailable) ? 0.35 : 1.0)
                     }
                     .foregroundStyle(.white.opacity(0.9))
                     if let status = music.controlStatus ?? music.controlError {
@@ -427,7 +426,7 @@ struct QuickPanelView: View {
                             .font(.system(size: 10))
                             .foregroundStyle(.red.opacity(0.8))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.amoraPressable)
                     } else {
                         HStack(spacing: 6) {
                             Button("5m") { timer.startTimer(minutes: 5) }
@@ -436,8 +435,8 @@ struct QuickPanelView: View {
                             Button("50m") { timer.startTimer(minutes: 50) }
                         }
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .buttonStyle(.plain)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .buttonStyle(.amoraPressable)
                     }
                 }
                 .padding(10)
@@ -456,9 +455,11 @@ struct QuickPanelView: View {
                         .foregroundStyle(.white.opacity(0.6))
                 }
                 Spacer()
-                Circle()
-                    .fill(SystemMonitorService.shared.cpuUsagePercent > 80 ? Color.red : Color.green)
-                    .frame(width: 8, height: 8)
+                AmoraAccessibleStatusBadge(
+                    text: SystemMonitorService.shared.cpuUsagePercent > 80 ? "HIGH" : "NORMAL",
+                    systemImage: SystemMonitorService.shared.cpuUsagePercent > 80 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
+                    tintColor: SystemMonitorService.shared.cpuUsagePercent > 80 ? .orange : .green
+                )
             }
             .padding(10)
             .background(cardBackground)
@@ -484,16 +485,11 @@ struct QuickPanelView: View {
             }
 
             if clipboard.history.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.white.opacity(0.3))
-                    Text("Clipboard is empty")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 20)
+                AmoraEmptyStateView(
+                    iconName: "doc.on.clipboard",
+                    title: "Clipboard is Empty",
+                    subtitle: "Copied snippets will appear here automatically."
+                )
             } else {
                 ScrollView {
                     VStack(spacing: 6) {
@@ -560,16 +556,11 @@ struct QuickPanelView: View {
             }
 
             if notes.notes.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.white.opacity(0.3))
-                    Text("No notes yet")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 20)
+                AmoraEmptyStateView(
+                    iconName: "note.text",
+                    title: "No Notes Yet",
+                    subtitle: "Save a quick note above or ask AMORA anytime."
+                )
             } else {
                 ScrollView {
                     VStack(spacing: 6) {
