@@ -109,6 +109,8 @@ struct AmoraCompanionPanel: View {
     @Bindable var coordinator = AmoraActionExecutionCoordinator.shared
     @Bindable var timer = TimerService.shared
     @Bindable var music = MusicService.shared
+    @Bindable var gitHub = GitHubService.shared
+    @Bindable var nav = IslandNavigationModel.shared
     private var personality = PersonalityEngine.shared
     private var palette: ThemePalette { AppState.shared.settings.palette }
 
@@ -123,6 +125,15 @@ struct AmoraCompanionPanel: View {
             return "Focus timer (\(timer.formattedTime))"
         } else if music.isPlaying && !music.trackTitle.isEmpty {
             return "Playing: \(music.trackTitle)"
+        } else if nav.selectedPage == .github && gitHub.authState.isConnected {
+            if let cal = gitHub.contributionCalendar, cal.totalContributions > 0 {
+                let plural = cal.totalContributions == 1 ? "contribution" : "contributions"
+                return "\(cal.totalContributions) \(plural) in past year"
+            } else if let user = gitHub.user {
+                return "@\(user.login) activity synced"
+            } else {
+                return "GitHub connected"
+            }
         } else if let msg = personality.message, !msg.isEmpty {
             return msg
         } else {
@@ -146,6 +157,8 @@ struct AmoraCompanionPanel: View {
                 AmoraAccessibleStatusBadge(text: timer.formattedTime, systemImage: "timer", tintColor: .orange)
             } else if music.isPlaying {
                 AmoraAccessibleStatusBadge(text: "Music", systemImage: "music.note", tintColor: .green)
+            } else if nav.selectedPage == .github && gitHub.authState.isConnected {
+                AmoraAccessibleStatusBadge(text: "GitHub", systemImage: "chevron.left.forwardslash.chevron.right", tintColor: .green)
             } else {
                 AmoraAccessibleStatusBadge(text: "Online", systemImage: "circle.fill", tintColor: palette.accentSoft)
             }

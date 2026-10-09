@@ -81,6 +81,17 @@ actor StorageManager {
         return value
     }
 
+    @discardableResult
+    func deleteSecureItem(forKey key: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: "com.amora.app"
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
     func storeFileReference(url: URL) async -> String? {
         return url.path
     }

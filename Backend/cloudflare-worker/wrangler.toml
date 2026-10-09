@@ -1,0 +1,10 @@
+name = "amora-github-auth"
+main = "src/index.ts"
+compatibility_date = "2024-10-01"
+
+[vars]
+# Public GitHub OAuth Client ID (optional fallback if not provided in client request)
+GITHUB_CLIENT_ID = "Ov23ligYE0KnaqNZATwc"
+
+# Secrets to be configured in Cloudflare (never commit secrets!):
+# Run: wrangler secret put GITHUB_CLIENT_SECRET
