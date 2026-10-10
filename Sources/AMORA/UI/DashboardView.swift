@@ -165,15 +165,46 @@ struct DashboardView: View {
                                 .background(Capsule().fill(Color.red.opacity(0.15)))
                         }
                         Spacer()
-                        Button {
-                            music.togglePlayPause()
-                        } label: {
-                            Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white)
+                        HStack(spacing: 8) {
+                            Button {
+                                music.previousTrack()
+                            } label: {
+                                Image(systemName: "backward.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Previous track")
+                            .help("Previous track")
+                            .disabled(!music.capabilities.supportsPrevious || music.controlPending || !music.isAvailable)
+                            .opacity((!music.capabilities.supportsPrevious || music.controlPending || !music.isAvailable) ? 0.35 : 1.0)
+
+                            Button {
+                                music.togglePlayPause()
+                            } label: {
+                                Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
+                            .help(music.isPlaying ? "Pause" : "Play")
+                            .disabled(!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none))
+                            .opacity((!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none)) ? 0.35 : 1.0)
+
+                            Button {
+                                music.nextTrack()
+                            } label: {
+                                Image(systemName: "forward.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Next track")
+                            .help("Next track")
+                            .disabled(!music.capabilities.supportsNext || music.controlPending || !music.isAvailable)
+                            .opacity((!music.capabilities.supportsNext || music.controlPending || !music.isAvailable) ? 0.35 : 1.0)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none))
                     }
                     Text(music.trackTitle)
                         .font(.system(size: 11, weight: .semibold))

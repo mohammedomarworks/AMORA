@@ -40,22 +40,57 @@ struct MusicCompactCard: View {
                 Text(music.trackTitle.isEmpty ? "Not Playing" : music.trackTitle)
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
-                if !music.artist.isEmpty {
+                if let status = music.controlStatus ?? music.controlError {
+                    Text(status)
+                        .font(.system(size: 8))
+                        .foregroundColor(music.controlError == nil ? .secondary : .orange)
+                        .lineLimit(1)
+                } else if !music.artist.isEmpty {
                     Text(music.artist)
                         .font(.system(size: 8))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
             if music.isAvailable {
-                Button {
-                    music.togglePlayPause()
-                } label: {
-                    Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 10))
+                HStack(spacing: 2) {
+                    Button {
+                        music.previousTrack()
+                    } label: {
+                        Image(systemName: "backward.fill")
+                            .font(.system(size: 8))
+                    }
+                    .buttonStyle(.amoraHeaderCircle)
+                    .accessibilityLabel("Previous track")
+                    .help("Previous track")
+                    .disabled(!music.capabilities.supportsPrevious || music.controlPending || !music.isAvailable)
+                    .opacity((!music.capabilities.supportsPrevious || music.controlPending || !music.isAvailable) ? 0.35 : 1.0)
+
+                    Button {
+                        music.togglePlayPause()
+                    } label: {
+                        Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.amoraHeaderCircle)
+                    .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
+                    .help(music.isPlaying ? "Pause" : "Play")
+                    .disabled(!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none))
+                    .opacity((!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none)) ? 0.35 : 1.0)
+
+                    Button {
+                        music.nextTrack()
+                    } label: {
+                        Image(systemName: "forward.fill")
+                            .font(.system(size: 8))
+                    }
+                    .buttonStyle(.amoraHeaderCircle)
+                    .accessibilityLabel("Next track")
+                    .help("Next track")
+                    .disabled(!music.capabilities.supportsNext || music.controlPending || !music.isAvailable)
+                    .opacity((!music.capabilities.supportsNext || music.controlPending || !music.isAvailable) ? 0.35 : 1.0)
                 }
-                .buttonStyle(.amoraHeaderCircle)
             }
         }
         .padding(8)

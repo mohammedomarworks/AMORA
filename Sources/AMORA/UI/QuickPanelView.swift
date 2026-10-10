@@ -315,8 +315,9 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.amoraPressable)
                         .accessibilityLabel("Previous track")
-                        .disabled(!music.capabilities.supportsPrevious || !music.isAvailable)
-                        .opacity((!music.capabilities.supportsPrevious || !music.isAvailable) ? 0.35 : 1.0)
+                        .help("Previous track")
+                        .disabled(!music.capabilities.supportsPrevious || music.controlPending || !music.isAvailable)
+                        .opacity((!music.capabilities.supportsPrevious || music.controlPending || !music.isAvailable) ? 0.35 : 1.0)
 
                         Button {
                             music.togglePlayPause()
@@ -326,6 +327,7 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.amoraPressable)
                         .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
+                        .help(music.isPlaying ? "Pause" : "Play")
                         .disabled(!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none))
                         .opacity((!music.capabilities.supportsPlay || music.controlPending || (!music.isAvailable && music.source == .none)) ? 0.35 : 1.0)
 
@@ -337,8 +339,9 @@ struct QuickPanelView: View {
                         }
                         .buttonStyle(.amoraPressable)
                         .accessibilityLabel("Next track")
-                        .disabled(!music.capabilities.supportsNext || !music.isAvailable)
-                        .opacity((!music.capabilities.supportsNext || !music.isAvailable) ? 0.35 : 1.0)
+                        .help("Next track")
+                        .disabled(!music.capabilities.supportsNext || music.controlPending || !music.isAvailable)
+                        .opacity((!music.capabilities.supportsNext || music.controlPending || !music.isAvailable) ? 0.35 : 1.0)
                     }
                     .foregroundStyle(.white.opacity(0.9))
                     if let status = music.controlStatus ?? music.controlError {

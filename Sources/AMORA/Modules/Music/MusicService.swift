@@ -355,6 +355,7 @@ final class MusicService {
     // MARK: - Playback Controls (Non-Blocking Dispatch)
 
     func togglePlayPause() {
+        guard !controlPending else { return }
         switch source {
         case .spotify:
             toggleSpotify()
@@ -374,6 +375,7 @@ final class MusicService {
     }
 
     func play(preferredSource target: MediaSource? = nil) {
+        guard !controlPending else { return }
         let resolved = target ?? (source == .none ? (preferredSource ?? .none) : source)
         switch resolved {
         case .spotify:
@@ -394,6 +396,7 @@ final class MusicService {
     }
 
     func pause(preferredSource target: MediaSource? = nil) {
+        guard !controlPending else { return }
         let resolved = target ?? source
         switch resolved {
         case .spotify:
@@ -412,33 +415,51 @@ final class MusicService {
     }
 
     func nextTrack(preferredSource target: MediaSource? = nil) {
+        guard !controlPending else { return }
         let resolved = target ?? source
         switch resolved {
         case .spotify:
             nextSpotify()
         case .appleMusic:
             nextAppleMusic()
-        default:
+        case .youtube:
+            controlStatus = nil
+            controlError = "YouTube does not support skipping tracks."
+            scheduleErrorClear(message: controlError)
+        case .none:
             if SpotifyProvider.shared.isRunning {
                 nextSpotify()
-            } else {
+            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
                 nextAppleMusic()
+            } else {
+                controlStatus = nil
+                controlError = "No active media player to skip track."
+                scheduleErrorClear(message: controlError)
             }
         }
     }
 
     func previousTrack(preferredSource target: MediaSource? = nil) {
+        guard !controlPending else { return }
         let resolved = target ?? source
         switch resolved {
         case .spotify:
             previousSpotify()
         case .appleMusic:
             previousAppleMusic()
-        default:
+        case .youtube:
+            controlStatus = nil
+            controlError = "YouTube does not support skipping tracks."
+            scheduleErrorClear(message: controlError)
+        case .none:
             if SpotifyProvider.shared.isRunning {
                 previousSpotify()
-            } else {
+            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
                 previousAppleMusic()
+            } else {
+                controlStatus = nil
+                controlError = "No active media player to skip track."
+                scheduleErrorClear(message: controlError)
             }
         }
     }
@@ -452,6 +473,13 @@ final class MusicService {
     // MARK: - Spotify Controls
 
     private func playSpotify() {
+        guard !controlPending else { return }
+        guard SpotifyProvider.shared.isRunning || SpotifyProvider.shared.isInstalled else {
+            controlStatus = nil
+            controlError = "Spotify is not installed on this Mac."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
         controlError = nil
         controlStatus = "Playing…"
@@ -468,6 +496,7 @@ final class MusicService {
                 case let .failure(error):
                     self.controlStatus = nil
                     self.controlError = error.localizedDescription
+                    self.scheduleErrorClear(message: self.controlError)
                 }
                 self.checkCurrentTrack()
             }
@@ -475,6 +504,13 @@ final class MusicService {
     }
 
     private func pauseSpotify() {
+        guard !controlPending else { return }
+        guard SpotifyProvider.shared.isRunning else {
+            controlStatus = nil
+            controlError = "Spotify is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
         controlError = nil
         controlStatus = "Pausing…"
@@ -490,6 +526,7 @@ final class MusicService {
                 case let .failure(error):
                     self.controlStatus = nil
                     self.controlError = error.localizedDescription
+                    self.scheduleErrorClear(message: self.controlError)
                 }
                 self.checkCurrentTrack()
             }
@@ -497,6 +534,13 @@ final class MusicService {
     }
 
     private func toggleSpotify() {
+        guard !controlPending else { return }
+        guard SpotifyProvider.shared.isRunning else {
+            controlStatus = nil
+            controlError = "Spotify is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
         controlError = nil
         controlStatus = isPlaying ? "Pausing…" : "Playing…"
@@ -512,6 +556,7 @@ final class MusicService {
                 case let .failure(error):
                     self.controlStatus = nil
                     self.controlError = error.localizedDescription
+                    self.scheduleErrorClear(message: self.controlError)
                 }
                 self.checkCurrentTrack()
             }
@@ -519,6 +564,13 @@ final class MusicService {
     }
 
     private func nextSpotify() {
+        guard !controlPending else { return }
+        guard SpotifyProvider.shared.isRunning else {
+            controlStatus = nil
+            controlError = "Spotify is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
         controlError = nil
         controlStatus = "Next…"
@@ -533,6 +585,7 @@ final class MusicService {
                 case let .failure(error):
                     self.controlStatus = nil
                     self.controlError = error.localizedDescription
+                    self.scheduleErrorClear(message: self.controlError)
                 }
                 self.checkCurrentTrack()
             }
@@ -540,6 +593,13 @@ final class MusicService {
     }
 
     private func previousSpotify() {
+        guard !controlPending else { return }
+        guard SpotifyProvider.shared.isRunning else {
+            controlStatus = nil
+            controlError = "Spotify is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
         controlError = nil
         controlStatus = "Previous…"
@@ -554,6 +614,7 @@ final class MusicService {
                 case let .failure(error):
                     self.controlStatus = nil
                     self.controlError = error.localizedDescription
+                    self.scheduleErrorClear(message: self.controlError)
                 }
                 self.checkCurrentTrack()
             }
@@ -623,7 +684,15 @@ final class MusicService {
     }
 
     private func playAppleMusic() {
+        guard !controlPending else { return }
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+            controlStatus = nil
+            controlError = "Apple Music is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
+        controlError = nil
         controlStatus = "Playing…"
         preferredSource = .appleMusic
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -637,15 +706,30 @@ final class MusicService {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.controlPending = false
-                self.controlStatus = "Playing"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+                if let error = error {
+                    self.controlStatus = nil
+                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
+                    self.controlError = msg
+                    self.scheduleErrorClear(message: msg)
+                } else {
+                    self.controlStatus = "Playing"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+                }
                 self.checkCurrentTrack()
             }
         }
     }
 
     private func pauseAppleMusic() {
+        guard !controlPending else { return }
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+            controlStatus = nil
+            controlError = "Apple Music is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
+        controlError = nil
         controlStatus = "Pausing…"
         Task.detached(priority: .userInitiated) { [weak self] in
             let script = """
@@ -658,15 +742,30 @@ final class MusicService {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.controlPending = false
-                self.controlStatus = "Paused"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+                if let error = error {
+                    self.controlStatus = nil
+                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
+                    self.controlError = msg
+                    self.scheduleErrorClear(message: msg)
+                } else {
+                    self.controlStatus = "Paused"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+                }
                 self.checkCurrentTrack()
             }
         }
     }
 
     private func toggleAppleMusic() {
+        guard !controlPending else { return }
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+            controlStatus = nil
+            controlError = "Apple Music is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
         controlPending = true
+        controlError = nil
         controlStatus = isPlaying ? "Pausing…" : "Playing…"
         Task.detached(priority: .userInitiated) { [weak self] in
             let script = """
@@ -679,14 +778,31 @@ final class MusicService {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.controlPending = false
-                self.controlStatus = self.isPlaying ? "Paused" : "Playing"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+                if let error = error {
+                    self.controlStatus = nil
+                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
+                    self.controlError = msg
+                    self.scheduleErrorClear(message: msg)
+                } else {
+                    self.controlStatus = self.isPlaying ? "Paused" : "Playing"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+                }
                 self.checkCurrentTrack()
             }
         }
     }
 
     private func nextAppleMusic() {
+        guard !controlPending else { return }
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+            controlStatus = nil
+            controlError = "Apple Music is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
+        controlPending = true
+        controlError = nil
+        controlStatus = "Next…"
         Task.detached(priority: .userInitiated) { [weak self] in
             let script = """
             if application "Music" is running then
@@ -696,12 +812,32 @@ final class MusicService {
             var error: NSDictionary?
             _ = NSAppleScript(source: script)?.executeAndReturnError(&error)
             await MainActor.run { [weak self] in
-                self?.checkCurrentTrack()
+                guard let self else { return }
+                self.controlPending = false
+                if let error = error {
+                    self.controlStatus = nil
+                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
+                    self.controlError = msg
+                    self.scheduleErrorClear(message: msg)
+                } else {
+                    self.controlStatus = nil
+                }
+                self.checkCurrentTrack()
             }
         }
     }
 
     private func previousAppleMusic() {
+        guard !controlPending else { return }
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+            controlStatus = nil
+            controlError = "Apple Music is not currently running."
+            scheduleErrorClear(message: controlError)
+            return
+        }
+        controlPending = true
+        controlError = nil
+        controlStatus = "Previous…"
         Task.detached(priority: .userInitiated) { [weak self] in
             let script = """
             if application "Music" is running then
@@ -711,9 +847,34 @@ final class MusicService {
             var error: NSDictionary?
             _ = NSAppleScript(source: script)?.executeAndReturnError(&error)
             await MainActor.run { [weak self] in
-                self?.checkCurrentTrack()
+                guard let self else { return }
+                self.controlPending = false
+                if let error = error {
+                    self.controlStatus = nil
+                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
+                    self.controlError = msg
+                    self.scheduleErrorClear(message: msg)
+                } else {
+                    self.controlStatus = nil
+                }
+                self.checkCurrentTrack()
             }
         }
+    }
+
+    private func scheduleErrorClear(message: String?) {
+        guard let message else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            if self?.controlError == message {
+                self?.controlError = nil
+            }
+        }
+    }
+
+    func resetControlStateForTesting() {
+        controlPending = false
+        controlError = nil
+        controlStatus = nil
     }
 
     // MARK: - Browser / YouTube Integration
@@ -738,6 +899,7 @@ final class MusicService {
                 print("[AMORA Control] UI completion action=\(action.rawValue) success=false reason=\(reason ?? "unknown")")
                 self.controlStatus = nil
                 self.controlError = Self.friendlyControlError(reason)
+                self.scheduleErrorClear(message: self.controlError)
             }
             self.checkCurrentTrack()
         }

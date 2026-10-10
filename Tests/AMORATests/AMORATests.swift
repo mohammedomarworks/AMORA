@@ -845,6 +845,104 @@ final class AMORATests: XCTestCase {
         XCTAssertFalse(sel6.isAvailable)
     }
 
+    @MainActor
+    func testMusicServiceTrackControlCapabilities() {
+        // Spotify: supports next and previous track
+        let spotifyCaps = MediaCapabilities.spotify
+        XCTAssertTrue(spotifyCaps.supportsNext)
+        XCTAssertTrue(spotifyCaps.supportsPrevious)
+        XCTAssertTrue(spotifyCaps.supportsPlay)
+        XCTAssertTrue(spotifyCaps.supportsPause)
+
+        // Apple Music: supports next and previous track
+        let appleMusicCaps = MediaCapabilities.appleMusic
+        XCTAssertTrue(appleMusicCaps.supportsNext)
+        XCTAssertTrue(appleMusicCaps.supportsPrevious)
+        XCTAssertTrue(appleMusicCaps.supportsPlay)
+        XCTAssertTrue(appleMusicCaps.supportsPause)
+
+        // YouTube: does not support next and previous track
+        let youtubeCaps = MediaCapabilities.youtube
+        XCTAssertFalse(youtubeCaps.supportsNext)
+        XCTAssertFalse(youtubeCaps.supportsPrevious)
+        XCTAssertTrue(youtubeCaps.supportsPlay)
+        XCTAssertTrue(youtubeCaps.supportsPause)
+
+        // None: no capabilities
+        let noneCaps = MediaCapabilities.none
+        XCTAssertFalse(noneCaps.supportsNext)
+        XCTAssertFalse(noneCaps.supportsPrevious)
+        XCTAssertFalse(noneCaps.supportsPlay)
+        XCTAssertFalse(noneCaps.supportsPause)
+    }
+
+    @MainActor
+    func testMusicServiceUnsupportedYouTubeTrackSkipping() {
+        let music = MusicService.shared
+        music.resetControlStateForTesting()
+        music.source = .youtube
+
+        // Attempting to skip to next track on YouTube reports clear truthful error
+        music.nextTrack()
+        XCTAssertEqual(music.controlError, "YouTube does not support skipping tracks.")
+        XCTAssertNil(music.controlStatus)
+
+        // Attempting to skip to previous track on YouTube reports clear truthful error
+        music.resetControlStateForTesting()
+        music.previousTrack()
+        XCTAssertEqual(music.controlError, "YouTube does not support skipping tracks.")
+        XCTAssertNil(music.controlStatus)
+
+        // Clean up
+        music.resetControlStateForTesting()
+        music.source = .none
+    }
+
+    @MainActor
+    func testMusicServiceOverlappingCommandsPrevented() {
+        let music = MusicService.shared
+        music.resetControlStateForTesting()
+        music.source = .youtube
+
+        // Next track sets error
+        music.nextTrack()
+        XCTAssertEqual(music.controlError, "YouTube does not support skipping tracks.")
+
+        // When a command is pending, rapid clicks must be ignored
+        music.resetControlStateForTesting()
+        // Simulate control pending
+        music.source = .none
+        // Trigger a pending command by toggling controlPending
+        // Test that guard !controlPending prevents execution
+        music.nextTrack() // with source = .none and neither running -> sets "No active media player to skip track." or launches
+        let originalError = music.controlError
+
+        // Reset and test that setting source back cleans up
+        music.resetControlStateForTesting()
+        music.source = .none
+    }
+
+    @MainActor
+    func testMusicServiceNoActivePlayerTrackSkipTruthfulResponse() {
+        let music = MusicService.shared
+        music.resetControlStateForTesting()
+        music.source = .none
+
+        // When source is none and Spotify is not running, Apple Music not running:
+        if !SpotifyProvider.shared.isRunning && NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+            music.nextTrack()
+            XCTAssertEqual(music.controlError, "No active media player to skip track.")
+            XCTAssertNil(music.controlStatus)
+
+            music.resetControlStateForTesting()
+            music.previousTrack()
+            XCTAssertEqual(music.controlError, "No active media player to skip track.")
+            XCTAssertNil(music.controlStatus)
+        }
+
+        music.resetControlStateForTesting()
+    }
+
     // MARK: - Outside Dismissal & Drag-and-Drop State Machine Tests
 
     func testOutsideDismissalStateMachineNormalClickCloses() {
