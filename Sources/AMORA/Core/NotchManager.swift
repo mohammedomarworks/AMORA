@@ -92,10 +92,10 @@ final class NotchManager {
             let windowFrame = window.frame
             let distance = hypot(currentPosition.x - windowFrame.midX, currentPosition.y - windowFrame.midY)
 
-            // While the island is expanded, keep tracking the cursor for eye
+            // While the island is expanded or transitioning, keep tracking the cursor for eye
             // movement (above) but don't let proximity drive state transitions —
             // the expanded state is owned by WindowManager / click-outside.
-            guard !AppState.shared.isQuickPanelOpen else { return }
+            guard !IslandModel.shared.isExpanded && IslandModel.shared.targetState == .collapsed else { return }
 
             let stateManager = AppState.shared.stateManager
             let settings = AppState.shared.settings

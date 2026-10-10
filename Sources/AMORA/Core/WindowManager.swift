@@ -18,6 +18,57 @@ final class DynamicIslandWindow: NSWindow {
     }
 }
 
+/// Custom NSHostingView that performs strict hit-testing against the dynamic island's
+/// current visible silhouette, allowing mouse events outside the silhouette to pass
+/// through to windows beneath.
+///
+/// Coordinate-system note: `hitTest(_:)` always receives its point in the **superview's**
+/// coordinate system. The superview of NSHostingView is NSNextStepFrame, which is
+/// **not** flipped (y=0 at bottom, y=height at top). The island is always anchored to the
+/// top of the window, so the correct origin is `y = windowBounds.height - currentSize.height`
+/// regardless of whether the hosting view itself reports `isFlipped = true`.
+///
+/// The top-edge boundary (y == windowBounds.height) is excluded by NSRect.contains
+/// (half-open interval). An extra 1pt top extension ensures clicks on the very top pixel
+/// row of the physical hardware notch are not silently dropped.
+@MainActor
+final class IslandHostingView: NSHostingView<DynamicIslandView> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let e = IslandModel.shared.expansion
+        let windowBounds = bounds
+
+        // When fully collapsed the entire window IS the notch — accept any point
+        // within bounds rather than computing a sub-rect. This is the most robust
+        // path and avoids floating-point edge cases near e = 0.
+        if e < 0.01 {
+            guard windowBounds.insetBy(dx: 0, dy: -1).contains(point) else { return nil }
+            return super.hitTest(point) ?? self
+        }
+
+        let currentSize = IslandModel.shared.islandSize(for: e)
+
+        // The point is in the superview's coordinate system, which is non-flipped
+        // (y=0 = window bottom, y=height = window top). The island is top-anchored,
+        // so its rect origin in superview coords is (centerX, windowHeight - islandHeight).
+        // Do NOT use `isFlipped` here — that describes the view's own internal axis,
+        // not the superview coordinate system that hitTest uses.
+        let x = (windowBounds.width - currentSize.width) / 2
+        let y = windowBounds.height - currentSize.height
+
+        // Extend 1pt upward past the top boundary so that clicks on the topmost
+        // pixel row (y == windowBounds.height, excluded by NSRect's half-open interval)
+        // still register correctly.
+        let islandRect = NSRect(
+            x: x,
+            y: y - 1,               // 1pt upward extension at the top
+            width: currentSize.width,
+            height: currentSize.height + 1
+        )
+        guard islandRect.contains(point) else { return nil }
+        return super.hitTest(point) ?? self
+    }
+}
+
 /// Owns every on-screen surface AMORA presents. The notch experience is a SINGLE
 /// window that physically occupies the hardware notch when collapsed and morphs
 /// downward into a Dynamic Island when expanded — there is no separate pill or panel.
@@ -134,6 +185,9 @@ final class WindowManager {
         model.collapsedBottomRadius = IslandMetrics.collapsedBottomRadius
         model.quickBottomRadius = IslandMetrics.quickBottomRadius
         model.workspaceBottomRadius = IslandMetrics.workspaceBottomRadius
+        model.collapsedSize = collapsedFrame(on: screen).size
+        model.quickSize = quickFrame(on: screen).size
+        model.workspaceSize = workspaceFrame(on: screen).size
     }
 
     // MARK: - Collapsed island (the physical notch itself)
@@ -162,14 +216,14 @@ final class WindowManager {
         window.isMovable = false
         window.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
 
-        let host = NSHostingController(rootView: DynamicIslandView())
-        host.view.frame = CGRect(origin: .zero, size: frame.size)
-        host.view.autoresizingMask = [.width, .height]
-        host.view.wantsLayer = true
-        host.view.layer?.backgroundColor = NSColor.clear.cgColor
-        host.view.layer?.isOpaque = false
+        let hostView = IslandHostingView(rootView: DynamicIslandView())
+        hostView.frame = CGRect(origin: .zero, size: frame.size)
+        hostView.autoresizingMask = [.width, .height]
+        hostView.wantsLayer = true
+        hostView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostView.layer?.isOpaque = false
 
-        window.contentView = host.view
+        window.contentView = hostView
 
         islandWindow = window
         notchManager = NotchManager(window: window, screen: screen)
@@ -221,6 +275,10 @@ final class WindowManager {
         AMORAContext.shared.beginInteraction()
         AMORAEventCenter.shared.emit(.opened)
 
+        let targetRect = quickFrame(on: screen)
+        if window.frame != targetRect {
+            window.setFrame(targetRect, display: true)
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         setupClickOutsideMonitor()
@@ -242,6 +300,10 @@ final class WindowManager {
         AMORAContext.shared.beginInteraction()
         AMORAEventCenter.shared.emit(.opened)
 
+        let targetRect = workspaceFrame(on: screen)
+        if window.frame != targetRect {
+            window.setFrame(targetRect, display: true)
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         setupClickOutsideMonitor()
@@ -288,16 +350,17 @@ final class WindowManager {
     ///   1.0 = State 2 (Quick Island)
     ///   2.0 = State 3 (Expanded Workspace)
     ///
-    /// Every tick resizes the single host NSWindow and updates `IslandModel.expansion`
-    /// to keep AppKit frame morph and SwiftUI content interpolation in exact lockstep.
+    /// Drives `IslandModel.expansion` in lockstep with the single host window.
     private func animateIsland(to target: Double) {
-        guard let screen = NotchManager.notchedScreen ?? NSScreen.main else { return }
-        collapsedFrameCache = collapsedFrame(on: screen)
-        quickFrameCache = quickFrame(on: screen)
-        workspaceFrameCache = workspaceFrame(on: screen)
+        guard (NotchManager.notchedScreen ?? NSScreen.main) != nil else { return }
         springTarget = target
         springTimer?.invalidate()
         lastAnimationTimestamp = CACurrentMediaTime()
+
+        // If target reverses direction of current movement, dampen velocity to prevent overshoot
+        if (target - springPos) * springVel < 0 {
+            springVel = 0
+        }
 
         // Physics tuning based on direction and target
         let stiffness: Double
@@ -323,7 +386,7 @@ final class WindowManager {
         let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                guard let window = self.islandWindow else {
+                guard self.islandWindow != nil else {
                     self.springTimer?.invalidate()
                     self.springTimer = nil
                     return
@@ -356,38 +419,10 @@ final class WindowManager {
                 }
 
                 IslandModel.shared.expansion = self.springPos
-                window.setFrame(self.interpolatedFrame(self.springPos), display: false)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         springTimer = timer
-    }
-
-    private func interpolatedFrame(_ p: Double) -> NSRect {
-        guard let screen = NotchManager.notchedScreen ?? NSScreen.main else {
-            return quickFrameCache
-        }
-        let a = collapsedFrameCache
-        let b = quickFrameCache
-        let c = workspaceFrameCache
-
-        if p <= 1.0 {
-            // Interpolating between collapsed (0) and quick (1)
-            let f = CGFloat(max(0.0, min(1.05, p)))
-            let width = (a.width + (b.width - a.width) * f).rounded()
-            let height = (a.height + (b.height - a.height) * f).rounded()
-            let x = (a.origin.x + (b.origin.x - a.origin.x) * f).rounded()
-            let y = screen.frame.maxY - height
-            return NSRect(x: x, y: y, width: width, height: height)
-        } else {
-            // Interpolating between quick (1) and workspace (2)
-            let f = CGFloat(max(0.0, min(1.05, p - 1.0)))
-            let width = (b.width + (c.width - b.width) * f).rounded()
-            let height = (b.height + (c.height - b.height) * f).rounded()
-            let x = (b.origin.x + (c.origin.x - b.origin.x) * f).rounded()
-            let y = screen.frame.maxY - height
-            return NSRect(x: x, y: y, width: width, height: height)
-        }
     }
 
     private func finishIslandAnimation() {
@@ -413,6 +448,7 @@ final class WindowManager {
             IslandModel.shared.expansion = 0.0
             AppState.shared.isDashboardOpen = false
             AppState.shared.isQuickPanelOpen = false
+            AppState.shared.stateManager.resetToIdle()
             islandWindow?.setFrame(collapsedFrame(on: screen), display: true)
         }
     }
@@ -437,7 +473,14 @@ final class WindowManager {
                 guard CACurrentMediaTime() - self.monitorStartTime > 0.3 else { return }
 
                 let point = NSEvent.mouseLocation
-                let isInside = window.frame.contains(point)
+                let currentSize = IslandModel.shared.islandSize(for: IslandModel.shared.expansion)
+                let islandScreenRect = NSRect(
+                    x: window.frame.midX - currentSize.width / 2,
+                    y: window.frame.maxY - currentSize.height,
+                    width: currentSize.width,
+                    height: currentSize.height
+                )
+                let isInside = islandScreenRect.contains(point)
                 let now = CACurrentMediaTime()
 
                 switch event.type {
@@ -637,7 +680,7 @@ final class WindowManager {
                       let window = self.islandWindow else { return }
                 self.configureIslandModel(for: screen)
                 let target: NSRect
-                switch IslandModel.shared.displayState {
+                switch IslandModel.shared.targetState {
                 case .workspace: target = self.workspaceFrame(on: screen)
                 case .quick: target = self.quickFrame(on: screen)
                 case .collapsed: target = self.collapsedFrame(on: screen)

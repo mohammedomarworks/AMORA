@@ -29,14 +29,42 @@ final class IslandModel {
     var quickBottomRadius: CGFloat = 30
     var workspaceBottomRadius: CGFloat = 36
 
+    var collapsedSize: CGSize = CGSize(width: 200, height: 40)
+    var quickSize: CGSize = CGSize(width: 840, height: 230)
+    var workspaceSize: CGSize = CGSize(width: 960, height: 680)
+
     var isExpanded: Bool { expansion > 0.05 }
     var isWorkspace: Bool { expansion > 1.05 }
+
+    func islandSize(for e: Double) -> CGSize {
+        if e <= 1.0 {
+            let t = CGFloat(max(0.0, min(1.0, e)))
+            let w = lerp(collapsedSize.width, quickSize.width, t)
+            let h = lerp(collapsedSize.height, quickSize.height, t)
+            return CGSize(width: w, height: h)
+        } else {
+            let t = CGFloat(max(0.0, min(1.0, e - 1.0)))
+            let w = lerp(quickSize.width, workspaceSize.width, t)
+            let h = lerp(quickSize.height, workspaceSize.height, t)
+            return CGSize(width: w, height: h)
+        }
+    }
+
+    func bottomRadius(for e: Double) -> CGFloat {
+        if e <= 1.0 {
+            let t = CGFloat(max(0.0, min(1.0, e)))
+            return lerp(collapsedBottomRadius, quickBottomRadius, t)
+        } else {
+            let t = CGFloat(max(0.0, min(1.0, e - 1.0)))
+            return lerp(quickBottomRadius, workspaceBottomRadius, t)
+        }
+    }
 
     private init() {}
 }
 
 @inline(__always)
-private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
+func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
     a + (b - a) * t
 }
 
@@ -50,11 +78,6 @@ private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
 /// and expanded island radius.
 struct IslandShape: Shape {
     var bottomRadius: CGFloat
-
-    var animatableData: CGFloat {
-        get { bottomRadius }
-        set { bottomRadius = newValue }
-    }
 
     func path(in rect: CGRect) -> Path {
         let r = min(max(bottomRadius, 0), min(rect.width, rect.height) / 2)
@@ -101,11 +124,6 @@ struct IslandShape: Shape {
 struct IslandBorderShape: Shape {
     var bottomRadius: CGFloat
     var inset: CGFloat = 0.5
-
-    var animatableData: CGFloat {
-        get { bottomRadius }
-        set { bottomRadius = newValue }
-    }
 
     func path(in rect: CGRect) -> Path {
         IslandShape(bottomRadius: bottomRadius).borderPath(in: rect, inset: inset)
@@ -155,18 +173,16 @@ struct DynamicIslandView: View {
 
     var body: some View {
         content(expansion: island.expansion)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onHover { hovering in
-                guard !island.isExpanded else { return }
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                    robot.isHovering = hovering
-                    if hovering {
-                        appState.stateManager.transition(to: .hover)
-                        robot.updateExpression(for: .hover)
-                    } else {
-                        appState.stateManager.transition(to: .idle)
-                        robot.updateExpression(for: .idle)
-                    }
+                guard !island.isExpanded && island.targetState == .collapsed else { return }
+                robot.isHovering = hovering
+                if hovering {
+                    appState.stateManager.transition(to: .hover)
+                    robot.updateExpression(for: .hover)
+                } else {
+                    appState.stateManager.transition(to: .idle)
+                    robot.updateExpression(for: .idle)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .cursorMoved)) { notification in
@@ -181,41 +197,32 @@ struct DynamicIslandView: View {
     }
 
     private func bottomRadius(for e: Double) -> CGFloat {
-        if e <= 1.0 {
-            let t = CGFloat(max(0.0, min(1.0, e)))
-            return lerp(island.collapsedBottomRadius, island.quickBottomRadius, t)
-        } else {
-            let t = CGFloat(max(0.0, min(1.0, e - 1.0)))
-            return lerp(island.quickBottomRadius, island.workspaceBottomRadius, t)
-        }
+        island.bottomRadius(for: e)
     }
 
     @ViewBuilder
     private func content(expansion e: Double) -> some View {
-        let radius = bottomRadius(for: e)
+        let size = island.islandSize(for: e)
+        let radius = island.bottomRadius(for: e)
         let shape = IslandShape(bottomRadius: radius)
 
         ZStack(alignment: .top) {
-            surface(shape: shape, bottomRadius: radius, e: e)
+            surface(shape: shape, size: size, bottomRadius: radius, e: e)
 
-            if e < 0.25 {
-                collapsedEyes(expansion: e)
-            }
+            collapsedEyes(expansion: e)
 
-            if e > 0.10 && e < 1.70 {
-                quickContent(expansion: e)
-            }
+            quickContent(expansion: e)
 
-            if e > 1.05 {
-                workspaceContent(expansion: e)
-            }
+            workspaceContent(expansion: e)
         }
+        .frame(width: size.width, height: size.height, alignment: .top)
         .clipShape(shape)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     /// One continuous pure-black surface that represents the hardware notch when
     /// collapsed and morphs fluidly downward into the Dynamic Island when expanded.
-    private func surface(shape: IslandShape, bottomRadius: CGFloat, e: Double) -> some View {
+    private func surface(shape: IslandShape, size: CGSize, bottomRadius: CGFloat, e: Double) -> some View {
         let border = IslandBorderShape(bottomRadius: bottomRadius)
         let tD = min(1.0, max(0.0, e))
 
@@ -242,6 +249,7 @@ struct DynamicIslandView: View {
             // Inner hairline border tracing the exact curved silhouette
             border.stroke(borderGradient, lineWidth: 1.0)
         }
+        .frame(width: size.width, height: size.height)
         .contentShape(shape)
         .onTapGesture {
             if island.displayState == .collapsed {
@@ -260,15 +268,15 @@ struct DynamicIslandView: View {
         return NotchEyesView(robot: robot)
             .opacity(eyeOpacity)
             .scaleEffect(eyeScale, anchor: .bottom)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .frame(width: island.notchWidth, height: island.collapsedSize.height, alignment: .bottom)
             .padding(.bottom, 4)
             .allowsHitTesting(false)
     }
 
     private func quickContent(expansion e: Double) -> some View {
-        // When e is 0.12..0.72: unfolds and fades in (0 -> 1)
+        // When e is 0.10..0.60: unfolds and fades in (0 -> 1)
         // When e is 1.0..1.50: dissolves out (1 -> 0) as it morphs into workspace
-        let fadeIn = min(1.0, max(0.0, (e - 0.12) / 0.60))
+        let fadeIn = min(1.0, max(0.0, (e - 0.10) / 0.50))
         let fadeOut = e > 1.0 ? max(0.0, 1.0 - (e - 1.0) / 0.40) : 1.0
         let opacity = fadeIn * fadeOut
 
@@ -276,6 +284,7 @@ struct DynamicIslandView: View {
         let scale = e <= 1.0 ? (0.96 + 0.04 * fadeIn) : (1.0 + 0.04 * (e - 1.0))
 
         return WideDynamicIslandContentView(topInset: island.topInset)
+            .frame(width: island.quickSize.width, height: island.quickSize.height, alignment: .top)
             .opacity(opacity)
             .offset(y: translateY)
             .scaleEffect(scale, anchor: .top)
@@ -293,6 +302,7 @@ struct DynamicIslandView: View {
             embedded: true,
             topInset: island.topInset
         )
+        .frame(width: island.workspaceSize.width, height: island.workspaceSize.height, alignment: .top)
         .opacity(contentProgress)
         .offset(y: translateY)
         .scaleEffect(scale, anchor: .top)

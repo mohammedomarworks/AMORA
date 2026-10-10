@@ -1096,4 +1096,121 @@ final class AMORATests: XCTestCase {
         XCTAssertFalse(window.canBecomeKey)
         XCTAssertFalse(window.canBecomeMain)
     }
+
+    @MainActor
+    func testIslandModelDeterministicInterpolation() {
+        let model = IslandModel.shared
+        model.collapsedSize = CGSize(width: 200, height: 40)
+        model.quickSize = CGSize(width: 800, height: 220)
+        model.workspaceSize = CGSize(width: 960, height: 600)
+        model.collapsedBottomRadius = 10
+        model.quickBottomRadius = 28
+        model.workspaceBottomRadius = 36
+
+        // Collapsed resting state (e = 0.0)
+        let size0 = model.islandSize(for: 0.0)
+        XCTAssertEqual(size0.width, 200)
+        XCTAssertEqual(size0.height, 40)
+        XCTAssertEqual(model.bottomRadius(for: 0.0), 10)
+
+        // Mid-way expanding to Quick (e = 0.5)
+        let sizeMid = model.islandSize(for: 0.5)
+        XCTAssertEqual(sizeMid.width, 500) // (200 + 800) / 2
+        XCTAssertEqual(sizeMid.height, 130) // (40 + 220) / 2
+        XCTAssertEqual(model.bottomRadius(for: 0.5), 19) // (10 + 28) / 2
+
+        // Quick Island resting state (e = 1.0)
+        let size1 = model.islandSize(for: 1.0)
+        XCTAssertEqual(size1.width, 800)
+        XCTAssertEqual(size1.height, 220)
+        XCTAssertEqual(model.bottomRadius(for: 1.0), 28)
+
+        // Mid-way transitioning to Workspace (e = 1.5)
+        let sizeWorkMid = model.islandSize(for: 1.5)
+        XCTAssertEqual(sizeWorkMid.width, 880) // (800 + 960) / 2
+        XCTAssertEqual(sizeWorkMid.height, 410) // (220 + 600) / 2
+        XCTAssertEqual(model.bottomRadius(for: 1.5), 32) // (28 + 36) / 2
+
+        // Workspace resting state (e = 2.0)
+        let size2 = model.islandSize(for: 2.0)
+        XCTAssertEqual(size2.width, 960)
+        XCTAssertEqual(size2.height, 600)
+        XCTAssertEqual(model.bottomRadius(for: 2.0), 36)
+
+        // Boundaries and clamped safety
+        let clampedLow = model.islandSize(for: -0.5)
+        XCTAssertEqual(clampedLow.width, 200)
+        XCTAssertEqual(clampedLow.height, 40)
+
+        // Restore
+        model.expansion = 0.0
+        model.targetState = .collapsed
+        model.displayState = .collapsed
+    }
+
+
+    @MainActor
+    func testIslandHostingViewHitTestBounds() {
+        let model = IslandModel.shared
+        model.collapsedSize = CGSize(width: 200, height: 40)
+        model.quickSize = CGSize(width: 800, height: 220)
+        model.expansion = 0.0
+
+        let hostView = IslandHostingView(rootView: DynamicIslandView())
+        // Host view is set to the QUICK frame size — simulates the window being pre-sized
+        // to the target frame before the spring animation begins (as done in expandIsland()).
+        hostView.frame = NSRect(x: 0, y: 0, width: 800, height: 220)
+
+        // hitTest points are in SUPERVIEW (non-flipped) coordinates:
+        //   y=0   = bottom of window
+        //   y=220 = top of window = where the physical notch lives
+
+        // --- Fully collapsed (e = 0.0): entire window IS the notch. ---
+        // All points inside the host view bounds should hit regardless of x.
+        // (The collapsed fast-path accepts the whole window bounds.)
+
+        // Point at the TOP of the window (physical notch position, superview y near 220)
+        let notchTopPoint = NSPoint(x: 400, y: 215)
+        XCTAssertNotNil(hostView.hitTest(notchTopPoint),
+                        "Point at top of window (physical notch) must register when collapsed")
+
+        // The 1pt top extension: y == windowBounds.height (would be excluded by NSRect.contains)
+        let exactTopEdge = NSPoint(x: 400, y: 220)
+        XCTAssertNotNil(hostView.hitTest(exactTopEdge),
+                        "Exact top-edge point (y=windowHeight) must register via top-extension when collapsed")
+
+        // Centre of window should also hit
+        let windowCentrePoint = NSPoint(x: 400, y: 110)
+        XCTAssertNotNil(hostView.hitTest(windowCentrePoint),
+                        "Centre of window must register when collapsed")
+
+        // --- Partially expanded (e = 0.5): island rect is between collapsed and quick. ---
+        // Island in superview coords: top at y = 220, bottom at y = 220 - islandH(0.5)
+        // Horizontally centered in 800pt window.
+        model.expansion = 0.5
+        let midSize = model.islandSize(for: 0.5)    // width=500, height=130
+        let midTop = NSPoint(x: 400, y: 220 - 5)    // near top of island in superview coords
+        XCTAssertNotNil(hostView.hitTest(midTop),
+                        "Point near top of mid-expanded island must register")
+
+        // Point horizontally outside the mid-expanded island (too far left) must pass through
+        let outsideMidX = NSPoint(x: (800 - midSize.width) / 2 - 10, y: 220 - 20)
+        XCTAssertNil(hostView.hitTest(outsideMidX),
+                     "Point outside island x-range during mid-expansion must return nil")
+
+        // --- Fully expanded to Quick (e = 1.0): island fills the full window. ---
+        model.expansion = 1.0
+        // Point at ear position (x=100) which was outside the collapsed notch —
+        // it must now be inside the full-width quick island.
+        let earPoint = NSPoint(x: 100, y: 215)
+        XCTAssertNotNil(hostView.hitTest(earPoint),
+                        "Point in ear must be hit-testable when expanded to Quick")
+
+        // Restore
+        model.expansion = 0.0
+        model.targetState = .collapsed
+        model.displayState = .collapsed
+    }
 }
+
+
