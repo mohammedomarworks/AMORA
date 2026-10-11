@@ -531,8 +531,11 @@ final class GitHubServiceTests: XCTestCase {
 
         await service.startAuthentication()
 
-        // Wait a tiny bit for the task to finish
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        // Wait for the background auth task to finish
+        for _ in 0..<20 {
+            if service.authState.isConnected { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
 
         // Verify connected state
         XCTAssertTrue(service.authState.isConnected)
