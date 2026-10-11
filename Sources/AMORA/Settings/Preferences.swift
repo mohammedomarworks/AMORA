@@ -143,6 +143,27 @@ final class SettingsStore {
         if defaults.object(forKey: "AMORA_autoCollapseDelay") != nil {
             self.autoCollapseDelay = defaults.double(forKey: "AMORA_autoCollapseDelay")
         }
+        if defaults.object(forKey: "AMORA_transparency") != nil {
+            self.transparency = defaults.double(forKey: "AMORA_transparency")
+        }
+        if defaults.object(forKey: "AMORA_batteryEnabled") != nil {
+            self.batteryEnabled = defaults.bool(forKey: "AMORA_batteryEnabled")
+        }
+        if defaults.object(forKey: "AMORA_timerEnabled") != nil {
+            self.timerEnabled = defaults.bool(forKey: "AMORA_timerEnabled")
+        }
+        if defaults.object(forKey: "AMORA_musicEnabled") != nil {
+            self.musicEnabled = defaults.bool(forKey: "AMORA_musicEnabled")
+        }
+        if defaults.object(forKey: "AMORA_clipboardEnabled") != nil {
+            self.clipboardEnabled = defaults.bool(forKey: "AMORA_clipboardEnabled")
+        }
+        if defaults.object(forKey: "AMORA_notesEnabled") != nil {
+            self.notesEnabled = defaults.bool(forKey: "AMORA_notesEnabled")
+        }
+        if defaults.object(forKey: "AMORA_systemMonitorEnabled") != nil {
+            self.systemMonitorEnabled = defaults.bool(forKey: "AMORA_systemMonitorEnabled")
+        }
         if let themeStr = defaults.string(forKey: "AMORA_theme"), let th = Theme(rawValue: themeStr) {
             self.theme = th
         }
@@ -165,6 +186,13 @@ final class SettingsStore {
         defaults.set(soundVolume, forKey: "AMORA_soundVolume")
         defaults.set(animationIntensity, forKey: "AMORA_animationIntensity")
         defaults.set(amoraSize, forKey: "AMORA_amoraSize")
+        defaults.set(transparency, forKey: "AMORA_transparency")
+        defaults.set(batteryEnabled, forKey: "AMORA_batteryEnabled")
+        defaults.set(timerEnabled, forKey: "AMORA_timerEnabled")
+        defaults.set(musicEnabled, forKey: "AMORA_musicEnabled")
+        defaults.set(clipboardEnabled, forKey: "AMORA_clipboardEnabled")
+        defaults.set(notesEnabled, forKey: "AMORA_notesEnabled")
+        defaults.set(systemMonitorEnabled, forKey: "AMORA_systemMonitorEnabled")
         defaults.set(autoCollapseDelay, forKey: "AMORA_autoCollapseDelay")
         defaults.set(theme.rawValue, forKey: "AMORA_theme")
         defaults.set(aiProvider, forKey: "AMORA_aiProvider")

@@ -714,7 +714,11 @@ final class WindowManager {
         contractToQuickIsland()
     }
 
-    func showSettings() {
+    func showSettings(section: SettingsSection? = nil) {
+        if let section {
+            SettingsViewState.shared.selectedSection = section
+        }
+
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -722,13 +726,16 @@ final class WindowManager {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 340),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 740, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "AMORA Settings"
         window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.minSize = NSSize(width: 680, height: 500)
+        window.maxSize = NSSize(width: 960, height: 750)
         window.level = .floating
         window.center()
         window.contentView = NSHostingController(rootView: SettingsView()).view
@@ -736,5 +743,13 @@ final class WindowManager {
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    var isSettingsVisible: Bool {
+        settingsWindow?.isVisible == true
+    }
+
+    func closeSettingsForTesting() {
+        settingsWindow?.orderOut(nil)
     }
 }

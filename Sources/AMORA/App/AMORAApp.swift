@@ -1,12 +1,15 @@
-import SwiftUI
+import AppKit
 
 @main
-struct AMORAApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+@MainActor
+enum AMORAApp {
+    private static var appDelegate: AppDelegate?
 
-    var body: some Scene {
-        Settings {
-            SettingsView()
-        }
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        appDelegate = delegate
+        app.delegate = delegate
+        app.run()
     }
 }

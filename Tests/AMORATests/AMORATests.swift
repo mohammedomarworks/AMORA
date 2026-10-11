@@ -1309,6 +1309,76 @@ final class AMORATests: XCTestCase {
         model.targetState = .collapsed
         model.displayState = .collapsed
     }
+
+    @MainActor
+    func testSettingsSectionsCompletenessAndHierarchy() {
+        let sections = SettingsSection.allCases
+        XCTAssertEqual(sections.count, 9)
+        XCTAssertEqual(sections, [
+            .appearance,
+            .behavior,
+            .sounds,
+            .aiAssistant,
+            .contextAwareness,
+            .memory,
+            .modules,
+            .automations,
+            .about
+        ])
+
+        for section in sections {
+            XCTAssertFalse(section.rawValue.isEmpty)
+            XCTAssertFalse(section.icon.isEmpty)
+            XCTAssertFalse(section.subtitle.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testSettingsViewStateNavigation() {
+        let state = SettingsViewState.shared
+        state.selectedSection = .appearance
+        XCTAssertEqual(state.selectedSection, .appearance)
+
+        state.selectedSection = .memory
+        XCTAssertEqual(state.selectedSection, .memory)
+
+        WindowManager.shared.showSettings(section: .aiAssistant)
+        XCTAssertEqual(SettingsViewState.shared.selectedSection, .aiAssistant)
+        XCTAssertTrue(WindowManager.shared.isSettingsVisible)
+    }
+
+    @MainActor
+    func testSettingsStorePersistenceForModulesAndAppearance() {
+        let store = SettingsStore()
+        store.transparency = 0.92
+        store.batteryEnabled = false
+        store.notesEnabled = false
+        store.save()
+
+        let reloaded = SettingsStore()
+        reloaded.load()
+        XCTAssertEqual(reloaded.transparency, 0.92, accuracy: 0.01)
+        XCTAssertFalse(reloaded.batteryEnabled)
+        XCTAssertFalse(reloaded.notesEnabled)
+
+        // Reset back to defaults
+        store.transparency = 0.85
+        store.batteryEnabled = true
+        store.notesEnabled = true
+        store.save()
+    }
+
+    @MainActor
+    func testStartupNotchLaunchDoesNotOpenSettings() {
+        WindowManager.shared.closeSettingsForTesting()
+        WindowManager.shared.showNotchWindow()
+        XCTAssertFalse(WindowManager.shared.isSettingsVisible, "Settings window must not be visible on normal startup")
+
+        WindowManager.shared.showSettings(section: .appearance)
+        XCTAssertTrue(WindowManager.shared.isSettingsVisible, "Settings window must be visible after explicit user request")
+        WindowManager.shared.closeSettingsForTesting()
+        XCTAssertFalse(WindowManager.shared.isSettingsVisible, "Settings window should close cleanly")
+    }
 }
 
 
