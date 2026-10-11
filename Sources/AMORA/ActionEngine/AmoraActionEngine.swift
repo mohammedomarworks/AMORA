@@ -65,11 +65,14 @@ public final class AmoraActionEngine: Sendable {
         }
 
         // 2. Context-aware decision check
-        let decision = decider.decide(action: action, context: context)
-        if case let .alreadyInState(actionId, message, data) = decision {
-            let result = AmoraActionResult.alreadyInState(actionId: actionId, message: message, data: data)
-            AMORAEventCenter.shared.emit(.commandSucceeded)
-            return result
+        // Manual / user-confirmed requests should still execute even when the snapshot already reports the desired state.
+        if !context.isConfirmed {
+            let decision = decider.decide(action: action, context: context)
+            if case let .alreadyInState(actionId, message, data) = decision {
+                let result = AmoraActionResult.alreadyInState(actionId: actionId, message: message, data: data)
+                AMORAEventCenter.shared.emit(.commandSucceeded)
+                return result
+            }
         }
 
         // 3. Confirmation check
@@ -154,12 +157,16 @@ public final class AmoraActionEngine: Sendable {
             }
 
             // 2. Context-aware decision check
-            let decision = decider.decide(action: action, context: currentContext)
-            if case let .alreadyInState(actionId, message, data) = decision {
-                let result = AmoraActionResult.alreadyInState(actionId: actionId, message: message, data: data)
-                coordinator.didCompleteItem(at: index, result: result)
-                results.append(result)
-                continue
+            // User-confirmed/manual steps should continue even when the current snapshot already reflects the desired state.
+            var itemContext = currentContext
+            if !itemContext.isConfirmed {
+                let decision = decider.decide(action: action, context: currentContext)
+                if case let .alreadyInState(actionId, message, data) = decision {
+                    let result = AmoraActionResult.alreadyInState(actionId: actionId, message: message, data: data)
+                    coordinator.didCompleteItem(at: index, result: result)
+                    results.append(result)
+                    continue
+                }
             }
 
             // 3. Confirmation requirement check
@@ -170,7 +177,6 @@ public final class AmoraActionEngine: Sendable {
                 }
             }
 
-            var itemContext = currentContext
             if let prompt = actionPrompt, !itemContext.isConfirmed {
                 let confirmed = await coordinator.requestConfirmation(for: action, prompt: prompt, at: index)
                 if !confirmed {

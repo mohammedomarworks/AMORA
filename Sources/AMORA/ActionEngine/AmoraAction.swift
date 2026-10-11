@@ -142,11 +142,14 @@ public struct AmoraActionRequest: Codable, Equatable, Sendable {
             let section = parameters["section"]
             return .success(.openWorkspace(section: section))
         case "timer.start", "start_timer", "starttimer":
-            if let durationStr = parameters["duration"] ?? parameters["seconds"] ?? parameters["time"],
-               let seconds = Double(durationStr), seconds > 0 {
-                return .success(.startTimer(duration: seconds))
+            if let durationStr = parameters["duration"] ?? parameters["seconds"] ?? parameters["time"] {
+                if let seconds = Double(durationStr), seconds > 0 {
+                    return .success(.startTimer(duration: seconds))
+                }
+                return .failure(.invalidParameter("Missing or invalid 'duration' parameter for startTimer action."))
             }
-            return .failure(.invalidParameter("Missing or invalid 'duration' parameter for startTimer action."))
+            // Default to 25 minutes (1500 seconds) when duration is omitted by the user
+            return .success(.startTimer(duration: 1500))
         case "timer.cancel", "cancel_timer", "canceltimer", "timer.stop", "stop_timer", "stoptimer",
              "timer.end", "end_timer", "endtimer", "timer.turnoff", "turn_off_timer", "turnofftimer",
              "timer.clear", "clear_timer", "cleartimer":

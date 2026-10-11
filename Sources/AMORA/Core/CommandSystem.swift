@@ -37,6 +37,15 @@ public enum AMORACommandResult: Equatable, Sendable {
     case needsInformation(prompt: String)
     case needsConfirmation(prompt: String)
     case unsupported(message: String)
+
+    public var message: String {
+        switch self {
+        case .success(let msg), .failure(let msg), .unsupported(let msg):
+            return msg
+        case .needsInformation(let prompt), .needsConfirmation(let prompt):
+            return prompt
+        }
+    }
 }
 
 public struct AMORACommandContext: Equatable, Sendable {

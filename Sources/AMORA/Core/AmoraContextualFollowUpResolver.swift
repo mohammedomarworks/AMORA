@@ -241,9 +241,11 @@ public struct AmoraContextualFollowUpResolver: AmoraContextualFollowUpResolving 
             "make it ", "make that ", "make this ",
             "change it to ", "change that to ", "change this to ",
             "set it to ", "set that to ", "set this to ",
-            "change timer to ", "set timer to ", "make timer ", "update timer to "
+            "change timer to ", "set timer to ", "make timer ", "update timer to ",
+            "actually ", "how about ", "switch it to ", "switch to "
         ]
-        guard absoluteStarters.contains(where: { text.hasPrefix($0) }) else { return nil }
+        let isEligible = absoluteStarters.contains(where: { text.hasPrefix($0) }) || text.hasSuffix(" instead")
+        guard isEligible else { return nil }
         return extractDurationSeconds(from: text)
     }
 
