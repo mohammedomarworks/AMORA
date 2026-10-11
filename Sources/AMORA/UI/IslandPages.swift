@@ -245,9 +245,14 @@ struct IslandAITalkPage: View {
     private var palette: ThemePalette { AppState.shared.settings.palette }
     private var assistant: AssistantManager { AssistantManager.shared }
     private var actionCoordinator: AmoraActionExecutionCoordinator { AmoraActionExecutionCoordinator.shared }
+    @State private var modelManager = AmoraModelManager.shared
 
     @State private var inputText: String = ""
     @FocusState private var isInputFocused: Bool
+
+    private var isLocalProvider: Bool {
+        AppState.shared.settings.aiProvider == AIProviderKind.local.rawValue
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -262,6 +267,60 @@ struct IslandAITalkPage: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                 }
+                .frame(maxHeight: 100)
+            } else if isLocalProvider && !modelManager.isReady && assistant.state != .thinking {
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "cpu")
+                            .font(.system(size: 13))
+                            .foregroundStyle(palette.accent)
+                        Text("AMORA Local Brain")
+                            .font(.system(size: 11, weight: .bold))
+                        Spacer()
+                        Text(modelManager.status.displayName)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if case .downloading(let progress, let downloaded, let total) = modelManager.status {
+                        VStack(spacing: 3) {
+                            ProgressView(value: progress)
+                                .progressViewStyle(.linear)
+                                .tint(palette.accent)
+                            HStack {
+                                Text(String(format: "%.0f%% • %.1f/%.1f MB", progress * 100, Double(downloaded) / (1024 * 1024), Double(total) / (1024 * 1024)))
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Cancel") {
+                                    modelManager.cancelDownload()
+                                }
+                                .font(.system(size: 8))
+                                .buttonStyle(.amoraPill)
+                            }
+                        }
+                    } else if case .verifying(let progress) = modelManager.status {
+                        ProgressView(value: progress) {
+                            Text(progress > 0 ? String(format: "Verifying checksum (%.0f%%)…", progress * 100) : "Verifying checksum…")
+                                .font(.system(size: 9))
+                        }
+                    } else {
+                        HStack {
+                            Text("Offline model (~491 MB). No API keys or cloud required.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Download") {
+                                Task { try? await modelManager.startDownload() }
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .buttonStyle(.amoraPill)
+                        }
+                    }
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.accent.opacity(0.2), lineWidth: 1))
                 .frame(maxHeight: 100)
             } else {
                 switch assistant.state {

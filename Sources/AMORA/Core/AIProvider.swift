@@ -274,7 +274,12 @@ enum AIProviderFactory {
         case .anthropic:
             guard settings.apiKey?.isEmpty == false else { return UnavailableAIProvider(kind: .anthropic) }
             return AnthropicAIProvider()
-        case .local, .none:
+        case .local:
+            if settings.model == "mock" {
+                return UnavailableAIProvider(kind: .local)
+            }
+            return AmoraLocalBrainProvider.shared
+        case .none:
             return UnavailableAIProvider(kind: settings.provider)
         }
     }

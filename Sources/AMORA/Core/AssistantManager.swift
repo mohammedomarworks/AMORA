@@ -58,6 +58,51 @@ final class AssistantManager {
             return await handleAutomationCommand(input, command: automationCommand, settings: settings)
         }
 
+        // Ephemeral contextual follow-up evaluation (pronouns, omitted targets, modifications, etc.)
+        if settings.contextAwarenessEnabled {
+            let convContext = AmoraConversationContextManager.shared.validContext()
+            let snapshot = AmoraContextProvider.shared.captureSnapshot()
+            let resolution = AmoraContextualFollowUpResolver.shared.resolve(
+                input: input,
+                context: convContext,
+                snapshot: snapshot,
+                contextAwarenessEnabled: settings.contextAwarenessEnabled
+            )
+            switch resolution {
+            case .ambiguous(let prompt, _):
+                state = .responding
+                response = prompt
+                AMORAContext.shared.setAIResponse(prompt)
+                return prompt
+            case .resolvedAction(let action):
+                WindowManager.shared.showQuickPanel()
+                let actionContext = AmoraActionContext(snapshot: snapshot, conversationContext: convContext)
+                let results = await AmoraActionEngine.shared.executeSequence([action], context: actionContext)
+                AmoraConversationContextManager.shared.recordAction(action, date: Date())
+                let answer = AmoraActionResult.combineMessages(from: results)
+                let assistantMessage = AIMessage(role: .assistant, content: answer)
+                conversation.append(assistantMessage)
+                state = .responding
+                response = answer
+                AMORAContext.shared.setAIResponse(answer)
+                AMORAEventCenter.shared.emit(.aiSucceeded)
+                return answer
+            case .resolvedCommand(let cmd):
+                let result = AMORACommandRouter.shared.execute(cmd)
+                AmoraConversationContextManager.shared.recordCommand(cmd, date: Date())
+                let answer = result.message
+                let assistantMessage = AIMessage(role: .assistant, content: answer)
+                conversation.append(assistantMessage)
+                state = .responding
+                response = answer
+                AMORAContext.shared.setAIResponse(answer)
+                AMORAEventCenter.shared.emit(.aiSucceeded)
+                return answer
+            case .unhandled:
+                break
+            }
+        }
+
         if !providerIsInjected { configure(provider: AIProviderFactory.make(for: settings)) }
         guard settings.enabled else {
             state = .failed
@@ -70,6 +115,50 @@ final class AssistantManager {
         }
 
         guard provider.isAvailable else {
+            // Deterministic single or compound actions fallback when offline model is unavailable
+            if let directActions = AMORACommandGateway.parseDeterministicActions(from: input) {
+                WindowManager.shared.showQuickPanel()
+                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
+                let actionContext = AmoraActionContext(
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil,
+                    conversationContext: convContext
+                )
+                let results = await AmoraActionEngine.shared.executeSequence(directActions, context: actionContext)
+                if settings.contextAwarenessEnabled {
+                    for act in directActions {
+                        AmoraConversationContextManager.shared.recordAction(act, date: Date())
+                    }
+                }
+                let answer = AmoraActionResult.combineMessages(from: results)
+                let assistantMessage = AIMessage(role: .assistant, content: answer)
+                conversation.append(assistantMessage)
+                state = .responding
+                response = answer
+                AMORAContext.shared.setAIResponse(answer)
+                AMORAEventCenter.shared.emit(.aiSucceeded)
+                return answer
+            }
+            if let singleAction = AMORACommandGateway.parseSingleAction(from: input) {
+                WindowManager.shared.showQuickPanel()
+                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
+                let actionContext = AmoraActionContext(
+                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil,
+                    conversationContext: convContext
+                )
+                let results = await AmoraActionEngine.shared.executeSequence([singleAction], context: actionContext)
+                if settings.contextAwarenessEnabled {
+                    AmoraConversationContextManager.shared.recordAction(singleAction, date: Date())
+                }
+                let answer = AmoraActionResult.combineMessages(from: results)
+                let assistantMessage = AIMessage(role: .assistant, content: answer)
+                conversation.append(assistantMessage)
+                state = .responding
+                response = answer
+                AMORAContext.shared.setAIResponse(answer)
+                AMORAEventCenter.shared.emit(.aiSucceeded)
+                return answer
+            }
+
             state = .failed
             lastError = unavailableError(for: provider)
             let fallback = message(for: lastError!)
@@ -311,8 +400,14 @@ If no action is needed, answer normally.
         case .appleIntelligenceNotEnabled:
             return "Turn on Apple Intelligence in System Settings to let me think locally."
         case .modelNotReady:
+            if provider.kind == .local {
+                return "AMORA's local brain is not set up yet. Download the offline model in Settings → AI Assistant."
+            }
             return "I'm getting my local model ready. Try again in a moment."
         case .deviceNotEligible:
+            if provider.kind == .local {
+                return "This Mac does not have enough memory to run AMORA's offline model."
+            }
             return "Apple's on-device model isn't available on this Mac."
         case .authenticationRequired:
             return "Your AI provider needs a valid API key."
@@ -632,7 +727,7 @@ final class AMORACommandGateway {
         if shouldQueryAssistant {
             WindowManager.shared.showQuickPanel()
             let answer = await assistant.submit(input, settings: settings)
-            if assistant.state == .failed || assistant.state == .cancelled {
+            if assistant.state == .failed || assistant.state == .cancelled || AmoraActionExecutionCoordinator.shared.state == .failed {
                 return .failure(message: answer)
             }
             return .success(message: answer)
@@ -646,7 +741,7 @@ final class AMORACommandGateway {
             }
             WindowManager.shared.showQuickPanel()
             let answer = await assistant.submit(input, settings: settings)
-            if assistant.state == .failed || assistant.state == .cancelled {
+            if assistant.state == .failed || assistant.state == .cancelled || AmoraActionExecutionCoordinator.shared.state == .failed {
                 return .failure(message: answer)
             }
             return .success(message: answer)
@@ -816,6 +911,10 @@ final class AMORACommandGateway {
             if lower.contains("timer") || lower.contains("pomodoro") || lower.contains("focus session") {
                 if let duration = extractTimerDuration(from: lower) {
                     return .startTimer(duration: duration)
+                } else if lower.hasPrefix("start ") || lower.hasPrefix("set ") || lower.hasPrefix("begin ") ||
+                            lower == "timer" || lower == "start timer" || lower == "start a timer" ||
+                            lower == "set timer" || lower == "set a timer" {
+                    return .startTimer(duration: 1500)
                 }
             }
         }

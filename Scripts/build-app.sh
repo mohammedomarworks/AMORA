@@ -35,6 +35,19 @@ cp "$BROWSER_HOST_PATH" "$RESOURCES_DIR/AMORA-BrowserHost"
 chmod +x "$RESOURCES_DIR/AMORA-BrowserHost"
 cp -R "BrowserExtensions" "$RESOURCES_DIR/BrowserExtensions"
 
+FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
+mkdir -p "$FRAMEWORKS_DIR"
+
+LLAMA_FRAMEWORK_PATH="$(find .build -name "llama.framework" | grep "macos" | head -1)"
+if [ -n "$LLAMA_FRAMEWORK_PATH" ] && [ -d "$LLAMA_FRAMEWORK_PATH" ]; then
+    echo "📦 Bundling llama.framework into $FRAMEWORKS_DIR..."
+    cp -R "$LLAMA_FRAMEWORK_PATH" "$FRAMEWORKS_DIR/"
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/AMORA" 2>/dev/null || true
+    if [ -d ".build/index-build/arm64-apple-macosx/debug" ]; then
+        ln -sf "$DIR/$LLAMA_FRAMEWORK_PATH" ".build/index-build/arm64-apple-macosx/debug/llama.framework" 2>/dev/null || true
+    fi
+fi
+
 echo "🔌 Registering Chrome native messaging host..."
 "$DIR/Scripts/install-chrome-native-host.sh" "$DIR/$RESOURCES_DIR/AMORA-BrowserHost"
 
@@ -76,6 +89,9 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
 EOF
 
 echo "🔏 Ad-hoc code signing $APP_BUNDLE..."
+if [ -d "$FRAMEWORKS_DIR/llama.framework" ]; then
+    codesign --force --sign - "$FRAMEWORKS_DIR/llama.framework" 2>/dev/null || true
+fi
 codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
 
 echo "✅ AMORA.app built successfully at $DIR/$APP_BUNDLE"

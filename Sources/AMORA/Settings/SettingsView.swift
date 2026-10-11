@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Bindable var chromeBridge = ChromeMessageBridge.shared
     @State private var memoryService = AmoraMemoryService.shared
     @State private var showClearAllConfirmation = false
+    @State private var showDeleteModelConfirmation = false
+    @State private var modelManager = AmoraModelManager.shared
     private var palette: ThemePalette { settings.palette }
 
     var body: some View {
@@ -22,6 +24,7 @@ struct SettingsView: View {
             Task {
                 await memoryService.refresh()
                 await AmoraAutomationService.shared.refresh()
+                _ = await modelManager.checkStatus()
             }
         }
         // Persist when the window closes so preferences survive relaunch.
@@ -37,6 +40,21 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will permanently delete all stored memories. This action cannot be undone.")
+        }
+        .confirmationDialog(
+            "Delete Offline Brain Model?",
+            isPresented: $showDeleteModelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Model", role: .destructive) {
+                Task {
+                    await AmoraLocalBrainProvider.shared.runtime.unloadModel()
+                    try? await modelManager.deleteModel()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will delete the downloaded model file (~491 MB). You can download it again whenever you want.")
         }
     }
 
@@ -265,6 +283,7 @@ struct SettingsView: View {
                 Toggle("Enable AI Assistant", isOn: $settings.aiEnabled)
                 Picker("Provider", selection: $settings.aiProvider) {
                     Text("Apple On-Device").tag(AIProviderKind.appleOnDevice.rawValue)
+                    Text("Local Brain (Offline)").tag(AIProviderKind.local.rawValue)
                     Text("Anthropic (Claude)").tag("anthropic")
                     Text("OpenAI").tag("openai")
                     Text("Unavailable / None").tag(AIProviderKind.none.rawValue)
@@ -276,12 +295,109 @@ struct SettingsView: View {
                     let appleSettings = AISettingsSnapshot(enabled: true, provider: .appleOnDevice, model: "apple-on-device", apiKey: nil)
                     let availability = AIProviderFactory.make(for: appleSettings).availability
                     LabeledContent("Availability", value: availability.displayName)
+                } else if settings.aiProvider == AIProviderKind.local.rawValue {
+                    Text("AMORA Local Brain runs 100% offline inside AMORA using in-process llama.cpp with Metal acceleration. No API keys, no internet connection, no external servers.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 } else if settings.aiProvider != AIProviderKind.none.rawValue {
                     SecureField("API Key", text: $settings.aiApiKey)
+                    Text("Keys are stored locally on this Mac and never shown in plain text elsewhere.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("Keys are stored locally on this Mac and never shown in plain text elsewhere.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            }
+
+            if settings.aiProvider == AIProviderKind.local.rawValue {
+                Section("AMORA Local Brain (Offline)") {
+                    let desc = modelManager.descriptor
+
+                    LabeledContent("Model", value: desc.displayName)
+                    LabeledContent("Quantization", value: desc.quantization)
+                    LabeledContent("License", value: desc.license)
+                    LabeledContent("Download Size", value: String(format: "%.1f MB", Double(desc.expectedSizeBytes) / (1024 * 1024)))
+                    LabeledContent("RAM Required", value: String(format: "~%d MB", desc.estimatedRAMBytes / (1024 * 1024)))
+                    LabeledContent("Hardware", value: "Metal GPU Acceleration")
+
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Label(modelManager.status.displayName, systemImage: statusIcon(for: modelManager.status))
+                            .foregroundStyle(statusColor(for: modelManager.status))
+                            .font(.subheadline)
+                    }
+
+                    if case .downloading(let progress, let downloaded, let total) = modelManager.status {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ProgressView(value: progress)
+                                .progressViewStyle(.linear)
+                            HStack {
+                                Text(String(format: "%.1f / %.1f MB", Double(downloaded) / (1024 * 1024), Double(total) / (1024 * 1024)))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(Int(progress * 100))%")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } else if case .verifying(let progress) = modelManager.status {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ProgressView(value: progress)
+                                .progressViewStyle(.linear)
+                            HStack {
+                                Text("Verifying SHA-256 integrity…")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(Int(progress * 100))%")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        if modelManager.status.isReady {
+                            Button("Verify Integrity") {
+                                Task { await modelManager.verifyIntegrity() }
+                            }
+                            .font(.caption)
+
+                            Spacer()
+
+                            Button("Delete Model", role: .destructive) {
+                                showDeleteModelConfirmation = true
+                            }
+                            .font(.caption)
+                        } else if case .downloading = modelManager.status {
+                            Button("Cancel Download") {
+                                modelManager.cancelDownload()
+                            }
+                            .font(.caption)
+                        } else if case .verifying = modelManager.status {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                            Text("Verifying checksum…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button("Download & Set Up") {
+                                Task { try? await modelManager.startDownload() }
+                            }
+                            .font(.caption)
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .padding(.top, 4)
+
+                    if case .verifying = modelManager.status {
+                        // Suppress duplicate detailed text during active verification
+                    } else {
+                        Text(modelManager.status.detailedDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             Section("Context Awareness") {
@@ -390,5 +506,24 @@ struct SettingsView: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func statusIcon(for status: AmoraModelStatus) -> String {
+        switch status {
+        case .ready: return "checkmark.circle.fill"
+        case .downloading, .loading, .verifying: return "arrow.down.circle"
+        case .notInstalled, .readyToDownload: return "circle"
+        case .cancelling, .cancelled: return "xmark.circle"
+        case .outOfMemory, .corrupt, .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func statusColor(for status: AmoraModelStatus) -> Color {
+        switch status {
+        case .ready: return .green
+        case .downloading, .loading, .verifying: return palette.accent
+        case .notInstalled, .readyToDownload, .cancelling, .cancelled: return .secondary
+        case .outOfMemory, .corrupt, .failed: return .red
+        }
     }
 }

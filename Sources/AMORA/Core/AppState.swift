@@ -32,6 +32,7 @@ final class AppState {
     }
 
     func handleTerminate() {
+        AmoraLlamaCppRuntime.shared.unloadSync()
         Task {
             await storage.save()
         }

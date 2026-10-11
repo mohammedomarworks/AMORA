@@ -150,7 +150,7 @@ final class SettingsStore {
             self.aiApiKey = await StorageManager.shared.getSecureItem(forKey: "ai-api-key") ?? ""
         }
         if let provider = defaults.string(forKey: "AMORA_aiProvider") {
-            self.aiProvider = provider == AIProviderKind.local.rawValue ? AIProviderKind.appleOnDevice.rawValue : provider
+            self.aiProvider = provider
         }
         if let model = defaults.string(forKey: "AMORA_aiModel") { self.aiModel = model }
         defaults.removeObject(forKey: "AMORA_aiApiKey")

@@ -16,11 +16,22 @@ let package = Package(
             targets: ["AMORA-BrowserHost"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/mattt/llama.swift", exact: "2.10549.0")
+    ],
     targets: [
         .executableTarget(
             name: "AMORA",
-            dependencies: [],
-            path: "Sources/AMORA"
+            dependencies: [
+                .product(name: "LlamaSwift", package: "llama.swift")
+            ],
+            path: "Sources/AMORA",
+            swiftSettings: [
+                .unsafeFlags([
+                    "-F", ".build/artifacts/llama.swift/llama-cpp/llama.xcframework/macos-arm64_x86_64",
+                    "-F", ".build/index-build/artifacts/llama.swift/llama-cpp/llama.xcframework/macos-arm64_x86_64"
+                ])
+            ]
         ),
         .executableTarget(
             name: "AMORA-BrowserHost",
@@ -29,8 +40,17 @@ let package = Package(
         ),
         .testTarget(
             name: "AMORATests",
-            dependencies: ["AMORA"],
-            path: "Tests/AMORATests"
+            dependencies: [
+                "AMORA",
+                .product(name: "LlamaSwift", package: "llama.swift")
+            ],
+            path: "Tests/AMORATests",
+            swiftSettings: [
+                .unsafeFlags([
+                    "-F", ".build/artifacts/llama.swift/llama-cpp/llama.xcframework/macos-arm64_x86_64",
+                    "-F", ".build/index-build/artifacts/llama.swift/llama-cpp/llama.xcframework/macos-arm64_x86_64"
+                ])
+            ]
         ),
     ]
 )
