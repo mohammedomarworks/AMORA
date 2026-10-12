@@ -145,10 +145,14 @@ public final class AmoraModelManager: AmoraModelManaging {
 
     private let downloader: any AmoraModelDownloading
     private let modelsDirectory: URL
+    private let explicitModelURL: URL?
     private var downloadTask: Task<Void, Error>?
     private var verificationTask: Task<Bool, Never>?
 
     public var modelFileURL: URL {
+        if let explicitModelURL {
+            return explicitModelURL
+        }
         let defaultURL = modelsDirectory.appendingPathComponent(descriptor.filename)
         if FileManager.default.fileExists(atPath: defaultURL.path) {
             return defaultURL
@@ -168,12 +172,16 @@ public final class AmoraModelManager: AmoraModelManaging {
     public init(
         descriptor: AmoraModelDescriptor = .qwen2_5_0_5b,
         downloader: (any AmoraModelDownloading)? = nil,
-        modelsDirectory: URL? = nil
+        modelsDirectory: URL? = nil,
+        explicitModelURL: URL? = nil
     ) {
         self.descriptor = descriptor
         self.downloader = downloader ?? URLSessionModelDownloader()
+        self.explicitModelURL = explicitModelURL
 
-        if let modelsDirectory {
+        if let explicitModelURL {
+            self.modelsDirectory = explicitModelURL.deletingLastPathComponent()
+        } else if let modelsDirectory {
             self.modelsDirectory = modelsDirectory
         } else {
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -182,6 +190,18 @@ public final class AmoraModelManager: AmoraModelManaging {
 
         ensureDirectoryExists()
         _ = checkStatusSync()
+    }
+
+    /// Factory for comparative evaluations loading an explicit model file URL without touching the default model.
+    public static func forEvaluation(
+        modelURL: URL,
+        descriptor: AmoraModelDescriptor? = nil
+    ) -> AmoraModelManager {
+        let desc = descriptor ?? .explicitCandidate(path: modelURL.path)
+        return AmoraModelManager(
+            descriptor: desc,
+            explicitModelURL: modelURL
+        )
     }
 
     private func ensureDirectoryExists() {
@@ -219,7 +239,7 @@ public final class AmoraModelManager: AmoraModelManaging {
         do {
             let attrs = try fileManager.attributesOfItem(atPath: path)
             let actualSize = attrs[.size] as? Int64 ?? 0
-            if actualSize < descriptor.expectedSizeBytes {
+            if descriptor.expectedSizeBytes > 0 && actualSize < descriptor.expectedSizeBytes {
                 let s = AmoraModelStatus.corrupt(reason: "File size mismatch (\(actualSize) bytes vs expected \(descriptor.expectedSizeBytes) bytes)")
                 status = s
                 return s

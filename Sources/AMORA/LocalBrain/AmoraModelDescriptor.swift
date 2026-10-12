@@ -159,6 +159,55 @@ Opening Spotify.<|im_end|>
         stopSequences: ["<|im_end|>", "<|endoftext|>"]
     )
 
+    /// Candidate model for evaluation and comparison:
+    /// Qwen2.5-1.5B-Instruct quantized to Q4_K_M (Apache 2.0 License).
+    /// Verified official HuggingFace artifact from Qwen team.
+    public static let qwen2_5_1_5b = AmoraModelDescriptor(
+        id: "qwen2.5-1.5b-instruct-q4_k_m",
+        displayName: "Qwen 2.5 1.5B Instruct",
+        version: "2.5",
+        quantization: "Q4_K_M",
+        license: "Apache 2.0",
+        author: "Qwen / Alibaba",
+        sourceURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf")!,
+        expectedSizeBytes: 1_117_320_736, // ~1.04 GB
+        estimatedRAMBytes: 1_400 * 1024 * 1024, // ~1.4 GB RAM
+        expectedSHA256: "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+        filename: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        contextLength: 2048,
+        systemPrompt: qwen2_5_0_5b.systemPrompt,
+        stopSequences: ["<|im_end|>", "<|endoftext|>"]
+    )
+
+    /// Creates a comparison/evaluation descriptor for an explicit model path without assuming filename or location.
+    public static func explicitCandidate(
+        path: String,
+        id: String = "candidate-model",
+        displayName: String = "Candidate Model",
+        contextLength: Int = 2048,
+        systemPrompt: String = qwen2_5_0_5b.systemPrompt,
+        stopSequences: [String] = ["<|im_end|>", "<|endoftext|>"]
+    ) -> AmoraModelDescriptor {
+        let fileURL = URL(fileURLWithPath: path)
+        let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0
+        return AmoraModelDescriptor(
+            id: id,
+            displayName: displayName,
+            version: "candidate",
+            quantization: "unknown",
+            license: "Verified Candidate",
+            author: "Candidate",
+            sourceURL: fileURL,
+            expectedSizeBytes: size,
+            estimatedRAMBytes: max(600 * 1024 * 1024, size + 400 * 1024 * 1024),
+            expectedSHA256: "",
+            filename: fileURL.lastPathComponent,
+            contextLength: contextLength,
+            systemPrompt: systemPrompt,
+            stopSequences: stopSequences
+        )
+    }
+
     /// Formats a conversation into the model's native ChatML template.
     func formatPrompt(messages: [AIMessage]) -> String {
         var formatted = "<|im_start|>system\n\(systemPrompt)<|im_end|>\n"

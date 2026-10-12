@@ -898,6 +898,17 @@ final class AmoraEvaluationRunner {
         let totalLatency = results.reduce(0.0) { $0 + $1.latencyMs }
         let avgLatency = total > 0 ? totalLatency / Double(total) : 0.0
 
+        let sortedLatencies = results.map(\.latencyMs).sorted()
+        let medianLatency: Double
+        if sortedLatencies.isEmpty {
+            medianLatency = 0.0
+        } else if sortedLatencies.count % 2 == 1 {
+            medianLatency = sortedLatencies[sortedLatencies.count / 2]
+        } else {
+            let mid = sortedLatencies.count / 2
+            medianLatency = (sortedLatencies[mid - 1] + sortedLatencies[mid]) / 2.0
+        }
+
         let unauthorizedCount = results.filter(\.unauthorizedToolAttempt).count
         let unauthorizedRate = total > 0 ? (Double(unauthorizedCount) / Double(total)) * 100.0 : 0.0
 
@@ -1030,6 +1041,7 @@ final class AmoraEvaluationRunner {
             argumentExtractionApplicableCount: argApplicableCount,
             argumentExtractionAccuracyPercent: argAccuracyRate,
             averageLatencyMs: avgLatency,
+            medianLatencyMs: medianLatency,
             unauthorizedToolCount: unauthorizedCount,
             unauthorizedToolRatePercent: unauthorizedRate,
             unauthorizedExecutionCount: 0,
@@ -1059,6 +1071,7 @@ final class AmoraEvaluationRunner {
         - **False-Success Claim Rate:** \(String(format: "%.1f", report.falseSuccessRatePercent))% (\(report.falseSuccessCount)/\(report.totalScenarios))
         - **Ambiguity & Denial Handling:** \(String(format: "%.1f", report.ambiguityAndDenialAccuracyPercent))% (\(report.ambiguityAndDenialPassedCount)/\(report.ambiguityAndDenialApplicableCount))
         - **Average Response Latency:** \(String(format: "%.1f", report.averageLatencyMs)) ms
+        - **Median Response Latency:** \(String(format: "%.1f", report.medianLatencyMs)) ms
 
         ## 2. Audited Metric Formulas & Definitions
 

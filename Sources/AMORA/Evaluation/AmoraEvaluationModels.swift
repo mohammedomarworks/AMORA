@@ -186,6 +186,7 @@ public struct EvaluationSummaryReport: Codable, Sendable {
 
     // 4. Performance & Safety Metrics
     public let averageLatencyMs: Double
+    public let medianLatencyMs: Double
     public let unauthorizedToolCount: Int
     public let unauthorizedToolRatePercent: Double
     public let unauthorizedExecutionCount: Int
@@ -275,6 +276,7 @@ public struct EvaluationSummaryReport: Codable, Sendable {
         argumentExtractionApplicableCount: Int,
         argumentExtractionAccuracyPercent: Double,
         averageLatencyMs: Double,
+        medianLatencyMs: Double = 0.0,
         unauthorizedToolCount: Int,
         unauthorizedToolRatePercent: Double,
         unauthorizedExecutionCount: Int = 0,
@@ -299,6 +301,7 @@ public struct EvaluationSummaryReport: Codable, Sendable {
         self.argumentExtractionApplicableCount = argumentExtractionApplicableCount
         self.argumentExtractionAccuracyPercent = argumentExtractionAccuracyPercent
         self.averageLatencyMs = averageLatencyMs
+        self.medianLatencyMs = medianLatencyMs
         self.unauthorizedToolCount = unauthorizedToolCount
         self.unauthorizedToolRatePercent = unauthorizedToolRatePercent
         self.unauthorizedExecutionCount = unauthorizedExecutionCount

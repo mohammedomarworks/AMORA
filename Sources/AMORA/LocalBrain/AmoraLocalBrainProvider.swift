@@ -21,6 +21,23 @@ final class AmoraLocalBrainProvider: AIProvider, @unchecked Sendable {
         }
     }
 
+    /// Comparison-only factory for loading a model from an explicit file path.
+    static func forModelPath(_ path: String, descriptor: AmoraModelDescriptor? = nil) -> AmoraLocalBrainProvider {
+        MainActor.assumeIsolated {
+            let modelURL = URL(fileURLWithPath: path)
+            let desc: AmoraModelDescriptor
+            if let descriptor {
+                desc = descriptor
+            } else if path.contains("1.5b") || path.contains("1_5b") {
+                desc = .qwen2_5_1_5b
+            } else {
+                desc = .explicitCandidate(path: path)
+            }
+            let manager = AmoraModelManager.forEvaluation(modelURL: modelURL, descriptor: desc)
+            return AmoraLocalBrainProvider(modelManager: manager)
+        }
+    }
+
     var isAvailable: Bool {
         availability == .available
     }

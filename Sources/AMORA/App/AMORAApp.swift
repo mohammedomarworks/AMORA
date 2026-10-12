@@ -31,12 +31,35 @@ enum AMORAApp {
             mode = .endToEndProduction
         }
 
+        var explicitModelPath: String? = nil
+        for (idx, arg) in args.enumerated() {
+            if (arg == "--model-path" || arg == "--candidate-path") && idx + 1 < args.count {
+                explicitModelPath = args[idx + 1]
+                break
+            }
+        }
+
+        let provider: AmoraLocalBrainProvider?
+        if let path = explicitModelPath {
+            provider = AmoraLocalBrainProvider.forModelPath(path)
+        } else {
+            provider = nil
+        }
+
         print("🚀 Running AMORA Evaluation V1 in mode: \(mode.rawValue)...")
-        let runner = AmoraEvaluationRunner(mode: mode)
+        if let provider {
+            print("🤖 Evaluated Model: \(provider.modelManager.descriptor.displayName) (Path: \(provider.modelManager.modelFileURL.path))")
+        } else {
+            print("🤖 Evaluated Model: Default Model (\(AmoraModelDescriptor.qwen2_5_0_5b.displayName))")
+        }
+
+        let runner = AmoraEvaluationRunner(mode: mode, provider: provider)
         let report = await runner.run { current, total, scenario in
             print("[\(current)/\(total)] \(scenario.id) (\(scenario.category.rawValue))")
         }
         print("\n" + AmoraEvaluationRunner.formatMarkdownReport(report))
         AmoraLlamaCppRuntime.shared.unloadSync()
+        fflush(stdout)
+        exit(0)
     }
 }
