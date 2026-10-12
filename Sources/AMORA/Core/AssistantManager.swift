@@ -175,134 +175,31 @@ final class AssistantManager {
         AMORAEventCenter.shared.emit(.aiThinking)
         AmoraActionExecutionCoordinator.shared.beginThinking()
 
-        var messages = conversation.messages
-        messages.append(AIMessage(role: .user, content: """
-[AMORA action policy]
-You must execute actions by returning strict JSON {"actions":[{"action":"...","name":"...","location":"...","duration":10}]}.
-Approved actions:
-- media.play, media.pause, media.next, media.previous
-- app.open (with name)
-- folder.open (with location: 'downloads', 'documents', 'desktop', or 'home')
-- workspace.open (with optional section)
-- timer.start (with duration in seconds)
-- timer.cancel (no duration)
-- timer.pause
-- timer.resume
-
-For multi-action requests, include each action in sequence within the "actions" array:
-- "Open Spotify and start a 25 minute timer" -> {"actions":[{"action":"app.open","name":"Spotify"},{"action":"timer.start","duration":1500}]}
-- "Open Finder and then open Downloads" -> {"actions":[{"action":"app.open","name":"Finder"},{"action":"folder.open","location":"downloads"}]}
-- "Play music and open Workspace" -> {"actions":[{"action":"media.play"},{"action":"workspace.open"}]}
-- "Start a 10 second timer and open VS Code" -> {"actions":[{"action":"timer.start","duration":10},{"action":"app.open","name":"VS Code"}]}
-- "Open VS Code, start Spotify, start a 45 minute timer and open Workspace" -> {"actions":[{"action":"app.open","name":"VS Code"},{"action":"media.play"},{"action":"timer.start","duration":2700},{"action":"workspace.open"}]}
-
-If the user asks to cancel, stop, end, or turn off a timer, output {"actions":[{"action":"timer.cancel"}]}. Do not ask for duration on cancellation.
-Never request shell commands, arbitrary paths, unknown tools, or destructive actions.
-If no action is needed, answer normally.
-"""))
-        if settings.contextAwarenessEnabled {
-            let convCtx = AmoraConversationContextManager.shared.validContext()
-            if let context = AIContextComposer.relevantContext(for: input, conversationContext: convCtx) {
-                messages.append(AIMessage(role: .user, content: "[System context]\n\(context)"))
-            }
+        // Deterministic-first routing: clear, supported single requests execute
+        // against the real services via the validated tool path, so the weak local
+        // model cannot echo the instruction back or mishandle units. Open-ended and
+        // compound requests fall through to the model-driven agent loop below.
+        if let deterministic = await runDeterministicShortcut(input, settings: settings) {
+            return deterministic
         }
-        if settings.memoryEnabled {
-            let relevant = await memoryStore.relevantMemories(for: input, limit: 3)
-            if !relevant.isEmpty {
-                let formatted = relevant.map { "- \($0.key): \($0.value)" }.joined(separator: "\n")
-                messages.append(AIMessage(role: .user, content: "[Relevant user memories]\n\(formatted)"))
-            }
-        }
+
         let userMessage = AIMessage(role: .user, content: input)
-        messages.append(userMessage)
         conversation.append(userMessage)
 
-        let normalizedInput = AMORACommandParser.normalize(input)
-        let isTimerCancellationInput = normalizedInput.contains("timer") &&
-            (normalizedInput.contains("cancel") || normalizedInput.contains("stop") || normalizedInput.contains("end") || normalizedInput.contains("turn off") || normalizedInput.contains("clear"))
-        let isTimerPauseInput = normalizedInput.contains("timer") && normalizedInput.contains("pause")
-        let isTimerResumeInput = normalizedInput.contains("timer") && normalizedInput.contains("resume")
-
         do {
-            let rawAnswer = try await provider.send(messages: messages, model: settings.model, apiKey: settings.apiKey)
-            try Task.checkCancellation()
-            let answer: String
-            let extractedJSONData = Self.extractJSONData(from: rawAnswer)
-            if let data = extractedJSONData,
-               var actionPlan = try? JSONDecoder().decode(AmoraActionPlan.self, from: data),
-               !actionPlan.actions.isEmpty {
-                // Prevent stale conversation history containing durations from overriding a cancellation intent
-                if isTimerCancellationInput {
-                    let sanitizedActions = actionPlan.actions.map { call in
-                        if call.action == "timer.start" {
-                            return AmoraActionPlan.ActionCall(action: "timer.cancel")
-                        }
-                        return call
-                    }
-                    actionPlan = AmoraActionPlan(actions: sanitizedActions)
-                }
-                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
-                let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
-                    conversationContext: convContext
-                )
-                let results = await AmoraActionEngine.shared.executePlan(actionPlan, context: actionContext)
-                AmoraContextProvider.shared.captureSnapshot()
-                if settings.contextAwarenessEnabled {
-                    for callResult in actionPlan.resolveActions() {
-                        if case .success(let act) = callResult {
-                            AmoraConversationContextManager.shared.recordAction(act, date: Date())
-                        }
-                    }
-                }
-                answer = AmoraActionResult.combineMessages(from: results)
-            } else if isTimerCancellationInput {
-                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
-                let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
-                    conversationContext: convContext
-                )
-                let results = await AmoraActionEngine.shared.executeSequence([.cancelTimer], context: actionContext)
-                if settings.contextAwarenessEnabled {
-                    AmoraConversationContextManager.shared.recordAction(.cancelTimer, date: Date())
-                }
-                answer = AmoraActionResult.combineMessages(from: results)
-            } else if isTimerPauseInput {
-                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
-                let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
-                    conversationContext: convContext
-                )
-                let results = await AmoraActionEngine.shared.executeSequence([.pauseTimer], context: actionContext)
-                if settings.contextAwarenessEnabled {
-                    AmoraConversationContextManager.shared.recordAction(.pauseTimer, date: Date())
-                }
-                answer = AmoraActionResult.combineMessages(from: results)
-            } else if isTimerResumeInput {
-                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
-                let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.currentSnapshot : nil,
-                    conversationContext: convContext
-                )
-                let results = await AmoraActionEngine.shared.executeSequence([.resumeTimer], context: actionContext)
-                if settings.contextAwarenessEnabled {
-                    AmoraConversationContextManager.shared.recordAction(.resumeTimer, date: Date())
-                }
-                answer = AmoraActionResult.combineMessages(from: results)
-            } else if let data = extractedJSONData,
-                      let plan = try? JSONDecoder().decode(AMORAToolPlan.self, from: data),
-                      let requests = plan.requests() {
-                let results = requests.map { AMORAToolRegistry.shared.execute($0) }
-                if let confirmation = results.first(where: { $0.status == .needsConfirmation }) {
-                    answer = "I need your confirmation before I do that. \(confirmation.message)"
-                } else {
-                    answer = results.map(\.message).joined(separator: " ")
-                }
-                AmoraActionExecutionCoordinator.shared.reset()
-            } else {
-                answer = rawAnswer
-                AmoraActionExecutionCoordinator.shared.reset()
-            }
+            let agentLoop = AmoraAgentLoop(
+                provider: provider,
+                toolRegistry: AMORAToolRegistry.shared,
+                actionEngine: AmoraActionEngine.shared,
+                coordinator: AmoraActionExecutionCoordinator.shared
+            )
+            let loopResult = try await agentLoop.run(
+                input: input,
+                settings: settings,
+                conversationHistory: conversation.messages,
+                memoryStore: memoryStore
+            )
+            let answer = loopResult.finalAnswer
             let assistantMessage = AIMessage(role: .assistant, content: answer)
             conversation.append(assistantMessage)
             state = .responding
@@ -331,6 +228,33 @@ If no action is needed, answer normally.
             AMORAContext.shared.setAIResponse(response)
             return response!
         }
+    }
+
+    /// Attempts deterministic-first execution for a clear, supported single
+    /// request. Returns the user-facing answer when handled, or nil to let the
+    /// model-driven agent loop take over. Wires state/response/conversation exactly
+    /// like the model path so the UI and personality react consistently.
+    private func runDeterministicShortcut(_ input: String, settings: AISettingsSnapshot) async -> String? {
+        let loop = AmoraAgentLoop(
+            provider: provider,
+            toolRegistry: AMORAToolRegistry.shared,
+            actionEngine: AmoraActionEngine.shared,
+            coordinator: AmoraActionExecutionCoordinator.shared
+        )
+        guard let result = await loop.runDeterministic(input: input, settings: settings) else { return nil }
+
+        let answer = result.finalAnswer
+        conversation.append(AIMessage(role: .user, content: input))
+        conversation.append(AIMessage(role: .assistant, content: answer))
+        state = .responding
+        response = answer
+        AMORAContext.shared.setAIResponse(answer)
+        if result.completedSuccessfully {
+            AMORAEventCenter.shared.emit(.aiSucceeded)
+        } else {
+            AMORAEventCenter.shared.emit(.aiFailed)
+        }
+        return answer
     }
 
     private static func cleanJSONString(_ str: String) -> String {

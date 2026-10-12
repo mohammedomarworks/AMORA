@@ -86,6 +86,9 @@ Approved actions:
 - timer.cancel (no duration)
 - timer.pause
 - timer.resume
+- search_notes (query: String)
+- get_battery_status
+- create_timer (duration: Int)
 
 Never invent shell commands, arbitrary paths, code execution, or destructive actions.
 
@@ -134,6 +137,24 @@ Open Downloads<|im_end|>
 Pause the music<|im_end|>
 <|im_start|>assistant
 {"actions":[{"action":"media.pause"}]}<|im_end|>
+<|im_start|>user
+Find notes about meeting<|im_end|>
+<|im_start|>assistant
+{"type":"tool_call","tool":"search_notes","arguments":{"query":"meeting"}}<|im_end|>
+<|im_start|>user
+How much battery do I have left?<|im_end|>
+<|im_start|>assistant
+{"type":"tool_call","tool":"get_battery_status","arguments":{}}<|im_end|>
+<|im_start|>user
+[Tool result for search_notes]: Found 1 note: 'Meeting with team'
+<|im_end|>
+<|im_start|>assistant
+I found your note about the team meeting.<|im_end|>
+<|im_start|>user
+[Tool result for app.open]: Opening Spotify.
+<|im_end|>
+<|im_start|>assistant
+Opening Spotify.<|im_end|>
 """,
         stopSequences: ["<|im_end|>", "<|endoftext|>"]
     )
@@ -143,7 +164,7 @@ Pause the music<|im_end|>
         var formatted = "<|im_start|>system\n\(systemPrompt)<|im_end|>\n"
         for msg in messages {
             // Strip out raw internal action policy preamble if injected by caller
-            if msg.content.hasPrefix("[AMORA action policy]") {
+            if msg.content.hasPrefix("[AMORA action policy]") || msg.content.hasPrefix("[AMORA Local Agent V1 Policy]") {
                 continue
             }
             let role = msg.role == .user ? "user" : "assistant"

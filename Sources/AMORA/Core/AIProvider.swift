@@ -103,6 +103,51 @@ struct MockAIProvider: AIProvider {
     }
 }
 
+/// A sequential mock provider that queues responses and records sent messages for testing.
+final class MockSequentialAIProvider: AIProvider, @unchecked Sendable {
+    let kind: AIProviderKind = .local
+    var isAvailable: Bool = true
+    var shouldFail: Bool = false
+    var failureError: AIProviderError = .generationFailure
+    var simulatedDelayNanoseconds: UInt64 = 0
+
+    private let queue = DispatchQueue(label: "com.amora.mocksequential")
+    private var responses: [String]
+    private var _capturedMessages: [[AIMessage]] = []
+
+    var capturedMessages: [[AIMessage]] {
+        queue.sync { _capturedMessages }
+    }
+
+    init(responses: [String]) {
+        self.responses = responses
+    }
+
+    init(response: String) {
+        self.responses = [response]
+    }
+
+    func send(messages: [AIMessage], model: String, apiKey: String?) async throws -> String {
+        if simulatedDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: simulatedDelayNanoseconds)
+        }
+        try Task.checkCancellation()
+
+        return try queue.sync {
+            _capturedMessages.append(messages)
+
+            if shouldFail {
+                throw failureError
+            }
+
+            if !responses.isEmpty {
+                return responses.removeFirst()
+            }
+            return "Done."
+        }
+    }
+}
+
 struct AISettingsSnapshot: Sendable {
     let enabled: Bool
     let provider: AIProviderKind

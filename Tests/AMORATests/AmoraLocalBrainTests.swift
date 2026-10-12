@@ -41,11 +41,14 @@ final class AmoraLocalBrainTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
+        AmoraConversationContextManager.shared.reset()
+        AmoraActionExecutionCoordinator.shared.reset()
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
     }
 
     override func tearDown() async throws {
+        AmoraConversationContextManager.shared.reset()
         AmoraActionExecutionCoordinator.shared.reset()
         TimerService.shared.stopTimer()
         if let tempDirectory {
@@ -796,6 +799,7 @@ final class AmoraLocalBrainTests: XCTestCase {
 
     func testRealModelActionThroughAssistantManager() async throws {
         guard AmoraLocalBrainProvider.shared.isAvailable else { return }
+        AmoraConversationContextManager.shared.reset()
         let assistant = AssistantManager(provider: AmoraLocalBrainProvider.shared)
         let settings = AISettingsSnapshot(
             enabled: true,
@@ -831,6 +835,32 @@ final class AmoraLocalBrainTests: XCTestCase {
                       unsupportedResponse.localizedCaseInsensitiveContains("email") ||
                       unsupportedResponse.localizedCaseInsensitiveContains("limitation"))
         XCTAssertFalse(unsupportedResponse.contains("actions"))
+
+        await AmoraLocalBrainProvider.shared.runtime.unloadModel()
+    }
+
+    func testRealModelToolSelectionCapabilities() async throws {
+        guard AmoraLocalBrainProvider.shared.isAvailable else { return }
+        let assistant = AssistantManager(provider: AmoraLocalBrainProvider.shared)
+        let settings = AISettingsSnapshot(
+            enabled: true,
+            provider: .local,
+            model: "local",
+            apiKey: nil,
+            contextAwarenessEnabled: true
+        )
+
+        NotesService.shared.addNote("Weekly team sync meeting at 10 AM")
+
+        let noteResponse = await assistant.submit("Find notes about meeting", settings: settings)
+        print("REAL MODEL NOTE SEARCH RESPONSE: [[[\(noteResponse)]]]")
+        XCTAssertTrue(noteResponse.localizedCaseInsensitiveContains("meeting") || noteResponse.localizedCaseInsensitiveContains("sync") || noteResponse.localizedCaseInsensitiveContains("note"))
+
+        assistant.startNewConversation()
+
+        let batteryResponse = await assistant.submit("How much battery do I have left?", settings: settings)
+        print("REAL MODEL BATTERY RESPONSE: [[[\(batteryResponse)]]]")
+        XCTAssertTrue(batteryResponse.localizedCaseInsensitiveContains("battery") || batteryResponse.localizedCaseInsensitiveContains("%"))
 
         await AmoraLocalBrainProvider.shared.runtime.unloadModel()
     }

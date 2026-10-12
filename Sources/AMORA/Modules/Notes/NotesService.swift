@@ -44,6 +44,12 @@ final class NotesService {
         saveNotes()
     }
 
+    func searchNotes(query: String) -> [NoteItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return notes }
+        return notes.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
+    }
+
     private func saveNotes() {
         if let data = try? JSONEncoder().encode(notes) {
             UserDefaults.standard.set(data, forKey: userDefaultsKey)

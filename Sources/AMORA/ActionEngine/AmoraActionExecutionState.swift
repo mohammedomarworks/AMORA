@@ -133,9 +133,18 @@ public final class AmoraActionExecutionCoordinator: Sendable {
 
     /// Requests user confirmation for an action and awaits response.
     public func requestConfirmation(for action: AmoraAction, prompt: String, at index: Int) async -> Bool {
-        guard index >= 0 && index < items.count else { return false }
-        currentIndex = index
-        items[index].status = .awaitingConfirmation
+        if items.isEmpty {
+            items = [AmoraActionExecutionItem(action: action, status: .pending)]
+            currentIndex = 0
+        } else if index >= items.count {
+            while items.count <= index {
+                items.append(AmoraActionExecutionItem(action: action, status: .pending))
+            }
+            currentIndex = index
+        } else if index >= 0 {
+            currentIndex = index
+        }
+        items[currentIndex].status = .awaitingConfirmation
         state = .awaitingConfirmation
         let request = AmoraPendingConfirmation(action: action, prompt: prompt)
         pendingConfirmation = request

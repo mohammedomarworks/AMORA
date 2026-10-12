@@ -4,7 +4,7 @@ import Foundation
 enum AMORATool: String, CaseIterable, Sendable { case battery, timer, music, browserMedia, notes, clipboard, file, fileShelf, system, application, folder, view }
 enum AMORAToolOperation: Equatable, Sendable {
     case readBattery, startTimer(seconds: Int), pauseTimer, resumeTimer, stopTimer, addTimerTime(seconds: Int)
-    case readMedia, playMedia, pauseMedia, nextTrack, previousTrack, createNote(text: String), listNotes
+    case readMedia, playMedia, pauseMedia, nextTrack, previousTrack, createNote(text: String), listNotes, searchNotes(query: String)
     case openApplication(name: String), openFolder(name: String), readSystem, showView(name: String)
 }
 enum AMORAToolSafety: String, Codable, Sendable { case readOnly, lowRisk, confirmationRequired }
@@ -30,7 +30,7 @@ struct AMORAToolResult: Equatable, Sendable {
     }
     func validate(_ request: AMORAToolRequest) -> AMORAToolValidation {
         switch request.operation {
-        case .readBattery, .readMedia, .readSystem, .listNotes: return .allowed
+        case .readBattery, .readMedia, .readSystem, .listNotes, .searchNotes: return .allowed
         case let .startTimer(seconds), let .addTimerTime(seconds): return (1...86_400).contains(seconds) ? .allowed : .rejected(reason: "Timer duration is outside the supported range.")
         case .pauseTimer, .resumeTimer, .stopTimer, .playMedia, .pauseMedia, .nextTrack, .previousTrack, .createNote, .openApplication, .showView: return .allowed
         case let .openFolder(name): return Self.folderURL(name) == nil ? .rejected(reason: "That folder is not available through AMORA.") : .needsConfirmation(prompt: "Would you like me to open \(name.capitalized)?")
@@ -59,6 +59,14 @@ struct AMORAToolResult: Equatable, Sendable {
         case .previousTrack: MusicService.shared.previousTrack(); return .init(tool: .music, status: .success, message: "Playing the previous track.")
         case let .createNote(text): guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .init(tool: .notes, status: .needsInformation, message: "What should I save?") }; NotesService.shared.addNote(text); return .init(tool: .notes, status: .success, message: "Saved.")
         case .listNotes: return .init(tool: .notes, status: .success, message: NotesService.shared.notes.isEmpty ? "You don't have any notes yet." : "You have \(NotesService.shared.notes.count) saved notes.", data: ["count": "\(NotesService.shared.notes.count)"])
+        case let .searchNotes(query):
+            let results = NotesService.shared.searchNotes(query: query)
+            if results.isEmpty {
+                return .init(tool: .notes, status: .success, message: "No notes found matching '\(query)'.", data: ["count": "0", "query": query])
+            }
+            let list = results.prefix(5).map { "• \($0.text)" }.joined(separator: "\n")
+            let countMsg = results.count == 1 ? "1 matching note" : "\(results.count) matching notes"
+            return .init(tool: .notes, status: .success, message: "Found \(countMsg):\n\(list)", data: ["count": "\(results.count)", "query": query])
         case let .openApplication(name):
             let ids = ["safari": "com.apple.Safari", "finder": "com.apple.finder", "terminal": "com.apple.Terminal", "vs code": "com.microsoft.VSCode"]; guard let id = ids[AMORACommandParser.normalize(name)], let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return .init(tool: .application, status: .failure, message: "I couldn't find that app.") }; NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()); return .init(tool: .application, status: .success, message: "Opening \(name.capitalized).")
         case let .openFolder(name): guard let url = Self.folderURL(name), NSWorkspace.shared.open(url) else { return .init(tool: .folder, status: .failure, message: "I couldn't open that folder.") }; return .init(tool: .folder, status: .success, message: "Opening \(name.capitalized).")
@@ -106,6 +114,7 @@ struct AMORAToolPlan: Codable, Sendable {
             case (.music, "previous"): return .init(tool: tool, operation: .previousTrack)
             case (.notes, "create"): return call.text.map { .init(tool: tool, operation: .createNote(text: $0)) }
             case (.notes, "list"): return .init(tool: tool, operation: .listNotes)
+            case (.notes, "search"): return (call.text ?? call.name).map { .init(tool: tool, operation: .searchNotes(query: $0)) }
             case (.application, "open"): return call.name.map { .init(tool: tool, operation: .openApplication(name: $0)) }
             case (.folder, "open"): return call.name.map { .init(tool: tool, operation: .openFolder(name: $0)) }
             case (.system, "read"): return .init(tool: tool, operation: .readSystem)

@@ -75,6 +75,7 @@ public final class MockLocalModelRuntime: AmoraLocalModelRuntime, @unchecked Sen
     public var generationErrorMessage: String
     public var simulatedDelayNanoseconds: UInt64
     public var tokensToStream: [String]?
+    public var responsesQueue: [String]?
 
     public var isLoaded: Bool {
         queue.sync { _isLoaded }
@@ -86,6 +87,7 @@ public final class MockLocalModelRuntime: AmoraLocalModelRuntime, @unchecked Sen
 
     public init(
         responseToReturn: String = "Hello from AMORA Local Brain!",
+        responsesQueue: [String]? = nil,
         shouldFailLoad: Bool = false,
         loadErrorMessage: String = "Simulated model load failure",
         shouldFailGeneration: Bool = false,
@@ -94,6 +96,7 @@ public final class MockLocalModelRuntime: AmoraLocalModelRuntime, @unchecked Sen
         tokensToStream: [String]? = nil
     ) {
         self.responseToReturn = responseToReturn
+        self.responsesQueue = responsesQueue
         self.shouldFailLoad = shouldFailLoad
         self.loadErrorMessage = loadErrorMessage
         self.shouldFailGeneration = shouldFailGeneration
@@ -150,7 +153,16 @@ public final class MockLocalModelRuntime: AmoraLocalModelRuntime, @unchecked Sen
             return full
         }
 
-        onToken?(responseToReturn)
-        return responseToReturn
+        let textToReturn: String = queue.sync {
+            if var currentQueue = self.responsesQueue, !currentQueue.isEmpty {
+                let next = currentQueue.removeFirst()
+                self.responsesQueue = currentQueue
+                return next
+            }
+            return self.responseToReturn
+        }
+
+        onToken?(textToReturn)
+        return textToReturn
     }
 }
