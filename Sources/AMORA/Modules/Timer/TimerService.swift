@@ -10,6 +10,7 @@ final class TimerService {
     var remainingSeconds: Int = 0
     var isRunning: Bool = false
     var isPaused: Bool = false
+    var isSimulationMode: Bool = false
 
     private var timer: Timer?
 
@@ -37,9 +38,11 @@ final class TimerService {
         self.isRunning = true
         self.isPaused = false
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.tick()
+        if !isSimulationMode {
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.tick()
+                }
             }
         }
 

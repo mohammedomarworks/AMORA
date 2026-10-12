@@ -36,9 +36,9 @@ final class AmoraLocalBrainProvider: AIProvider, @unchecked Sendable {
     func send(messages: [AIMessage], model: String, apiKey: String?) async throws -> String {
         try Task.checkCancellation()
 
-        let (isReady, modelPath, descriptor) = await MainActor.run {
+        let (isReady, modelPath, descriptor, isEvalMode) = await MainActor.run {
             _ = modelManager.checkStatusSync()
-            return (modelManager.isReady, modelManager.modelFileURL.path, modelManager.descriptor)
+            return (modelManager.isReady, modelManager.modelFileURL.path, modelManager.descriptor, AMORAToolRegistry.isControlledEvaluationMode)
         }
         guard isReady else {
             throw AIProviderError.modelNotReady
@@ -71,10 +71,11 @@ final class AmoraLocalBrainProvider: AIProvider, @unchecked Sendable {
         let formattedPrompt = descriptor.formatPrompt(messages: messages)
 
         let options = AmoraInferenceOptions(
-            temperature: 0.3,
-            topP: 0.85,
+            temperature: isEvalMode ? 0.0 : 0.3,
+            topP: isEvalMode ? 1.0 : 0.85,
             maxTokens: 256,
-            stopSequences: descriptor.stopSequences
+            stopSequences: descriptor.stopSequences,
+            seed: isEvalMode ? 42 : nil
         )
 
         do {

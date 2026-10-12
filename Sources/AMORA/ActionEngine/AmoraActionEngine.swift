@@ -36,6 +36,24 @@ public final class AmoraActionEngine: Sendable {
         return AmoraActionEngine(registry: registry, decider: decider)
     }
 
+    /// Factory configuring the action engine with controlled evaluation adapters
+    /// that validate targets without launching applications or opening Finder windows.
+    public static func makeControlledForEvaluation(
+        onAppOpen: (@Sendable (URL) -> Void)? = nil,
+        onFolderOpen: (@Sendable (URL) -> Void)? = nil
+    ) -> AmoraActionEngine {
+        let registry = AmoraActionRegistry()
+        registerDefaultActions(
+            into: registry,
+            mediaController: ControlledAmoraMediaController(),
+            appLauncher: ControlledAmoraApplicationLauncher(onOpen: onAppOpen),
+            folderOpener: ControlledAmoraFolderOpener(onOpen: onFolderOpen),
+            workspaceController: ControlledAmoraWorkspaceController(),
+            timerController: DefaultAmoraTimerController()
+        )
+        return AmoraActionEngine(registry: registry, decider: AmoraActionDecisionEngine())
+    }
+
     /// Executes a strongly typed `AmoraAction`.
     public func execute(_ action: AmoraAction, context: AmoraActionContext = .init()) async -> AmoraActionResult {
         AMORAEventCenter.shared.emit(.commandProcessing)

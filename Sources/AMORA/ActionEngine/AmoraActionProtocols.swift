@@ -312,3 +312,75 @@ public struct DefaultAmoraNotificationPresenter: AmoraNotificationPresenting {
         }
     }
 }
+
+// MARK: - Controlled Execution Adapters (Evaluation & Benchmarks)
+
+/// Controlled application launcher for evaluation and testing.
+/// Resolves apps truthfully against the system without launching OS processes or activating windows.
+public struct ControlledAmoraApplicationLauncher: AmoraApplicationLaunching {
+    public let nativeResolver = NativeAmoraApplicationLauncher()
+    public var onOpen: (@Sendable (URL) -> Void)?
+
+    public init(onOpen: (@Sendable (URL) -> Void)? = nil) {
+        self.onOpen = onOpen
+    }
+
+    public func resolveApplicationURL(named name: String) -> URL? {
+        nativeResolver.resolveApplicationURL(named: name)
+    }
+
+    @MainActor
+    public func openApplication(at url: URL) async throws {
+        onOpen?(url)
+        // Controlled simulation: verify URL exists, do not invoke NSWorkspace.shared.openApplication
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(domain: "AmoraApplicationLaunching", code: 1, userInfo: [NSLocalizedDescriptionKey: "Application bundle not found."])
+        }
+    }
+}
+
+/// Controlled folder opener for evaluation and testing.
+/// Resolves folder URLs truthfully without opening Finder windows.
+public struct ControlledAmoraFolderOpener: AmoraFolderOpening {
+    public let nativeResolver = NativeAmoraFolderOpener()
+    public var onOpen: (@Sendable (URL) -> Void)?
+
+    public init(onOpen: (@Sendable (URL) -> Void)? = nil) {
+        self.onOpen = onOpen
+    }
+
+    public func resolveFolderURL(for location: String) -> URL? {
+        nativeResolver.resolveFolderURL(for: location)
+    }
+
+    @MainActor
+    public func openFolder(at url: URL) async throws {
+        onOpen?(url)
+        // Controlled simulation: verify URL exists, do not invoke NSWorkspace.shared.open
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(domain: "AmoraFolderOpening", code: 1, userInfo: [NSLocalizedDescriptionKey: "Folder does not exist."])
+        }
+    }
+}
+
+/// Controlled media controller for evaluation and testing.
+@MainActor
+public struct ControlledAmoraMediaController: AmoraMediaControlling {
+    public var isPlaying: Bool = false
+    public var isAvailable: Bool = true
+    public var trackTitle: String = "Synthetic Track"
+    public var sourceName: String = "Synthetic Music"
+
+    public init() {}
+    public func play() {}
+    public func pause() {}
+    public func nextTrack() {}
+    public func previousTrack() {}
+}
+
+/// Controlled workspace controller for evaluation and testing.
+@MainActor
+public struct ControlledAmoraWorkspaceController: AmoraWorkspaceControlling {
+    public init() {}
+    public func showWorkspace(section: String?) {}
+}

@@ -8,11 +8,13 @@ final class AmoraAgentLoopTests: XCTestCase {
         try await super.setUp()
         AmoraActionExecutionCoordinator.shared.reset()
         TimerService.shared.stopTimer()
+        NotesService.shared.clearAll()
     }
 
     override func tearDown() async throws {
         AmoraActionExecutionCoordinator.shared.reset()
         TimerService.shared.stopTimer()
+        NotesService.shared.clearAll()
         try await super.tearDown()
     }
 

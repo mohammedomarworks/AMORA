@@ -18,16 +18,34 @@ final class NotesService {
     static let shared = NotesService()
 
     var notes: [NoteItem] = []
-    private let userDefaultsKey = "AMORA_Saved_Notes"
+    private var defaults: UserDefaults
+    private var userDefaultsKey: String
 
-    private init() {
+    init(defaults: UserDefaults = .standard, userDefaultsKey: String = "AMORA_Saved_Notes") {
+        self.defaults = defaults
+        self.userDefaultsKey = userDefaultsKey
         loadNotes()
     }
 
-    func addNote(_ text: String) {
+    /// Configures isolated storage for evaluation and tests so real user data is never touched.
+    func useIsolatedStorage(suiteName: String = "com.amora.evaluation.notes") {
+        self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        self.userDefaultsKey = "Evaluation_Saved_Notes"
+        self.notes = []
+        loadNotes()
+    }
+
+    /// Restores standard storage for normal app runtime.
+    func restoreStandardStorage() {
+        self.defaults = .standard
+        self.userDefaultsKey = "AMORA_Saved_Notes"
+        loadNotes()
+    }
+
+    func addNote(_ text: String, date: Date = Date()) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let note = NoteItem(text: trimmed)
+        let note = NoteItem(text: trimmed, date: date)
         notes.insert(note, at: 0)
         saveNotes()
         AMORAEventCenter.shared.emit(.noteCreated)
@@ -44,22 +62,41 @@ final class NotesService {
         saveNotes()
     }
 
+    /// Clears all stored notes from memory and persistent store.
+    func clearAll() {
+        notes.removeAll()
+        defaults.removeObject(forKey: userDefaultsKey)
+    }
+
+    /// Reloads notes from the persistent store.
+    func reloadNotes() {
+        loadNotes()
+    }
+
+    /// Searches notes containing the query string, case-insensitively,
+    /// returning distinct matching notes ordered newest-first by date.
+    /// Does not silently merge distinct notes that share content or title.
     func searchNotes(query: String) -> [NoteItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return notes }
-        return notes.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
+        let sortedNotes = notes.sorted { $0.date > $1.date }
+        guard !trimmed.isEmpty else { return sortedNotes }
+        return sortedNotes.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
     }
 
     private func saveNotes() {
-        if let data = try? JSONEncoder().encode(notes) {
-            UserDefaults.standard.set(data, forKey: userDefaultsKey)
+        if notes.isEmpty {
+            defaults.removeObject(forKey: userDefaultsKey)
+        } else if let data = try? JSONEncoder().encode(notes) {
+            defaults.set(data, forKey: userDefaultsKey)
         }
     }
 
     private func loadNotes() {
-        if let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+        if let data = defaults.data(forKey: userDefaultsKey),
            let saved = try? JSONDecoder().decode([NoteItem].self, from: data) {
             self.notes = saved
+        } else {
+            self.notes = []
         }
     }
 }

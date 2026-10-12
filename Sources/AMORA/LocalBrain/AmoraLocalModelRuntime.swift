@@ -23,17 +23,20 @@ public struct AmoraInferenceOptions: Equatable, Sendable {
     public var topP: Float
     public var maxTokens: Int
     public var stopSequences: [String]
+    public var seed: UInt32?
 
     public init(
         temperature: Float = 0.7,
         topP: Float = 0.8,
         maxTokens: Int = 512,
-        stopSequences: [String] = ["<|im_end|>", "<|endoftext|>"]
+        stopSequences: [String] = ["<|im_end|>", "<|endoftext|>"],
+        seed: UInt32? = nil
     ) {
         self.temperature = temperature
         self.topP = topP
         self.maxTokens = maxTokens
         self.stopSequences = stopSequences
+        self.seed = seed
     }
 }
 

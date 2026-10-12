@@ -18,10 +18,18 @@ final class AssistantManager {
     private(set) var lastError: AIProviderError?
     private(set) var conversation = AIConversation()
     private var requestTask: Task<String, Never>?
+    private let actionEngine: AmoraActionEngine
+    private(set) var lastLoopResult: AmoraAgentLoop.LoopResult?
 
-    init(provider: any AIProvider, providerIsInjected: Bool = true, memoryStore: (any AmoraMemoryStoring)? = nil) {
+    init(
+        provider: any AIProvider,
+        providerIsInjected: Bool = true,
+        memoryStore: (any AmoraMemoryStoring)? = nil,
+        actionEngine: AmoraActionEngine = .shared
+    ) {
         self.provider = provider
         self.providerIsInjected = providerIsInjected
+        self.actionEngine = actionEngine
         if let memoryStore {
             self.memoryStore = memoryStore
             self.memoryStoreIsInjected = true
@@ -36,6 +44,7 @@ final class AssistantManager {
 
     func submit(_ input: String, settings: AISettingsSnapshot) async -> String {
         cancel()
+        lastLoopResult = nil
         AmoraActionExecutionCoordinator.shared.reset()
         let task = Task { @MainActor [weak self] in
             guard let self else { return "I don't know how to help with that yet." }
@@ -190,7 +199,7 @@ final class AssistantManager {
             let agentLoop = AmoraAgentLoop(
                 provider: provider,
                 toolRegistry: AMORAToolRegistry.shared,
-                actionEngine: AmoraActionEngine.shared,
+                actionEngine: actionEngine,
                 coordinator: AmoraActionExecutionCoordinator.shared
             )
             let loopResult = try await agentLoop.run(
@@ -199,6 +208,7 @@ final class AssistantManager {
                 conversationHistory: conversation.messages,
                 memoryStore: memoryStore
             )
+            self.lastLoopResult = loopResult
             let answer = loopResult.finalAnswer
             let assistantMessage = AIMessage(role: .assistant, content: answer)
             conversation.append(assistantMessage)
@@ -238,10 +248,11 @@ final class AssistantManager {
         let loop = AmoraAgentLoop(
             provider: provider,
             toolRegistry: AMORAToolRegistry.shared,
-            actionEngine: AmoraActionEngine.shared,
+            actionEngine: actionEngine,
             coordinator: AmoraActionExecutionCoordinator.shared
         )
         guard let result = await loop.runDeterministic(input: input, settings: settings) else { return nil }
+        self.lastLoopResult = result
 
         let answer = result.finalAnswer
         conversation.append(AIMessage(role: .user, content: input))

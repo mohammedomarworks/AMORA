@@ -166,7 +166,8 @@ public final class AmoraLlamaCppRuntime: AmoraLocalModelRuntime, @unchecked Send
         } else {
             llama_sampler_chain_add(smpl, llama_sampler_init_top_p(options.topP, 1))
             llama_sampler_chain_add(smpl, llama_sampler_init_temp(options.temperature))
-            llama_sampler_chain_add(smpl, llama_sampler_init_dist(UInt32.random(in: 1...1_000_000)))
+            let seed = options.seed ?? UInt32.random(in: 1...1_000_000)
+            llama_sampler_chain_add(smpl, llama_sampler_init_dist(seed))
         }
 
         var batch = llama_batch_init(512, 0, 1)

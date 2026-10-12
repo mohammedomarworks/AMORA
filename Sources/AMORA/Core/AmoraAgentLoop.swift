@@ -27,9 +27,30 @@ final class AmoraAgentLoop {
 
     /// Result of running the bounded agent loop.
     struct LoopResult: Equatable, Sendable {
+        struct ExecutedToolCall: Equatable, Sendable {
+            let name: String
+            let arguments: [String: String]
+        }
+
         let finalAnswer: String
         let executedToolCount: Int
         let completedSuccessfully: Bool
+        let attemptedTools: [String]
+        let executedTools: [ExecutedToolCall]
+
+        init(
+            finalAnswer: String,
+            executedToolCount: Int,
+            completedSuccessfully: Bool,
+            attemptedTools: [String] = [],
+            executedTools: [ExecutedToolCall] = []
+        ) {
+            self.finalAnswer = finalAnswer
+            self.executedToolCount = executedToolCount
+            self.completedSuccessfully = completedSuccessfully
+            self.attemptedTools = attemptedTools
+            self.executedTools = executedTools
+        }
     }
 
     /// Runs the local agent loop for a user input.
@@ -43,6 +64,8 @@ final class AmoraAgentLoop {
         var toolExecutionCount = 0
         var consecutiveFailures = 0
         var executedToolSummaries: [String] = []
+        var attemptedTools: [String] = []
+        var executedTools: [LoopResult.ExecutedToolCall] = []
 
         // 1. Build initial messages
         var messages: [AIMessage] = []
@@ -137,7 +160,9 @@ final class AmoraAgentLoop {
                 return LoopResult(
                     finalAnswer: finalResponse,
                     executedToolCount: toolExecutionCount,
-                    completedSuccessfully: true
+                    completedSuccessfully: true,
+                    attemptedTools: attemptedTools,
+                    executedTools: executedTools
                 )
 
             case .toolCall(let toolName, let arguments):
@@ -151,6 +176,8 @@ final class AmoraAgentLoop {
                     actualToolName = "timer.cancel"
                 }
 
+                attemptedTools.append(actualToolName)
+
                 // Check for repeated duplicate tool calls (e.g. static mock providers)
                 if let last = lastExecutedToolCall, last.name == actualToolName && last.args == arguments {
                     let lastOutput = executedToolSummaries.last ?? "Done."
@@ -158,11 +185,14 @@ final class AmoraAgentLoop {
                     return LoopResult(
                         finalAnswer: lastOutput,
                         executedToolCount: toolExecutionCount,
-                        completedSuccessfully: true
+                        completedSuccessfully: true,
+                        attemptedTools: attemptedTools,
+                        executedTools: executedTools
                     )
                 }
 
                 toolExecutionCount += 1
+                executedTools.append(.init(name: actualToolName, arguments: arguments))
 
                 let executionResult = await executeTool(
                     name: actualToolName,
@@ -175,7 +205,9 @@ final class AmoraAgentLoop {
                     return LoopResult(
                         finalAnswer: "Action cancelled: confirmation was not granted.",
                         executedToolCount: toolExecutionCount,
-                        completedSuccessfully: false
+                        completedSuccessfully: false,
+                        attemptedTools: attemptedTools,
+                        executedTools: executedTools
                     )
                 }
 
@@ -192,7 +224,9 @@ final class AmoraAgentLoop {
                     return LoopResult(
                         finalAnswer: "I could not complete your request: \(executionResult.output)",
                         executedToolCount: toolExecutionCount,
-                        completedSuccessfully: false
+                        completedSuccessfully: false,
+                        attemptedTools: attemptedTools,
+                        executedTools: executedTools
                     )
                 }
 
@@ -208,7 +242,9 @@ final class AmoraAgentLoop {
                     if isTimerCancellationInput && (actualCallName.contains("timer") || actualCallName == "create_timer") {
                         actualCallName = "timer.cancel"
                     }
+                    attemptedTools.append(actualCallName)
                     toolExecutionCount += 1
+                    executedTools.append(.init(name: actualCallName, arguments: call.arguments))
                     let result = await executeTool(
                         name: actualCallName,
                         arguments: call.arguments,
@@ -219,7 +255,9 @@ final class AmoraAgentLoop {
                         return LoopResult(
                             finalAnswer: "Action cancelled: confirmation was not granted.",
                             executedToolCount: toolExecutionCount,
-                            completedSuccessfully: false
+                            completedSuccessfully: false,
+                            attemptedTools: attemptedTools,
+                            executedTools: executedTools
                         )
                     }
                     batchOutputs.append(result.output)
@@ -231,7 +269,9 @@ final class AmoraAgentLoop {
                 return LoopResult(
                     finalAnswer: combinedAnswer,
                     executedToolCount: toolExecutionCount,
-                    completedSuccessfully: true
+                    completedSuccessfully: true,
+                    attemptedTools: attemptedTools,
+                    executedTools: executedTools
                 )
             }
         }
@@ -251,7 +291,9 @@ final class AmoraAgentLoop {
                 return LoopResult(
                     finalAnswer: ans.trimmingCharacters(in: .whitespacesAndNewlines),
                     executedToolCount: toolExecutionCount,
-                    completedSuccessfully: true
+                    completedSuccessfully: true,
+                    attemptedTools: attemptedTools,
+                    executedTools: executedTools
                 )
             }
         } catch {
@@ -262,7 +304,9 @@ final class AmoraAgentLoop {
         return LoopResult(
             finalAnswer: "Reached the maximum limit of \(Self.maximumToolExecutions) tool executions for this request. Completed steps: \(summary).",
             executedToolCount: toolExecutionCount,
-            completedSuccessfully: true
+            completedSuccessfully: true,
+            attemptedTools: attemptedTools,
+            executedTools: executedTools
         )
     }
 
@@ -278,7 +322,7 @@ final class AmoraAgentLoop {
         switch decision {
         case .finalAnswer(let text):
             coordinator.reset()
-            return LoopResult(finalAnswer: text, executedToolCount: 0, completedSuccessfully: true)
+            return LoopResult(finalAnswer: text, executedToolCount: 0, completedSuccessfully: true, attemptedTools: [], executedTools: [])
 
         case .toolCall(let name, let args):
             let r = await executeTool(
@@ -291,11 +335,19 @@ final class AmoraAgentLoop {
                 return LoopResult(
                     finalAnswer: "Action cancelled: confirmation was not granted.",
                     executedToolCount: 1,
-                    completedSuccessfully: false
+                    completedSuccessfully: false,
+                    attemptedTools: [name],
+                    executedTools: [.init(name: name, arguments: args)]
                 )
             }
             coordinator.reset()
-            return LoopResult(finalAnswer: r.output, executedToolCount: 1, completedSuccessfully: r.isSuccess)
+            return LoopResult(
+                finalAnswer: r.output,
+                executedToolCount: 1,
+                completedSuccessfully: r.isSuccess,
+                attemptedTools: [name],
+                executedTools: [.init(name: name, arguments: args)]
+            )
 
         case .toolBatch(let batch):
             var outputs: [String] = []
@@ -312,13 +364,21 @@ final class AmoraAgentLoop {
                     return LoopResult(
                         finalAnswer: "Action cancelled: confirmation was not granted.",
                         executedToolCount: idx,
-                        completedSuccessfully: false
+                        completedSuccessfully: false,
+                        attemptedTools: batch.map(\.name),
+                        executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) }
                     )
                 }
                 outputs.append(r.output)
             }
             coordinator.reset()
-            return LoopResult(finalAnswer: outputs.joined(separator: " "), executedToolCount: idx, completedSuccessfully: true)
+            return LoopResult(
+                finalAnswer: outputs.joined(separator: " "),
+                executedToolCount: idx,
+                completedSuccessfully: true,
+                attemptedTools: batch.map(\.name),
+                executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) }
+            )
         }
     }
 

@@ -43,6 +43,7 @@ final class AmoraLocalBrainTests: XCTestCase {
         try await super.setUp()
         AmoraConversationContextManager.shared.reset()
         AmoraActionExecutionCoordinator.shared.reset()
+        NotesService.shared.clearAll()
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
     }
@@ -51,6 +52,7 @@ final class AmoraLocalBrainTests: XCTestCase {
         AmoraConversationContextManager.shared.reset()
         AmoraActionExecutionCoordinator.shared.reset()
         TimerService.shared.stopTimer()
+        NotesService.shared.clearAll()
         if let tempDirectory {
             try? FileManager.default.removeItem(at: tempDirectory)
         }
