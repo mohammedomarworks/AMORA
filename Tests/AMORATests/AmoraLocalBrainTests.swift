@@ -878,4 +878,46 @@ final class AmoraLocalBrainTests: XCTestCase {
         XCTAssertTrue(response.localizedCaseInsensitiveContains("Opening VS Code") || response.localizedCaseInsensitiveContains("VS Code"))
         XCTAssertTrue(response.localizedCaseInsensitiveContains("Timer started") || response.localizedCaseInsensitiveContains("timer"))
     }
+
+    // MARK: - 22. Promoted Default Model (Qwen 2.5 1.5B) & Legacy Compatibility Regression
+    func testDefaultModelDescriptorIsPromoted1_5B() async {
+        let descriptor = AmoraModelDescriptor.defaultModel
+        XCTAssertEqual(descriptor.id, "qwen2.5-1.5b-instruct-q4_k_m")
+        XCTAssertEqual(descriptor.displayName, "Qwen 2.5 1.5B Instruct")
+        XCTAssertEqual(descriptor.quantization, "Q4_K_M")
+        XCTAssertEqual(descriptor.license, "Apache 2.0")
+        XCTAssertEqual(descriptor.expectedSizeBytes, 1_117_320_736)
+        XCTAssertEqual(descriptor.expectedSHA256, "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e")
+        XCTAssertEqual(descriptor.filename, "qwen2.5-1.5b-instruct-q4_k_m.gguf")
+
+        // Default manager uses the 1.5B descriptor
+        let defaultManager = AmoraModelManager.shared
+        XCTAssertEqual(defaultManager.descriptor.id, "qwen2.5-1.5b-instruct-q4_k_m")
+        XCTAssertEqual(defaultManager.modelFileURL.lastPathComponent, "qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    }
+
+    func testLegacy0_5BDescriptorAndRollbackCompatibility() async {
+        let legacy = AmoraModelDescriptor.qwen2_5_0_5b
+        XCTAssertEqual(legacy.id, "qwen2.5-0.5b-instruct-q4_k_m")
+        XCTAssertEqual(legacy.displayName, "Qwen 2.5 0.5B Instruct")
+        XCTAssertEqual(legacy.expectedSizeBytes, 491_400_032)
+        XCTAssertEqual(legacy.expectedSHA256, "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db")
+        XCTAssertEqual(legacy.filename, "qwen2.5-0.5b-instruct-q4_k_m.gguf")
+
+        // Explicit 0.5B manager targets 0.5B file
+        let legacyManager = AmoraModelManager(descriptor: legacy)
+        XCTAssertEqual(legacyManager.descriptor.id, "qwen2.5-0.5b-instruct-q4_k_m")
+        XCTAssertEqual(legacyManager.modelFileURL.lastPathComponent, "qwen2.5-0.5b-instruct-q4_k_m.gguf")
+
+        // Provider forModelPath with 0.5b selects legacy descriptor
+        let legacyProvider = AmoraLocalBrainProvider.forModelPath("/path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf")
+        XCTAssertEqual(legacyProvider.modelManager.descriptor.id, "qwen2.5-0.5b-instruct-q4_k_m")
+    }
+
+    func testCandidate3BRemainsEvaluationOnly() async {
+        let candidate3B = AmoraModelDescriptor.smollm3_3b
+        XCTAssertEqual(candidate3B.id, "smollm3-3b-instruct-q4_k_m")
+        XCTAssertNotEqual(AmoraModelDescriptor.defaultModel.id, candidate3B.id)
+        XCTAssertNotEqual(AmoraModelManager.shared.descriptor.id, candidate3B.id)
+    }
 }

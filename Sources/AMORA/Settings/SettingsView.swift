@@ -762,7 +762,7 @@ public struct SettingsView: View {
     private var offlineLocalBrainCard: some View {
         SettingsCard(
             title: "AMORA Local Brain (Offline LLM)",
-            description: "Embedded SmolLM2 quantized model running directly in-process via llama.cpp with Metal GPU acceleration."
+            description: "Qwen 2.5 quantized local model running directly in-process via llama.cpp with Metal GPU acceleration."
         ) {
             VStack(spacing: 12) {
                 let desc = modelManager.descriptor

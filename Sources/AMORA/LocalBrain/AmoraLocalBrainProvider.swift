@@ -28,8 +28,12 @@ final class AmoraLocalBrainProvider: AIProvider, @unchecked Sendable {
             let desc: AmoraModelDescriptor
             if let descriptor {
                 desc = descriptor
+            } else if path.localizedCaseInsensitiveContains("smollm") {
+                desc = .smollm3_3b
             } else if path.contains("1.5b") || path.contains("1_5b") {
                 desc = .qwen2_5_1_5b
+            } else if path.contains("0.5b") || path.contains("0_5b") {
+                desc = .qwen2_5_0_5b
             } else {
                 desc = .explicitCandidate(path: path)
             }
@@ -98,7 +102,8 @@ final class AmoraLocalBrainProvider: AIProvider, @unchecked Sendable {
         do {
             let result = try await runtime.generate(prompt: formattedPrompt, options: options, onToken: nil)
             try Task.checkCancellation()
-            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            let stripped = Self.stripThinkingBlocks(result)
+            let trimmed = stripped.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 throw AIProviderError.invalidResponse
             }
@@ -110,5 +115,19 @@ final class AmoraLocalBrainProvider: AIProvider, @unchecked Sendable {
         } catch {
             throw AIProviderError.generationFailure
         }
+    }
+
+    /// Strips `<think>...</think>` tags and content if present in model output.
+    static func stripThinkingBlocks(_ text: String) -> String {
+        var result = text
+        if let regex = try? NSRegularExpression(pattern: "<think>[\\s\\S]*?</think>", options: []) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: (result as NSString).length), withTemplate: "")
+        }
+        if result.contains("<think>") && !result.contains("</think>") {
+            if let openRange = result.range(of: "<think>") {
+                result = String(result[..<openRange.lowerBound])
+            }
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

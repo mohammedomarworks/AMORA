@@ -170,7 +170,7 @@ public final class AmoraModelManager: AmoraModelManaging {
     }
 
     public init(
-        descriptor: AmoraModelDescriptor = .qwen2_5_0_5b,
+        descriptor: AmoraModelDescriptor = .defaultModel,
         downloader: (any AmoraModelDownloading)? = nil,
         modelsDirectory: URL? = nil,
         explicitModelURL: URL? = nil

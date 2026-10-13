@@ -17,6 +17,7 @@ public struct AmoraModelDescriptor: Identifiable, Equatable, Sendable {
     public let contextLength: Int
     public let systemPrompt: String
     public let stopSequences: [String]
+    public let generationPrefix: String
 
     public init(
         id: String,
@@ -32,7 +33,8 @@ public struct AmoraModelDescriptor: Identifiable, Equatable, Sendable {
         filename: String,
         contextLength: Int = 2048,
         systemPrompt: String,
-        stopSequences: [String] = ["<|im_end|>", "<|endoftext|>"]
+        stopSequences: [String] = ["<|im_end|>", "<|endoftext|>"],
+        generationPrefix: String = ""
     ) {
         self.id = id
         self.displayName = displayName
@@ -48,11 +50,19 @@ public struct AmoraModelDescriptor: Identifiable, Equatable, Sendable {
         self.contextLength = contextLength
         self.systemPrompt = systemPrompt
         self.stopSequences = stopSequences
+        self.generationPrefix = generationPrefix
     }
 
-    /// Default recommended model for AMORA Local Brain V1:
+    /// Promoted default model for AMORA Local Brain:
+    /// Qwen2.5-1.5B-Instruct quantized to Q4_K_M (Apache 2.0 License).
+    /// Superior reasoning, zero-shot structured JSON formatting, and 83.6% task completion.
+    public static var defaultModel: AmoraModelDescriptor {
+        qwen2_5_1_5b
+    }
+
+    /// Legacy compact model for AMORA Local Brain:
     /// Qwen2.5-0.5B-Instruct quantized to Q4_K_M (Apache 2.0 License).
-    /// Highly capable compact model (<500 MB) with native ChatML and structured JSON instruction tuning.
+    /// Retained for rollback compatibility and resource-constrained environments (<500 MB).
     public static let qwen2_5_0_5b = AmoraModelDescriptor(
         id: "qwen2.5-0.5b-instruct-q4_k_m",
         displayName: "Qwen 2.5 0.5B Instruct",
@@ -179,6 +189,27 @@ Opening Spotify.<|im_end|>
         stopSequences: ["<|im_end|>", "<|endoftext|>"]
     )
 
+    /// Candidate model for evaluation and comparison:
+    /// SmolLM3-3B-Instruct quantized to Q4_K_M (Apache 2.0 License).
+    /// Verified official Hugging Face / GGML artifact.
+    public static let smollm3_3b = AmoraModelDescriptor(
+        id: "smollm3-3b-instruct-q4_k_m",
+        displayName: "SmolLM3 3B Instruct",
+        version: "3.0",
+        quantization: "Q4_K_M",
+        license: "Apache 2.0",
+        author: "Hugging Face / Loubna Ben Allal et al.",
+        sourceURL: URL(string: "https://huggingface.co/ggml-org/SmolLM3-3B-GGUF/resolve/main/SmolLM3-Q4_K_M.gguf")!,
+        expectedSizeBytes: 1_915_305_312, // ~1.78 GB
+        estimatedRAMBytes: 2_600 * 1024 * 1024, // ~2.6 GB RAM
+        expectedSHA256: "8334b850b7bd46238c16b0c550df2138f0889bf433809008cc17a8b05761863e",
+        filename: "SmolLM3-Q4_K_M.gguf",
+        contextLength: 2048,
+        systemPrompt: qwen2_5_0_5b.systemPrompt,
+        stopSequences: ["<|im_end|>", "<|endoftext|>"],
+        generationPrefix: "<think>\n\n</think>\n"
+    )
+
     /// Creates a comparison/evaluation descriptor for an explicit model path without assuming filename or location.
     public static func explicitCandidate(
         path: String,
@@ -186,7 +217,8 @@ Opening Spotify.<|im_end|>
         displayName: String = "Candidate Model",
         contextLength: Int = 2048,
         systemPrompt: String = qwen2_5_0_5b.systemPrompt,
-        stopSequences: [String] = ["<|im_end|>", "<|endoftext|>"]
+        stopSequences: [String] = ["<|im_end|>", "<|endoftext|>"],
+        generationPrefix: String = ""
     ) -> AmoraModelDescriptor {
         let fileURL = URL(fileURLWithPath: path)
         let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0
@@ -204,7 +236,8 @@ Opening Spotify.<|im_end|>
             filename: fileURL.lastPathComponent,
             contextLength: contextLength,
             systemPrompt: systemPrompt,
-            stopSequences: stopSequences
+            stopSequences: stopSequences,
+            generationPrefix: generationPrefix
         )
     }
 
@@ -219,7 +252,7 @@ Opening Spotify.<|im_end|>
             let role = msg.role == .user ? "user" : "assistant"
             formatted += "<|im_start|>\(role)\n\(msg.content)<|im_end|>\n"
         }
-        formatted += "<|im_start|>assistant\n"
+        formatted += "<|im_start|>assistant\n\(generationPrefix)"
         return formatted
     }
 }
