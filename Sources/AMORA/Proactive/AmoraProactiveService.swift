@@ -40,6 +40,7 @@ public final class AmoraProactiveService: Sendable {
             if IslandModel.shared.displayState == .collapsed {
                 WindowManager.shared.expandIsland()
             }
+            IslandNavigationModel.shared.navigateTo(.home)
         }
     }
 
@@ -69,7 +70,7 @@ public final class AmoraProactiveService: Sendable {
                 await self.evaluateTrigger(.musicPlaybackChanged)
             }
 
-        case .criticalBattery:
+        case .criticalBattery, .lowBattery:
             Task { @MainActor in
                 await self.evaluateTrigger(.batteryCriticallyLow)
             }
@@ -151,6 +152,19 @@ public final class AmoraProactiveService: Sendable {
         guard let current = currentSuggestion else { return }
         cooldownTracker.recordTrigger(key: current.trigger.rawValue, duration: current.cooldownDuration, now: clock())
         self.currentSuggestion = nil
+    }
+
+    /// Snoozes the current proactive suggestion, temporarily suppressing its trigger for the snooze duration.
+    public func snoozeCurrentSuggestion(duration: TimeInterval? = nil) {
+        guard let current = currentSuggestion else { return }
+        let snoozeDuration = duration ?? settingsProvider().defaultSnoozeSeconds
+        cooldownTracker.recordTrigger(key: current.trigger.rawValue, duration: snoozeDuration, now: clock())
+        self.currentSuggestion = nil
+    }
+
+    /// Returns whether the specified trigger is currently in cooldown or snoozed.
+    public func isCoolingDown(trigger: AmoraProactiveTrigger) -> Bool {
+        cooldownTracker.isCoolingDown(key: trigger.rawValue, now: clock())
     }
 
     /// Executes the safe action attached to the current proactive suggestion, if any.

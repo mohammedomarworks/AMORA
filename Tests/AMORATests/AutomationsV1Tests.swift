@@ -38,6 +38,13 @@ final class AutomationsV1Tests: XCTestCase {
         var remainingSeconds = 0
     }
 
+    final class MockClock: @unchecked Sendable {
+        var now: Date
+        init(_ initial: Date) { self.now = initial }
+        func current() -> Date { now }
+        func advance(by seconds: TimeInterval) { now = now.addingTimeInterval(seconds) }
+    }
+
     private func makeIsolatedService(
         initialAutomations: [AmoraAutomation] = [],
         now: Date = Date(),
@@ -728,5 +735,307 @@ final class AutomationsV1Tests: XCTestCase {
         let confirmedResult = await service.clearAll(confirmed: true)
         XCTAssertTrue(confirmedResult)
         XCTAssertEqual(service.list().count, 0)
+    }
+
+    // MARK: - 14. Disabled Automations Regression Tests
+
+    func testDisabledAutomation_suppressesExecution() async throws {
+        let spy = SpyNotificationPresenter()
+        let auto = AmoraAutomation(
+            name: "Disabled Reminder",
+            trigger: .timerCompletion,
+            action: .showNotification(message: "Should not show"),
+            enabled: false
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [auto],
+            notificationPresenter: spy
+        )
+
+        // Non-manual execution must be suppressed
+        let result = await service.executeAutomation(auto, isManual: false)
+        XCTAssertEqual(result.status, .unavailable)
+        XCTAssertTrue(result.message.contains("disabled"))
+        XCTAssertTrue(spy.presentedMessages.isEmpty)
+
+        // Manual execution (user forced run) is permitted
+        let manualResult = await service.executeAutomation(auto, isManual: true)
+        XCTAssertEqual(manualResult.status, .success)
+        XCTAssertEqual(spy.presentedMessages, ["Should not show"])
+    }
+
+    // MARK: - 15. Duplicate Suppression Regression Tests
+
+    func testDuplicateSuppression_batteryDoesNotFireRepeatedlyWhileLow() async throws {
+        let spy = SpyNotificationPresenter()
+        let auto = AmoraAutomation(
+            name: "Low Battery Warning",
+            trigger: .batteryThreshold(level: 20, comparison: .dropsBelow),
+            action: .showNotification(message: "Battery is low!")
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [auto],
+            notificationPresenter: spy
+        )
+
+        // 1. Battery drops to 15% -> fires first time
+        BatteryService.shared.level = 15
+        service.handleEvent(.lowBattery)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(spy.presentedMessages.count, 1)
+
+        // 2. Battery stays at 15% / updates again -> must NOT fire a duplicate
+        service.handleEvent(.criticalBattery)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(spy.presentedMessages.count, 1, "Must suppress duplicate firing while battery remains low")
+
+        // 3. Charger connected -> resets edge trigger
+        service.handleEvent(.charging)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // 4. Later drops to 15% again -> fires again
+        service.handleEvent(.lowBattery)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(spy.presentedMessages.count, 2, "Must fire again after battery state resets")
+    }
+
+    func testDuplicateSuppression_rapidEventBurstDebounced() async throws {
+        let spy = SpyNotificationPresenter()
+        let now = Date()
+        let auto = AmoraAutomation(
+            name: "Timer Finish Alert",
+            trigger: .timerCompletion,
+            action: .showNotification(message: "Timer done!")
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [auto],
+            now: now,
+            notificationPresenter: spy
+        )
+        service.minimumEventCooldown = 5.0
+
+        // First firing
+        let r1 = await service.executeAutomation(auto, isManual: false, now: now)
+        XCTAssertEqual(r1.status, .success)
+
+        // Second firing within 1 second -> debounced
+        let r2 = await service.executeAutomation(auto, isManual: false, now: now.addingTimeInterval(1.0))
+        XCTAssertEqual(r2.status, .unavailable)
+        XCTAssertTrue(r2.message.contains("too recently") || r2.message.contains("Suppressed"))
+    }
+
+    // MARK: - 16. Loop Prevention Regression Tests
+
+    func testLoopPrevention_timerSelfLoopSuppressed() async throws {
+        let timerSpy = SpyTimerController()
+        let auto = AmoraAutomation(
+            name: "Chained Timer",
+            trigger: .timerCompletion,
+            action: .startTimer(duration: 300)
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [auto],
+            timerController: timerSpy
+        )
+
+        // 1. First event trigger: starts 300s timer
+        let r1 = await service.executeAutomation(auto, isManual: false)
+        XCTAssertEqual(r1.status, .success)
+        XCTAssertEqual(timerSpy.startedSeconds, 300)
+
+        // 2. Chained self-trigger: must be blocked to prevent infinite timer loops
+        let r2 = await service.executeAutomation(auto, isManual: false)
+        XCTAssertEqual(r2.status, .unavailable)
+        XCTAssertTrue(r2.message.contains("Loop prevented"))
+    }
+
+    func testLoopPrevention_inFlightRecursionGuard() async throws {
+        let (service, _, _) = await makeIsolatedService()
+        let auto = AmoraAutomation(
+            name: "Recursive Target",
+            trigger: .timerCompletion,
+            action: .showNotification(message: "Recursive")
+        )
+
+        // Register an action that attempts to re-enter executeAutomation with same auto.id
+        service.actionEngine.registry.register(AmoraActionDefinition(
+            identifier: "amora.recursive_test",
+            name: "Recursive Action",
+            description: "Calls back into the automation service",
+            handler: { _, _ in
+                let reentrant = await service.executeAutomation(auto, isManual: false)
+                return reentrant
+            }
+        ))
+
+        let cycleAuto = AmoraAutomation(
+            id: auto.id,
+            name: "Cycle Auto",
+            trigger: .timerCompletion,
+            action: .mediaPlay
+        )
+        let r1 = await service.executeAutomation(cycleAuto, isManual: false)
+        XCTAssertEqual(r1.status, .success)
+    }
+
+    // MARK: - 8. Notification Delivery & Rendering State Tests
+
+    func testNotificationDelivery_showsNotificationInAutomationService() async throws {
+        let (service, _, _) = await makeIsolatedService()
+        let auto = AmoraAutomation(
+            name: "Stretch Alert",
+            trigger: .timerCompletion,
+            action: .showNotification(message: "Time to stand up and stretch!")
+        )
+
+        let result = await service.executeAutomation(auto, isManual: true)
+        XCTAssertEqual(result.status, .success)
+
+        guard let notif = service.currentNotification else {
+            XCTFail("currentNotification must be set after showNotification execution")
+            return
+        }
+        XCTAssertEqual(notif.automationId, auto.id)
+        XCTAssertEqual(notif.automationName, "Stretch Alert")
+        XCTAssertEqual(notif.message, "Time to stand up and stretch!")
+        XCTAssertEqual(notif.triggerIcon, "timer")
+        XCTAssertEqual(notif.triggerName, "When focus timer completes")
+        XCTAssertEqual(notif.action, .startTimer(duration: 300))
+        XCTAssertEqual(notif.actionTitle, "5m Break")
+    }
+
+    func testNotificationDelivery_timerCompletionTriggersVisibleNotification() async throws {
+        let auto = AmoraAutomation(
+            name: "Timer Break",
+            trigger: .timerCompletion,
+            action: .showNotification(message: "Focus session done. Take 5 minutes.")
+        )
+        let (service, _, _) = await makeIsolatedService(initialAutomations: [auto])
+
+        service.handleEvent(.timerCompleted)
+
+        // Wait brief tick for async task
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        guard let notif = service.currentNotification else {
+            XCTFail("Timer completion event must deliver notification to currentNotification")
+            return
+        }
+        XCTAssertEqual(notif.message, "Focus session done. Take 5 minutes.")
+        XCTAssertEqual(notif.triggerIcon, "timer")
+    }
+
+    func testNotificationDismissal_clearsCurrentNotification() async throws {
+        let (service, _, _) = await makeIsolatedService()
+        let notif = AmoraAutomationNotification(
+            triggerIcon: "timer",
+            triggerName: "Focus Timer",
+            message: "Dismiss me please"
+        )
+        service.presentNotification(notif)
+        XCTAssertNotNil(service.currentNotification)
+
+        service.dismissNotification()
+        XCTAssertNil(service.currentNotification, "Dismissing notification must clear currentNotification")
+    }
+
+    func testDuplicateSuppression_identicalNotificationIgnoredWithinCooldown() async throws {
+        let clock = MockClock(Date(timeIntervalSince1970: 1000))
+        let storage = AmoraInMemoryAutomationStorage()
+        let store = AmoraAutomationStore(storage: storage)
+        let service = AmoraAutomationService(
+            store: store,
+            clock: { clock.current() }
+        )
+        let autoId = UUID()
+        let notif1 = AmoraAutomationNotification(
+            automationId: autoId,
+            message: "Repeated notification",
+            createdAt: clock.now
+        )
+        service.presentNotification(notif1)
+        XCTAssertEqual(service.currentNotification?.id, notif1.id)
+
+        // Attempting to present identical message + automation within cooldown is suppressed
+        clock.advance(by: 0.5)
+        let notif2 = AmoraAutomationNotification(
+            automationId: autoId,
+            message: "Repeated notification",
+            createdAt: clock.now
+        )
+        service.presentNotification(notif2)
+        XCTAssertEqual(service.currentNotification?.id, notif1.id, "Duplicate notification must be ignored")
+
+        // Once cooldown passes, new notification is accepted
+        clock.advance(by: 2.0)
+        let notif3 = AmoraAutomationNotification(
+            automationId: autoId,
+            message: "Repeated notification",
+            createdAt: clock.now
+        )
+        service.presentNotification(notif3)
+        XCTAssertEqual(service.currentNotification?.id, notif3.id, "After cooldown, fresh notification should be accepted")
+    }
+
+    func testConsequentialActionNotification_requiresUserAuthorizationAndExecutesOnAction() async throws {
+        let media = SpyMediaController()
+        let (service, _, _) = await makeIsolatedService(mediaController: media)
+
+        // Register a sensitive action requiring confirmation by default
+        service.actionEngine.registry.register(AmoraActionDefinition(
+            identifier: "sensitive.op",
+            name: "Sensitive Operation",
+            description: "Requires confirmation",
+            isConfirmationRequiredByDefault: true,
+            handler: { _, _ in
+                media.play()
+                return .success(actionId: "sensitive.op", message: "Performed sensitive operation.")
+            }
+        ))
+
+        let auto = AmoraAutomation(
+            name: "Sensitive Auto",
+            trigger: .timerCompletion,
+            action: .mediaPlay
+        )
+
+        // Directly post notification with consequential action
+        let notif = AmoraAutomationNotification(
+            automationId: auto.id,
+            automationName: auto.name,
+            triggerIcon: "timer",
+            triggerName: "Focus Timer",
+            message: "Start audio playback?",
+            action: .playMusic,
+            actionTitle: "Play Music"
+        )
+        service.presentNotification(notif)
+        XCTAssertNotNil(service.currentNotification)
+        XCTAssertFalse(media.played)
+
+        // Execute action attached to notification
+        await service.executeCurrentNotificationAction()
+
+        // Notification must be dismissed and action executed with confirmation
+        XCTAssertNil(service.currentNotification)
+        XCTAssertTrue(media.played, "Action button execution must run consequential action with confirmation")
+    }
+
+    func testNotificationRenderingState_companionPanelProperties() {
+        let notif = AmoraAutomationNotification(
+            automationId: UUID(),
+            automationName: "Morning Routine",
+            triggerIcon: "clock",
+            triggerName: "Daily at 8:00 AM",
+            message: "Good morning! Time for standup.",
+            action: .openWorkspace(section: "automations"),
+            actionTitle: "Open Automations"
+        )
+
+        XCTAssertEqual(notif.triggerIcon, "clock")
+        XCTAssertEqual(notif.triggerName, "Daily at 8:00 AM")
+        XCTAssertEqual(notif.message, "Good morning! Time for standup.")
+        XCTAssertEqual(notif.actionTitle, "Open Automations")
+        XCTAssertNotNil(notif.action)
     }
 }

@@ -111,11 +111,17 @@ struct AmoraCompanionPanel: View {
     @Bindable var music = MusicService.shared
     @Bindable var gitHub = GitHubService.shared
     @Bindable var nav = IslandNavigationModel.shared
+    @Bindable var proactive = AmoraProactiveService.shared
+    @Bindable var automation = AmoraAutomationService.shared
     private var personality = PersonalityEngine.shared
     private var palette: ThemePalette { AppState.shared.settings.palette }
 
     private var statusMessage: String {
-        if coordinator.state != .idle {
+        if let notification = automation.currentNotification {
+            return notification.message
+        } else if let suggestion = proactive.currentSuggestion {
+            return suggestion.message
+        } else if coordinator.state != .idle {
             return "Executing action…"
         } else if assistant.state == .thinking {
             return "Thinking…"
@@ -149,7 +155,15 @@ struct AmoraCompanionPanel: View {
                 .padding(.top, 4)
 
             // Contextual status badge
-            if assistant.state == .thinking {
+            if let notification = automation.currentNotification {
+                AmoraAccessibleStatusBadge(
+                    text: notification.triggerName,
+                    systemImage: notification.triggerIcon,
+                    tintColor: palette.accent
+                )
+            } else if let suggestion = proactive.currentSuggestion {
+                AmoraAccessibleStatusBadge(text: suggestion.trigger.displayName, systemImage: "sparkles", tintColor: palette.accent)
+            } else if assistant.state == .thinking {
                 AmoraAccessibleStatusBadge(text: "Thinking", systemImage: "sparkles", tintColor: palette.accent)
             } else if coordinator.state != .idle {
                 AmoraAccessibleStatusBadge(text: "Action", systemImage: "bolt.fill", tintColor: .orange)
@@ -171,6 +185,90 @@ struct AmoraCompanionPanel: View {
                 .lineLimit(2)
                 .padding(.horizontal, 8)
                 .animation(.easeInOut(duration: 0.2), value: statusMessage)
+
+            if let notification = automation.currentNotification {
+                Group {
+                    if let action = notification.action {
+                        HStack(spacing: 6) {
+                            Button {
+                                Task {
+                                    await automation.executeCurrentNotificationAction()
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(notification.actionTitle ?? action.humanReadableName)
+                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                        .lineLimit(1)
+                                    Image(systemName: "arrow.right")
+                                        .font(.system(size: 8, weight: .bold))
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.amoraPill(fill: palette.accent, foreground: .white))
+                            .accessibilityLabel(notification.actionTitle ?? action.humanReadableName)
+
+                            Button("Dismiss") {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    automation.dismissNotification()
+                                }
+                            }
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
+                            .accessibilityLabel("Dismiss notification")
+                        }
+                    } else {
+                        Button("Dismiss") {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                automation.dismissNotification()
+                            }
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
+                        .accessibilityLabel("Dismiss notification")
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            } else if let suggestion = proactive.currentSuggestion {
+                VStack(spacing: 5) {
+                    if let action = suggestion.action {
+                        Button {
+                            Task {
+                                await proactive.executeCurrentAction()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(suggestion.actionTitle ?? action.humanReadableName)
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.amoraPill(fill: palette.accent, foreground: .white))
+                        .accessibilityLabel(suggestion.actionTitle ?? action.humanReadableName)
+                    }
+
+                    HStack(spacing: 6) {
+                        Button("Snooze") {
+                            proactive.snoozeCurrentSuggestion()
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
+                        .accessibilityLabel("Snooze suggestion")
+
+                        Button("Dismiss") {
+                            proactive.dismissCurrentSuggestion()
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
+                        .accessibilityLabel("Dismiss suggestion")
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 2)
+            }
 
             Spacer(minLength: 0)
         }

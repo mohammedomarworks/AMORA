@@ -25,4 +25,12 @@ public final class AmoraProactiveCooldownTracker: AmoraProactiveCooldownTracking
         defer { lock.unlock() }
         cooldowns.removeAll()
     }
+
+    public func remainingCooldown(key: String, now: Date) -> TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = cooldowns[key] else { return 0 }
+        let elapsed = now.timeIntervalSince(entry.firedAt)
+        return max(0, entry.duration - elapsed)
+    }
 }

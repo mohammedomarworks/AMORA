@@ -170,14 +170,18 @@ public struct AmoraProactiveEvaluator: AmoraProactiveEvaluating {
             return nil
         }
 
+        let isCritical = percent <= 10
+        let levelText = isCritical ? "critically low" : "low"
+
         return AmoraProactiveSuggestion(
             trigger: .batteryCriticallyLow,
             conditionDescription: "Battery percent <= \(context.settings.batteryCriticalThresholdPercent)% and not charging",
             cooldownDuration: 600,
-            priority: .critical,
-            message: "Battery is critically low (\(percent)%). Connect to power.",
+            priority: isCritical ? .critical : .high,
+            message: "Battery is \(levelText) (\(percent)%). Connect to power.",
             action: nil,
             actionTitle: nil,
+            snoozeDuration: 300,
             createdAt: context.now
         )
     }

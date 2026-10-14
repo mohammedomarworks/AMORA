@@ -297,15 +297,32 @@ public struct DefaultAmoraTimerController: AmoraTimerControlling {
 @MainActor
 public protocol AmoraNotificationPresenting: Sendable {
     func present(message: String)
+    func present(notification: AmoraAutomationNotification)
 }
 
-/// Production implementation routing to AMORAContext, SoundService, and WindowManager.
+public extension AmoraNotificationPresenting {
+    func present(notification: AmoraAutomationNotification) {
+        present(message: notification.message)
+    }
+}
+
+/// Production implementation routing to AmoraAutomationService, AMORAContext, SoundService, and WindowManager.
 @MainActor
 public struct DefaultAmoraNotificationPresenter: AmoraNotificationPresenting {
     public init() {}
 
     public func present(message: String) {
-        AMORAContext.shared.setAIResponse(message)
+        let notification = AmoraAutomationNotification(
+            triggerIcon: "bell.badge",
+            triggerName: "Notification",
+            message: message
+        )
+        present(notification: notification)
+    }
+
+    public func present(notification: AmoraAutomationNotification) {
+        AMORAContext.shared.setAIResponse(notification.message)
+        AmoraAutomationService.shared.presentNotification(notification)
         SoundService.shared.play(.notification)
         if IslandModel.shared.displayState == .collapsed {
             WindowManager.shared.expandIsland()

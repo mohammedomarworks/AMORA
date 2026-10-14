@@ -36,8 +36,18 @@ final class SettingsStore {
     var contextAwarenessEnabled: Bool = true
     var memoryEnabled: Bool = true
 
+    // Storage loading flag
+    private var isLoadingSettings: Bool = false
+
     // Proactive AMORA
-    var proactiveAmoraEnabled: Bool = true
+    var proactiveAmoraEnabled: Bool = true {
+        didSet {
+            guard !isLoadingSettings else { return }
+            if !proactiveAmoraEnabled {
+                AmoraProactiveService.shared.dismissCurrentSuggestion()
+            }
+        }
+    }
     var proactiveTimerCompletedEnabled: Bool = true
     var proactiveTimerNearlyFinishedEnabled: Bool = true
     var proactiveMusicPlaybackEnabled: Bool = true
@@ -93,6 +103,8 @@ final class SettingsStore {
     var palette: ThemePalette { theme.palette }
 
     func load() {
+        isLoadingSettings = true
+        defer { isLoadingSettings = false }
         let defaults = UserDefaults.standard
         if defaults.object(forKey: "AMORA_hoverToExpand") != nil {
             self.hoverToExpand = defaults.bool(forKey: "AMORA_hoverToExpand")

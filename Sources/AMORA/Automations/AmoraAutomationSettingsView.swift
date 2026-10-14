@@ -57,6 +57,22 @@ struct AmoraAutomationSettingsView: View {
                     .padding(.top, 4)
                 }
             }
+
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(palette.accent)
+                        Text("Local-First Execution")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    Text("Automations run locally while AMORA is active. If your Mac is asleep or AMORA is closed when a scheduled automation is due, AMORA will catch it up immediately the next time the app opens.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+            }
         }
         .sheet(isPresented: $showingCreateSheet) {
             AmoraAutomationEditSheet(automation: nil) { newAuto in

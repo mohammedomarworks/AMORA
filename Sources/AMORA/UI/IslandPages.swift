@@ -5,9 +5,19 @@ import UniformTypeIdentifiers
 @MainActor
 struct IslandHomePage: View {
     private var palette: ThemePalette { AppState.shared.settings.palette }
+    @Bindable private var proactive = AmoraProactiveService.shared
+    @Bindable private var automation = AmoraAutomationService.shared
 
     var body: some View {
         VStack(spacing: 8) {
+            if let notification = automation.currentNotification {
+                AutomationNotificationCard(notification: notification)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let suggestion = proactive.currentSuggestion {
+                ProactiveSuggestionCard(suggestion: suggestion)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             HStack(spacing: 8) {
                 // Music Card
                 MusicCompactCard()
@@ -24,6 +34,8 @@ struct IslandHomePage: View {
             }
         }
         .padding(8)
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: automation.currentNotification)
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: proactive.currentSuggestion)
     }
 }
 

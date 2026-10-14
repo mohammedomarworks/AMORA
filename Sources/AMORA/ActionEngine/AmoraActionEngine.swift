@@ -749,11 +749,34 @@ public final class AmoraActionEngine: Sendable {
                 let trimmed = msg.trimmingCharacters(in: .whitespacesAndNewlines)
                 return trimmed.isEmpty ? .invalid(reason: "Notification message cannot be empty.") : .valid
             },
-            handler: { action, _ in
+            handler: { action, context in
                 guard case .showNotification(let msg) = action else {
                     return .invalidInput(actionId: "amora.notification", message: "Missing notification message.")
                 }
-                notificationPresenter.present(message: msg)
+                let triggerIcon = context.metadata["triggerIcon"] ?? "bell.badge"
+                let triggerName = context.metadata["triggerName"] ?? "Notification"
+                let autoName = context.metadata["automationName"]
+                let autoId = context.metadata["automationId"].flatMap(UUID.init)
+                let actionTitle = context.metadata["actionTitle"]
+                let defaultAction: AmoraAction? = {
+                    if let actionId = context.metadata["actionId"] {
+                        if actionId == "timer.start" {
+                            let duration = context.metadata["actionDuration"].flatMap(TimeInterval.init) ?? 300.0
+                            return .startTimer(duration: duration)
+                        }
+                    }
+                    return nil
+                }()
+                let notification = AmoraAutomationNotification(
+                    automationId: autoId,
+                    automationName: autoName,
+                    triggerIcon: triggerIcon,
+                    triggerName: triggerName,
+                    message: msg,
+                    action: defaultAction,
+                    actionTitle: actionTitle
+                )
+                notificationPresenter.present(notification: notification)
                 return .success(
                     actionId: "amora.notification",
                     message: msg,

@@ -614,4 +614,212 @@ final class ProactiveAmoraTests: XCTestCase {
         XCTAssertNotNil(service.currentSuggestion)
         XCTAssertEqual(service.currentSuggestion?.trigger, .batteryCriticallyLow)
     }
+
+    // MARK: - 15. Additional Event Handling Tests
+
+    func testEventHandling_lowBatteryEventTriggersEvaluation() async {
+        let store = await makeMemoryStore()
+        var settings = AmoraProactiveSettings.conservative
+        settings.batteryCriticalThresholdPercent = 20
+        let lowBattery = AmoraBatteryContext(percent: 15, charging: false, isPluggedIn: false)
+        let snapshot = makeTestSnapshot(battery: lowBattery)
+
+        let service = AmoraProactiveService(
+            contextProvider: { snapshot },
+            memoryStore: store,
+            settingsProvider: { settings },
+            onSuggestionPresented: { _ in }
+        )
+
+        service.handleEvent(.lowBattery)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertNotNil(service.currentSuggestion)
+        XCTAssertEqual(service.currentSuggestion?.trigger, .batteryCriticallyLow)
+        XCTAssertTrue(service.currentSuggestion?.message.contains("15%") == true)
+    }
+
+    func testEventHandling_musicEventsTriggerEvaluation() async {
+        let store = await makeMemoryStore()
+        let playingMedia = AmoraMediaContext(source: "Spotify", state: "playing", title: "Blinding Lights", artist: "The Weeknd")
+        let snapshot = makeTestSnapshot(media: playingMedia)
+
+        let service = AmoraProactiveService(
+            contextProvider: { snapshot },
+            memoryStore: store,
+            settingsProvider: { .conservative },
+            onSuggestionPresented: { _ in }
+        )
+
+        service.handleEvent(.musicStarted)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertNotNil(service.currentSuggestion)
+        XCTAssertEqual(service.currentSuggestion?.trigger, .musicPlaybackChanged)
+        XCTAssertEqual(service.currentSuggestion?.action, .pauseMusic)
+    }
+
+    // MARK: - 16. Snoozing Tests
+
+    func testSnooze_clearsCurrentSuggestionAndEnforcesSnoozeDuration() async {
+        let clock = TestClock(initialDate: Date(timeIntervalSince1970: 20000))
+        let store = await makeMemoryStore()
+        let tracker = AmoraProactiveCooldownTracker()
+
+        let service = AmoraProactiveService(
+            cooldownTracker: tracker,
+            contextProvider: { self.makeTestSnapshot() },
+            memoryStore: store,
+            settingsProvider: { .conservative },
+            clock: { clock.now() },
+            onSuggestionPresented: { _ in }
+        )
+
+        // 1. Initial suggestion fires
+        let initial = await service.evaluateTrigger(.timerCompleted)
+        XCTAssertNotNil(initial)
+        XCTAssertEqual(service.currentSuggestion?.id, initial?.id)
+
+        // 2. Snooze for 300 seconds
+        service.snoozeCurrentSuggestion(duration: 300)
+        XCTAssertNil(service.currentSuggestion, "Snoozing must clear currentSuggestion")
+        XCTAssertTrue(service.isCoolingDown(trigger: .timerCompleted))
+
+        // 3. During snooze window (e.g. t + 100s) -> evaluation must be suppressed
+        clock.advance(by: 100)
+        let suppressed = await service.evaluateTrigger(.timerCompleted)
+        XCTAssertNil(suppressed, "Suggestion must remain suppressed during snooze window")
+        XCTAssertTrue(service.isCoolingDown(trigger: .timerCompleted))
+        XCTAssertEqual(tracker.remainingCooldown(key: AmoraProactiveTrigger.timerCompleted.rawValue, now: clock.now()), 200)
+
+        // 4. Past snooze window (t + 301s) -> evaluation permitted again
+        clock.advance(by: 201)
+        XCTAssertFalse(service.isCoolingDown(trigger: .timerCompleted))
+        let allowed = await service.evaluateTrigger(.timerCompleted)
+        XCTAssertNotNil(allowed, "Suggestion must be permitted after snooze duration expires")
+    }
+
+    func testSnooze_defaultDurationFromSettings() async {
+        let clock = TestClock(initialDate: Date(timeIntervalSince1970: 30000))
+        let store = await makeMemoryStore()
+        let tracker = AmoraProactiveCooldownTracker()
+
+        var customSettings = AmoraProactiveSettings.conservative
+        customSettings.defaultSnoozeSeconds = 600
+
+        let service = AmoraProactiveService(
+            cooldownTracker: tracker,
+            contextProvider: { self.makeTestSnapshot() },
+            memoryStore: store,
+            settingsProvider: { customSettings },
+            clock: { clock.now() },
+            onSuggestionPresented: { _ in }
+        )
+
+        let initial = await service.evaluateTrigger(.timerCompleted)
+        XCTAssertNotNil(initial)
+
+        // Snooze without duration argument -> uses defaultSnoozeSeconds (600s)
+        service.snoozeCurrentSuggestion()
+        XCTAssertNil(service.currentSuggestion)
+
+        // At t + 400s (less than 600s), still cooling down
+        clock.advance(by: 400)
+        XCTAssertTrue(service.isCoolingDown(trigger: .timerCompleted))
+
+        // At t + 601s, snooze has ended
+        clock.advance(by: 201)
+        XCTAssertFalse(service.isCoolingDown(trigger: .timerCompleted))
+    }
+
+    // MARK: - 17. Settings Toggle and Dismiss Active Test
+
+    func testSettingsToggle_clearsActiveSuggestionWhenDisabled() async {
+        let settingsStore = SettingsStore()
+        settingsStore.proactiveAmoraEnabled = true
+
+        let criticalBattery = AmoraBatteryContext(percent: 5, charging: false, isPluggedIn: false)
+        let snapshot = makeTestSnapshot(battery: criticalBattery)
+        let store = await makeMemoryStore()
+
+        let service = AmoraProactiveService(
+            contextProvider: { snapshot },
+            memoryStore: store,
+            settingsProvider: { settingsStore.proactiveSettingsSnapshot },
+            onSuggestionPresented: { _ in }
+        )
+
+        let suggestion = await service.evaluateTrigger(.batteryCriticallyLow)
+        XCTAssertNotNil(suggestion)
+
+        // Disable proactive AMORA in settingsStore
+        settingsStore.proactiveAmoraEnabled = false
+        XCTAssertFalse(settingsStore.proactiveSettingsSnapshot.isEnabled)
+
+        // Further evaluations must return nil
+        let candidate = await service.evaluateTrigger(.batteryCriticallyLow)
+        XCTAssertNil(candidate)
+    }
+
+    // MARK: - 18. Action Authorization and Safety Tests
+
+    func testActionAuthorization_evaluatingTriggerNeverAutoExecutesAction() async {
+        let store = await makeMemoryStore()
+        let timerService = TimerService.shared
+        timerService.stopTimer()
+        XCTAssertFalse(timerService.isRunning)
+
+        let service = AmoraProactiveService(
+            contextProvider: { self.makeTestSnapshot() },
+            memoryStore: store,
+            settingsProvider: { .conservative },
+            onSuggestionPresented: { _ in }
+        )
+
+        // 1. Evaluate timerCompleted trigger which produces a startTimer action
+        let suggestion = await service.evaluateTrigger(.timerCompleted)
+        XCTAssertNotNil(suggestion)
+        XCTAssertNotNil(suggestion?.action)
+
+        // 2. Invariant: Evaluating a trigger NEVER executes the action automatically
+        XCTAssertFalse(timerService.isRunning, "Proactive AMORA must never execute actions without explicit user approval")
+
+        // 3. User approval: Only when executeCurrentAction is invoked does execution occur
+        await service.executeCurrentAction()
+        XCTAssertTrue(timerService.isRunning, "Timer should be running after user approved action execution")
+        timerService.stopTimer()
+    }
+
+    func testActionAuthorization_consequentialActionsRequireConfirmation() async {
+        // Consequential action like clearMemories must NEVER be executed unconfirmed
+        let actionEngine = AmoraActionEngine.makeControlledForEvaluation()
+        let unconfirmedContext = AmoraActionContext(isConfirmed: false)
+
+        let result = await actionEngine.execute(.clearMemories(confirmed: false), context: unconfirmedContext)
+        XCTAssertEqual(result.status, .needsConfirmation, "Consequential actions must require explicit confirmation")
+    }
+
+    func testCooldownTracker_remainingCooldownCalculation() {
+        let tracker = AmoraProactiveCooldownTracker()
+        let now = Date(timeIntervalSince1970: 5000)
+
+        // Record 120s cooldown
+        tracker.recordTrigger(key: "test.trigger", duration: 120, now: now)
+
+        // At t = 5000, remaining is 120s
+        XCTAssertEqual(tracker.remainingCooldown(key: "test.trigger", now: now), 120)
+
+        // At t = 5050, remaining is 70s
+        let advanced = now.addingTimeInterval(50)
+        XCTAssertEqual(tracker.remainingCooldown(key: "test.trigger", now: advanced), 70)
+
+        // At t = 5130 (past duration), remaining is 0
+        let expired = now.addingTimeInterval(130)
+        XCTAssertEqual(tracker.remainingCooldown(key: "test.trigger", now: expired), 0)
+
+        // Reset clears all cooldowns
+        tracker.reset()
+        XCTAssertEqual(tracker.remainingCooldown(key: "test.trigger", now: now), 0)
+        XCTAssertFalse(tracker.isCoolingDown(key: "test.trigger", now: now))
+    }
 }

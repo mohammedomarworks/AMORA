@@ -48,6 +48,7 @@ public struct AmoraProactiveSuggestion: Identifiable, Equatable, Sendable {
     public let message: String
     public let action: AmoraAction?
     public let actionTitle: String?
+    public let snoozeDuration: TimeInterval
     public let createdAt: Date
 
     public init(
@@ -59,6 +60,7 @@ public struct AmoraProactiveSuggestion: Identifiable, Equatable, Sendable {
         message: String,
         action: AmoraAction? = nil,
         actionTitle: String? = nil,
+        snoozeDuration: TimeInterval = 300,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -69,6 +71,7 @@ public struct AmoraProactiveSuggestion: Identifiable, Equatable, Sendable {
         self.message = message
         self.action = action
         self.actionTitle = actionTitle
+        self.snoozeDuration = snoozeDuration
         self.createdAt = createdAt
     }
 }
@@ -79,6 +82,7 @@ public struct AmoraProactiveSuggestion: Identifiable, Equatable, Sendable {
 /// - Inactivity return threshold: 30 minutes (1800s)
 /// - Critical battery threshold: 10%
 /// - Timer nearly finished threshold: 60 seconds
+/// - Default snooze duration: 5 minutes (300s)
 public struct AmoraProactiveSettings: Equatable, Codable, Sendable {
     public var isEnabled: Bool
     public var timerCompletedEnabled: Bool
@@ -91,6 +95,7 @@ public struct AmoraProactiveSettings: Equatable, Codable, Sendable {
     public var batteryCriticalThresholdPercent: Int
     public var timerNearlyFinishedThresholdSeconds: Int
     public var defaultCooldownSeconds: TimeInterval
+    public var defaultSnoozeSeconds: TimeInterval
 
     public init(
         isEnabled: Bool = true,
@@ -102,7 +107,8 @@ public struct AmoraProactiveSettings: Equatable, Codable, Sendable {
         inactivityThresholdSeconds: TimeInterval = 1800,
         batteryCriticalThresholdPercent: Int = 10,
         timerNearlyFinishedThresholdSeconds: Int = 60,
-        defaultCooldownSeconds: TimeInterval = 300
+        defaultCooldownSeconds: TimeInterval = 300,
+        defaultSnoozeSeconds: TimeInterval = 300
     ) {
         self.isEnabled = isEnabled
         self.timerCompletedEnabled = timerCompletedEnabled
@@ -114,6 +120,7 @@ public struct AmoraProactiveSettings: Equatable, Codable, Sendable {
         self.batteryCriticalThresholdPercent = batteryCriticalThresholdPercent
         self.timerNearlyFinishedThresholdSeconds = timerNearlyFinishedThresholdSeconds
         self.defaultCooldownSeconds = defaultCooldownSeconds
+        self.defaultSnoozeSeconds = defaultSnoozeSeconds
     }
 
     public static let conservative = AmoraProactiveSettings()
@@ -172,4 +179,11 @@ public protocol AmoraProactiveCooldownTracking: Sendable {
     func isCoolingDown(key: String, now: Date) -> Bool
     func recordTrigger(key: String, duration: TimeInterval, now: Date)
     func reset()
+    func remainingCooldown(key: String, now: Date) -> TimeInterval
+}
+
+public extension AmoraProactiveCooldownTracking {
+    func remainingCooldown(key: String, now: Date) -> TimeInterval {
+        0
+    }
 }

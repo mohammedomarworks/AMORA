@@ -8,13 +8,20 @@ public final class AmoraAutomationService: Sendable {
     public static let shared = AmoraAutomationService()
 
     public private(set) var automations: [AmoraAutomation] = []
+    public private(set) var currentNotification: AmoraAutomationNotification?
     public let store: any AmoraAutomationStoring
     public let actionEngine: AmoraActionEngine
     public let clock: @Sendable () -> Date
     public let calendar: Calendar
 
     private var activeTimer: Timer?
-    private var lastFiredBatteryLevel: Int?
+    private var inFlightAutomationIds: Set<UUID> = []
+    private var executionChain: [UUID] = []
+    private var firedBatteryAutomationIds: Set<UUID> = []
+    private var eventExecutionCooldowns: [UUID: Date] = [:]
+    private var consecutiveLoopCount: [UUID: Int] = [:]
+    public var minimumEventCooldown: TimeInterval = 1.0
+    public var maxExecutionChainDepth: Int = 5
 
     public init(
         store: (any AmoraAutomationStoring)? = nil,
@@ -121,11 +128,18 @@ public final class AmoraAutomationService: Sendable {
                 }
             }
 
-        case .criticalBattery, .lowBattery, .charging, .chargedFull:
+        case .timerStarted:
+            // When a new timer is started (e.g. by user), reset loop counter for timer completion automations
+            consecutiveLoopCount.removeAll()
+
+        case .criticalBattery, .lowBattery:
             Task { @MainActor in
                 let currentLevel = BatteryService.shared.level
                 let matching = automations.filter { auto in
                     guard auto.enabled, case .batteryThreshold(let threshold, let comp) = auto.trigger else {
+                        return false
+                    }
+                    if firedBatteryAutomationIds.contains(auto.id) {
                         return false
                     }
                     switch comp {
@@ -136,8 +150,15 @@ public final class AmoraAutomationService: Sendable {
                     }
                 }
                 for auto in matching {
+                    firedBatteryAutomationIds.insert(auto.id)
                     await executeAutomation(auto, isManual: false)
                 }
+            }
+
+        case .charging, .chargedFull:
+            Task { @MainActor in
+                // Reset low battery fired states when power is reconnected
+                firedBatteryAutomationIds.removeAll()
             }
 
         case .launched:
@@ -150,6 +171,39 @@ public final class AmoraAutomationService: Sendable {
         }
     }
 
+    // MARK: - Notification Presentation & User Interaction
+
+    /// Presents a user-facing automation notification in the Dynamic Island.
+    public func presentNotification(_ notification: AmoraAutomationNotification) {
+        // Duplicate suppression: if current notification has identical message and automation within cooldown, ignore
+        if let current = currentNotification,
+           current.message == notification.message,
+           current.automationId == notification.automationId,
+           clock().timeIntervalSince(current.createdAt) < minimumEventCooldown {
+            return
+        }
+
+        self.currentNotification = notification
+        SoundService.shared.play(.notification)
+        if IslandModel.shared.displayState == .collapsed {
+            WindowManager.shared.expandIsland()
+        }
+    }
+
+    /// Dismisses the active automation notification.
+    public func dismissNotification() {
+        self.currentNotification = nil
+    }
+
+    /// Executes the optional action attached to the active automation notification.
+    /// Consequential actions run with explicit user authorization (isConfirmed: true) because
+    /// the user clicked the action button.
+    public func executeCurrentNotificationAction() async {
+        guard let current = currentNotification, let action = current.action else { return }
+        dismissNotification()
+        _ = await actionEngine.execute(action, context: AmoraActionContext(isConfirmed: true))
+    }
+
     // MARK: - Automation Execution & Safety Validation
 
     /// Executes an automation safely using the Action Engine.
@@ -160,34 +214,109 @@ public final class AmoraAutomationService: Sendable {
         now: Date? = nil
     ) async -> AmoraActionResult {
         let currentTime = now ?? clock()
+        let amoraAction = automation.action.asAmoraAction
 
-        // 1. Condition evaluation (if condition is present)
+        // 1. Enabled check: Non-manual execution must only run enabled automations
+        guard automation.enabled || isManual else {
+            return .unavailable(
+                actionId: amoraAction.identifier,
+                message: "Automation '\(automation.name)' is disabled."
+            )
+        }
+
+        // 2. Loop prevention: In-flight recursion and cycle detection
+        guard !inFlightAutomationIds.contains(automation.id) else {
+            return .unavailable(
+                actionId: amoraAction.identifier,
+                message: "Loop prevented: Automation '\(automation.name)' is currently executing."
+            )
+        }
+        guard !executionChain.contains(automation.id) else {
+            return .unavailable(
+                actionId: amoraAction.identifier,
+                message: "Loop detected: Automation '\(automation.name)' forms a cycle in the active execution chain."
+            )
+        }
+        guard executionChain.count < maxExecutionChainDepth else {
+            return .unavailable(
+                actionId: amoraAction.identifier,
+                message: "Execution chain depth limit reached (\(maxExecutionChainDepth))."
+            )
+        }
+
+        // 3. Loop prevention: Timer completion self-loop guard
+        if !isManual, automation.trigger == .timerCompletion, case .startTimer = automation.action {
+            if consecutiveLoopCount[automation.id, default: 0] >= 1 {
+                return .unavailable(
+                    actionId: amoraAction.identifier,
+                    message: "Loop prevented: Automation '\(automation.name)' attempted repeated timer completion self-triggering."
+                )
+            }
+            consecutiveLoopCount[automation.id, default: 0] += 1
+        }
+
+        // 4. Duplicate suppression / cooldown for automated event triggers
+        let isBatteryTrigger: Bool
+        if case .batteryThreshold = automation.trigger {
+            isBatteryTrigger = true
+        } else {
+            isBatteryTrigger = false
+        }
+        if !isManual && !isBatteryTrigger, let lastFired = eventExecutionCooldowns[automation.id] {
+            if currentTime.timeIntervalSince(lastFired) < minimumEventCooldown {
+                return .unavailable(
+                    actionId: amoraAction.identifier,
+                    message: "Suppressed: Automation '\(automation.name)' fired too recently."
+                )
+            }
+        }
+
+        // 5. Condition evaluation (if condition is present)
         if let condition = automation.condition {
             let snapshot = AmoraContextProvider.shared.currentSnapshot
             guard condition.evaluate(snapshot: snapshot) else {
                 return .unavailable(
-                    actionId: automation.action.asAmoraAction.identifier,
+                    actionId: amoraAction.identifier,
                     message: "Automation condition was not met."
                 )
             }
         }
 
-        // 2. Action Engine safety and validation
-        let amoraAction = automation.action.asAmoraAction
+        // 6. Action Engine safety and validation
         let validation = actionEngine.validate(amoraAction)
         switch validation {
         case .invalid(let reason):
             return .invalidInput(actionId: amoraAction.identifier, message: reason)
         case .requiresConfirmation(let prompt) where !isManual:
             // Background automation cannot execute sensitive actions requiring confirmation
+            let notif = AmoraAutomationNotification(
+                automationId: automation.id,
+                automationName: automation.name,
+                triggerIcon: automation.trigger.systemImage,
+                triggerName: automation.trigger.displayName,
+                message: prompt,
+                action: amoraAction,
+                actionTitle: amoraAction.humanReadableName
+            )
+            self.presentNotification(notif)
             return .needsConfirmation(actionId: amoraAction.identifier, prompt: prompt)
         case .valid, .requiresConfirmation:
             break
         }
 
-        // 3. Sensitive action confirmation requirement
+        // 7. Sensitive action confirmation requirement
         if !isManual, let def = actionEngine.registry.definition(for: amoraAction.identifier) {
             if def.isConfirmationRequiredByDefault {
+                let notif = AmoraAutomationNotification(
+                    automationId: automation.id,
+                    automationName: automation.name,
+                    triggerIcon: automation.trigger.systemImage,
+                    triggerName: automation.trigger.displayName,
+                    message: "This action requires user confirmation before execution.",
+                    action: amoraAction,
+                    actionTitle: amoraAction.humanReadableName
+                )
+                self.presentNotification(notif)
                 return .needsConfirmation(
                     actionId: amoraAction.identifier,
                     prompt: "This action requires user confirmation before execution."
@@ -195,14 +324,59 @@ public final class AmoraAutomationService: Sendable {
             }
         }
 
-        // 4. Execution via Action Engine
+        // 8. Execution via Action Engine with in-flight & chain tracking
+        inFlightAutomationIds.insert(automation.id)
+        executionChain.append(automation.id)
+        eventExecutionCooldowns[automation.id] = currentTime
+
+        defer {
+            inFlightAutomationIds.remove(automation.id)
+            if !executionChain.isEmpty {
+                executionChain.removeLast()
+            }
+        }
+
+        var metadata: [String: String] = [
+            "automationId": automation.id.uuidString,
+            "automationName": automation.name,
+            "triggerIcon": automation.trigger.systemImage,
+            "triggerName": automation.trigger.displayName
+        ]
+        let defaultAction: AmoraAction?
+        let defaultActionTitle: String?
+        if automation.trigger == .timerCompletion {
+            defaultAction = .startTimer(duration: 300)
+            defaultActionTitle = "5m Break"
+            metadata["actionId"] = "timer.start"
+            metadata["actionTitle"] = "5m Break"
+            metadata["actionDuration"] = "300"
+        } else {
+            defaultAction = nil
+            defaultActionTitle = nil
+        }
         let context = AmoraActionContext(
             isConfirmed: isManual,
+            metadata: metadata,
             snapshot: AmoraContextProvider.shared.currentSnapshot
         )
+
+        // For showNotification action, present notification directly on this service
+        if case .showNotification(let msg) = automation.action {
+            let notification = AmoraAutomationNotification(
+                automationId: automation.id,
+                automationName: automation.name,
+                triggerIcon: automation.trigger.systemImage,
+                triggerName: automation.trigger.displayName,
+                message: msg,
+                action: defaultAction,
+                actionTitle: defaultActionTitle
+            )
+            self.presentNotification(notification)
+        }
+
         let result = await actionEngine.execute(amoraAction, context: context)
 
-        // 5. Update lastRunAt, updatedAt, and deterministic nextRunAt
+        // 9. Update lastRunAt, updatedAt, and deterministic nextRunAt
         var updated = automation
         updated.lastRunAt = currentTime
         updated.updatedAt = currentTime
@@ -323,6 +497,11 @@ public final class AmoraAutomationService: Sendable {
         activeTimer?.invalidate()
         activeTimer = nil
         self.automations = []
-        self.lastFiredBatteryLevel = nil
+        self.inFlightAutomationIds.removeAll()
+        self.executionChain.removeAll()
+        self.firedBatteryAutomationIds.removeAll()
+        self.eventExecutionCooldowns.removeAll()
+        self.consecutiveLoopCount.removeAll()
+        self.currentNotification = nil
     }
 }
