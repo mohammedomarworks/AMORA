@@ -301,6 +301,8 @@ struct ActionExecutionView: View {
             Image(systemName: "shield.lefthalf.filled").font(.system(size: 11)).foregroundStyle(.yellow)
         case .showNotification:
             Image(systemName: "bell.fill").font(.system(size: 11)).foregroundStyle(.indigo)
+        case .saveMemory, .forgetMemory, .updateMemory, .clearMemories:
+            Image(systemName: "brain.head.profile").font(.system(size: 11)).foregroundStyle(.teal)
         }
     }
 

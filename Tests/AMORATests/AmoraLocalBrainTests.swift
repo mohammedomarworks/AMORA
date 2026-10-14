@@ -474,7 +474,7 @@ final class AmoraLocalBrainTests: XCTestCase {
         _ = manager.checkStatusSync()
 
         let memoryStore = AmoraMemoryStore(storage: AmoraInMemoryStorage())
-        _ = await memoryStore.save(key: "Favorite editor", value: "VS Code")
+        _ = try? await memoryStore.save(key: "Favorite editor", value: "VS Code")
 
         let provider = AmoraLocalBrainProvider(runtime: runtime, modelManager: manager)
         let assistant = AssistantManager(provider: provider, providerIsInjected: true, memoryStore: memoryStore)

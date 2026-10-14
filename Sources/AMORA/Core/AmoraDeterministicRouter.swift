@@ -27,6 +27,24 @@ enum AmoraDeterministicRouter {
         let n = AMORACommandParser.normalize(trimmed)
         guard !n.isEmpty else { return nil }
 
+        // 0. Explicit memory commands (deterministic local routing)
+        if let memoryCommand = AmoraMemoryCommandParser.shared.parse(trimmed) {
+            switch memoryCommand {
+            case .remember(let key, let value):
+                return .toolCall(name: "remember_fact", arguments: ["key": key, "value": value])
+            case .recall(let query):
+                return .toolCall(name: "recall_memory", arguments: ["query": query])
+            case .update(let target, let newValue):
+                return .toolCall(name: "update_memory", arguments: ["key": target, "value": newValue])
+            case .forget(let query):
+                return .toolCall(name: "forget_memory", arguments: ["query": query])
+            case .list:
+                return .toolCall(name: "list_memories", arguments: [:])
+            case .clearAll(let confirmed):
+                return .toolCall(name: "clear_memories", arguments: ["confirmed": "\(confirmed)"])
+            }
+        }
+
         // 1. Note search ("find my notes about X") — before battery/app so that
         //    "...notes about battery" is treated as a search, not a battery read.
         if let query = noteSearchQuery(n) {
@@ -90,6 +108,14 @@ enum AmoraDeterministicRouter {
             return .toolCall(name: "system.confirm_test", arguments: ["name": name, "prompt": prompt])
         case .showNotification:
             return nil
+        case .saveMemory(let key, let value):
+            return .toolCall(name: "remember_fact", arguments: ["key": key, "value": value])
+        case .updateMemory(let target, let newValue):
+            return .toolCall(name: "update_memory", arguments: ["key": target, "value": newValue])
+        case .forgetMemory(let query):
+            return .toolCall(name: "forget_memory", arguments: ["query": query])
+        case .clearMemories(let confirmed):
+            return .toolCall(name: "clear_memories", arguments: ["confirmed": "\(confirmed)"])
         }
     }
 

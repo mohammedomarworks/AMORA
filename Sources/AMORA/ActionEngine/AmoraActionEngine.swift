@@ -22,6 +22,7 @@ public final class AmoraActionEngine: Sendable {
         folderOpener: any AmoraFolderOpening = NativeAmoraFolderOpener(),
         workspaceController: any AmoraWorkspaceControlling = DefaultAmoraWorkspaceController(),
         timerController: any AmoraTimerControlling = DefaultAmoraTimerController(),
+        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared,
         decider: any AmoraActionDeciding = AmoraActionDecisionEngine()
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
@@ -31,7 +32,8 @@ public final class AmoraActionEngine: Sendable {
             appLauncher: appLauncher,
             folderOpener: folderOpener,
             workspaceController: workspaceController,
-            timerController: timerController
+            timerController: timerController,
+            memoryStore: memoryStore
         )
         return AmoraActionEngine(registry: registry, decider: decider)
     }
@@ -40,7 +42,8 @@ public final class AmoraActionEngine: Sendable {
     /// that validate targets without launching applications or opening Finder windows.
     public static func makeControlledForEvaluation(
         onAppOpen: (@Sendable (URL) -> Void)? = nil,
-        onFolderOpen: (@Sendable (URL) -> Void)? = nil
+        onFolderOpen: (@Sendable (URL) -> Void)? = nil,
+        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore(storage: AmoraInMemoryStorage())
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
         registerDefaultActions(
@@ -49,7 +52,8 @@ public final class AmoraActionEngine: Sendable {
             appLauncher: ControlledAmoraApplicationLauncher(onOpen: onAppOpen),
             folderOpener: ControlledAmoraFolderOpener(onOpen: onFolderOpen),
             workspaceController: ControlledAmoraWorkspaceController(),
-            timerController: DefaultAmoraTimerController()
+            timerController: DefaultAmoraTimerController(),
+            memoryStore: memoryStore
         )
         return AmoraActionEngine(registry: registry, decider: AmoraActionDecisionEngine())
     }
@@ -311,7 +315,8 @@ public final class AmoraActionEngine: Sendable {
         appLauncher: any AmoraApplicationLaunching,
         folderOpener: any AmoraFolderOpening,
         workspaceController: any AmoraWorkspaceControlling,
-        timerController: any AmoraTimerControlling
+        timerController: any AmoraTimerControlling,
+        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared
     ) {
         // --- 1. Media: Play ---
         registry.register(AmoraActionDefinition(
@@ -568,6 +573,162 @@ public final class AmoraActionEngine: Sendable {
                     actionId: "system.confirm_test",
                     message: "Confirmed and executed '\(name)'."
                 )
+            }
+        ))
+
+        // --- 13. Memory: Save ---
+        registry.register(AmoraActionDefinition(
+            identifier: "memory.save",
+            name: "Save Memory",
+            description: "Persists a memorable fact, preference, or project explicitly requested by the user.",
+            validator: { action in
+                guard case .saveMemory(let key, let value) = action else {
+                    return .invalid(reason: "Invalid action payload for memory.save.")
+                }
+                let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmedKey.isEmpty || trimmedValue.isEmpty {
+                    return .invalid(reason: "Memory key and value cannot be empty.")
+                }
+                let validation = AmoraMemoryPrivacyValidator.shared.validate(key: trimmedKey, value: trimmedValue)
+                if case .rejected(let reason) = validation {
+                    return .invalid(reason: reason)
+                }
+                return .valid
+            },
+            handler: { action, _ in
+                guard case .saveMemory(let key, let value) = action else {
+                    return .invalidInput(actionId: "memory.save", message: "Missing key or value.")
+                }
+                do {
+                    try await memoryStore.save(key: key, value: value)
+                    return .success(
+                        actionId: "memory.save",
+                        message: "Remembered that \(key) is \(value).",
+                        data: ["key": key, "value": value]
+                    )
+                } catch {
+                    return .failed(
+                        actionId: "memory.save",
+                        message: "Failed to save memory: \(error.localizedDescription)"
+                    )
+                }
+            }
+        ))
+
+        // --- 14. Memory: Forget ---
+        registry.register(AmoraActionDefinition(
+            identifier: "memory.forget",
+            name: "Forget Memory",
+            description: "Deletes matching stored memories matching a topic or query.",
+            validator: { action in
+                guard case .forgetMemory(let query) = action else {
+                    return .invalid(reason: "Invalid action payload for memory.forget.")
+                }
+                let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmedQuery.isEmpty ? .invalid(reason: "Query cannot be empty.") : .valid
+            },
+            handler: { action, _ in
+                guard case .forgetMemory(let query) = action else {
+                    return .invalidInput(actionId: "memory.forget", message: "Missing query.")
+                }
+                do {
+                    let deleted = try await memoryStore.deleteMatching(query: query)
+                    if !deleted.isEmpty {
+                        let count = deleted.count
+                        return .success(
+                            actionId: "memory.forget",
+                            message: "Removed \(count) memory item\(count == 1 ? "" : "s") matching '\(query)'.",
+                            data: ["query": query, "deletedCount": "\(count)"]
+                        )
+                    } else {
+                        return .unavailable(
+                            actionId: "memory.forget",
+                            message: "I couldn't find any saved memories matching '\(query)'."
+                        )
+                    }
+                } catch {
+                    return .failed(
+                        actionId: "memory.forget",
+                        message: "Failed to remove memory: \(error.localizedDescription)"
+                    )
+                }
+            }
+        ))
+
+        // --- 15. Memory: Update ---
+        registry.register(AmoraActionDefinition(
+            identifier: "memory.update",
+            name: "Update Memory",
+            description: "Updates a matching stored memory with a new value.",
+            validator: { action in
+                guard case .updateMemory(let target, let newValue) = action else {
+                    return .invalid(reason: "Invalid action payload for memory.update.")
+                }
+                let trimmedTarget = target.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmedValue = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmedTarget.isEmpty || trimmedValue.isEmpty {
+                    return .invalid(reason: "Target and value cannot be empty.")
+                }
+                let validation = AmoraMemoryPrivacyValidator.shared.validate(key: trimmedTarget, value: trimmedValue)
+                if case .rejected(let reason) = validation {
+                    return .invalid(reason: reason)
+                }
+                return .valid
+            },
+            handler: { action, _ in
+                guard case .updateMemory(let target, let newValue) = action else {
+                    return .invalidInput(actionId: "memory.update", message: "Missing target or value.")
+                }
+                do {
+                    if let updated = try await memoryStore.updateMatching(query: target, newValue: newValue, newKey: nil) {
+                        return .success(
+                            actionId: "memory.update",
+                            message: "Updated \(updated.key) to: \(updated.value).",
+                            data: ["key": updated.key, "value": updated.value]
+                        )
+                    } else {
+                        return .unavailable(
+                            actionId: "memory.update",
+                            message: "I couldn't find any saved memories matching '\(target)' to update."
+                        )
+                    }
+                } catch {
+                    return .failed(
+                        actionId: "memory.update",
+                        message: "Failed to update memory: \(error.localizedDescription)"
+                    )
+                }
+            }
+        ))
+
+        // --- 16. Memory: Clear All ---
+        registry.register(AmoraActionDefinition(
+            identifier: "memory.clear",
+            name: "Clear Memories",
+            description: "Clears all stored memories (requires confirmation).",
+            validator: { action in
+                guard case .clearMemories = action else {
+                    return .invalid(reason: "Invalid action payload for memory.clear.")
+                }
+                return .valid
+            },
+            handler: { action, context in
+                guard case .clearMemories(let confirmed) = action else {
+                    return .invalidInput(actionId: "memory.clear", message: "Invalid payload.")
+                }
+                guard confirmed || context.isConfirmed else {
+                    return .needsConfirmation(
+                        actionId: "memory.clear",
+                        prompt: "Are you sure you want me to forget everything? This will permanently delete all stored memories."
+                    )
+                }
+                do {
+                    try await memoryStore.clearAll()
+                    return .success(actionId: "memory.clear", message: "Cleared all stored memories.")
+                } catch {
+                    return .failed(actionId: "memory.clear", message: "Failed to clear memories: \(error.localizedDescription)")
+                }
             }
         ))
     }

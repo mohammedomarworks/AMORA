@@ -12,17 +12,20 @@ final class AmoraAgentLoop {
     private let toolRegistry: AMORAToolRegistry
     private let actionEngine: AmoraActionEngine
     private let coordinator: AmoraActionExecutionCoordinator
+    private let memoryStore: any AmoraMemoryStoring
 
     init(
         provider: any AIProvider,
         toolRegistry: AMORAToolRegistry = .shared,
         actionEngine: AmoraActionEngine = .shared,
-        coordinator: AmoraActionExecutionCoordinator = .shared
+        coordinator: AmoraActionExecutionCoordinator = .shared,
+        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared
     ) {
         self.provider = provider
         self.toolRegistry = toolRegistry
         self.actionEngine = actionEngine
         self.coordinator = coordinator
+        self.memoryStore = memoryStore
     }
 
     /// Result of running the bounded agent loop.
@@ -37,19 +40,22 @@ final class AmoraAgentLoop {
         let completedSuccessfully: Bool
         let attemptedTools: [String]
         let executedTools: [ExecutedToolCall]
+        let usedMemory: Bool
 
         init(
             finalAnswer: String,
             executedToolCount: Int,
             completedSuccessfully: Bool,
             attemptedTools: [String] = [],
-            executedTools: [ExecutedToolCall] = []
+            executedTools: [ExecutedToolCall] = [],
+            usedMemory: Bool = false
         ) {
             self.finalAnswer = finalAnswer
             self.executedToolCount = executedToolCount
             self.completedSuccessfully = completedSuccessfully
             self.attemptedTools = attemptedTools
             self.executedTools = executedTools
+            self.usedMemory = usedMemory
         }
     }
 
@@ -66,12 +72,15 @@ final class AmoraAgentLoop {
         var executedToolSummaries: [String] = []
         var attemptedTools: [String] = []
         var executedTools: [LoopResult.ExecutedToolCall] = []
+        var usedMemory = false
 
         // 1. Build initial messages
         var messages: [AIMessage] = []
 
+        let isLocalProvider = settings.provider.isLocalOrOnDevice && provider.kind.isLocalOrOnDevice
+
         // System prompt with tool definitions and decision format
-        messages.append(AIMessage(role: .user, content: Self.systemInstructions))
+        messages.append(AIMessage(role: .user, content: Self.systemInstructions(isLocalProvider: isLocalProvider)))
 
         // Context awareness check
         if settings.contextAwarenessEnabled {
@@ -82,16 +91,23 @@ final class AmoraAgentLoop {
         }
 
         // Memory check
-        if settings.memoryEnabled, let memoryStore {
-            let relevant = await memoryStore.relevantMemories(for: input, limit: 3)
+        // Privacy: Never silently send stored memories to remote AI providers.
+        let store = memoryStore ?? self.memoryStore
+        if settings.memoryEnabled && isLocalProvider {
+            let relevant = await store.relevantMemories(for: input, limit: 3)
             if !relevant.isEmpty {
+                usedMemory = true
                 let formatted = relevant.map { "- \($0.key): \($0.value)" }.joined(separator: "\n")
-                messages.append(AIMessage(role: .user, content: "[Relevant user memories]\n\(formatted)"))
+                messages.append(AIMessage(role: .user, content: "[Relevant user memories]\n\(formatted)", provenance: .memoryDerived))
             }
         }
 
         // Include existing conversation history (recent messages)
+        // Privacy: Filter out memory-derived messages when querying remote providers
         for msg in conversationHistory {
+            if !isLocalProvider && (msg.provenance == .memoryDerived || msg.content.contains("[Relevant user memories]")) {
+                continue
+            }
             messages.append(msg)
         }
 
@@ -141,14 +157,16 @@ final class AmoraAgentLoop {
                     return LoopResult(
                         finalAnswer: executedToolSummaries.joined(separator: " "),
                         executedToolCount: toolExecutionCount,
-                        completedSuccessfully: true
+                        completedSuccessfully: true,
+                        usedMemory: usedMemory
                     )
                 }
                 coordinator.didFailItem(at: coordinator.currentIndex, result: .invalidInput(actionId: "model.output", message: error.localizedDescription))
                 return LoopResult(
                     finalAnswer: "I received an unreadable response from the local model and stopped safely.",
                     executedToolCount: toolExecutionCount,
-                    completedSuccessfully: false
+                    completedSuccessfully: false,
+                    usedMemory: usedMemory
                 )
             }
 
@@ -162,7 +180,8 @@ final class AmoraAgentLoop {
                     executedToolCount: toolExecutionCount,
                     completedSuccessfully: true,
                     attemptedTools: attemptedTools,
-                    executedTools: executedTools
+                    executedTools: executedTools,
+                    usedMemory: usedMemory
                 )
 
             case .toolCall(let toolName, let arguments):
@@ -187,8 +206,13 @@ final class AmoraAgentLoop {
                         executedToolCount: toolExecutionCount,
                         completedSuccessfully: true,
                         attemptedTools: attemptedTools,
-                        executedTools: executedTools
+                        executedTools: executedTools,
+                        usedMemory: usedMemory
                     )
+                }
+
+                if actualToolName.contains("memory") || actualToolName == "remember_fact" || actualToolName == "recall_memory" || actualToolName == "forget_memory" || actualToolName == "list_memories" {
+                    usedMemory = true
                 }
 
                 toolExecutionCount += 1
@@ -198,7 +222,9 @@ final class AmoraAgentLoop {
                     name: actualToolName,
                     arguments: arguments,
                     toolIndex: toolExecutionCount - 1,
-                    contextAwarenessEnabled: settings.contextAwarenessEnabled
+                    settings: settings,
+                    memoryStore: store,
+                    userInput: input
                 )
 
                 if executionResult.deniedConfirmation {
@@ -207,7 +233,8 @@ final class AmoraAgentLoop {
                         executedToolCount: toolExecutionCount,
                         completedSuccessfully: false,
                         attemptedTools: attemptedTools,
-                        executedTools: executedTools
+                        executedTools: executedTools,
+                        usedMemory: usedMemory
                     )
                 }
 
@@ -226,7 +253,8 @@ final class AmoraAgentLoop {
                         executedToolCount: toolExecutionCount,
                         completedSuccessfully: false,
                         attemptedTools: attemptedTools,
-                        executedTools: executedTools
+                        executedTools: executedTools,
+                        usedMemory: usedMemory
                     )
                 }
 
@@ -242,6 +270,9 @@ final class AmoraAgentLoop {
                     if isTimerCancellationInput && (actualCallName.contains("timer") || actualCallName == "create_timer") {
                         actualCallName = "timer.cancel"
                     }
+                    if actualCallName.contains("memory") || actualCallName == "remember_fact" || actualCallName == "recall_memory" || actualCallName == "forget_memory" || actualCallName == "list_memories" {
+                        usedMemory = true
+                    }
                     attemptedTools.append(actualCallName)
                     toolExecutionCount += 1
                     executedTools.append(.init(name: actualCallName, arguments: call.arguments))
@@ -249,7 +280,9 @@ final class AmoraAgentLoop {
                         name: actualCallName,
                         arguments: call.arguments,
                         toolIndex: toolExecutionCount - 1,
-                        contextAwarenessEnabled: settings.contextAwarenessEnabled
+                        settings: settings,
+                        memoryStore: store,
+                        userInput: input
                     )
                     if result.deniedConfirmation {
                         return LoopResult(
@@ -257,7 +290,8 @@ final class AmoraAgentLoop {
                             executedToolCount: toolExecutionCount,
                             completedSuccessfully: false,
                             attemptedTools: attemptedTools,
-                            executedTools: executedTools
+                            executedTools: executedTools,
+                            usedMemory: usedMemory
                         )
                     }
                     batchOutputs.append(result.output)
@@ -271,7 +305,8 @@ final class AmoraAgentLoop {
                     executedToolCount: toolExecutionCount,
                     completedSuccessfully: true,
                     attemptedTools: attemptedTools,
-                    executedTools: executedTools
+                    executedTools: executedTools,
+                    usedMemory: usedMemory
                 )
             }
         }
@@ -293,7 +328,8 @@ final class AmoraAgentLoop {
                     executedToolCount: toolExecutionCount,
                     completedSuccessfully: true,
                     attemptedTools: attemptedTools,
-                    executedTools: executedTools
+                    executedTools: executedTools,
+                    usedMemory: usedMemory
                 )
             }
         } catch {
@@ -306,7 +342,8 @@ final class AmoraAgentLoop {
             executedToolCount: toolExecutionCount,
             completedSuccessfully: true,
             attemptedTools: attemptedTools,
-            executedTools: executedTools
+            executedTools: executedTools,
+            usedMemory: usedMemory
         )
     }
 
@@ -315,9 +352,14 @@ final class AmoraAgentLoop {
     /// uses — so validation, unit handling, and confirmation are identical. Returns
     /// nil when the request is not a recognised local intent, in which case the
     /// caller should fall back to the model-driven `run(...)`.
-    func runDeterministic(input: String, settings: AISettingsSnapshot) async -> LoopResult? {
+    func runDeterministic(
+        input: String,
+        settings: AISettingsSnapshot,
+        memoryStore: (any AmoraMemoryStoring)? = nil
+    ) async -> LoopResult? {
         guard let decision = AmoraDeterministicRouter.decision(for: input) else { return nil }
         coordinator.beginThinking()
+        let store = memoryStore ?? self.memoryStore
 
         switch decision {
         case .finalAnswer(let text):
@@ -325,11 +367,14 @@ final class AmoraAgentLoop {
             return LoopResult(finalAnswer: text, executedToolCount: 0, completedSuccessfully: true, attemptedTools: [], executedTools: [])
 
         case .toolCall(let name, let args):
+            let usedMemory = name.contains("memory")
             let r = await executeTool(
                 name: name,
                 arguments: args,
                 toolIndex: 0,
-                contextAwarenessEnabled: settings.contextAwarenessEnabled
+                settings: settings,
+                memoryStore: store,
+                userInput: input
             )
             if r.deniedConfirmation {
                 return LoopResult(
@@ -337,7 +382,8 @@ final class AmoraAgentLoop {
                     executedToolCount: 1,
                     completedSuccessfully: false,
                     attemptedTools: [name],
-                    executedTools: [.init(name: name, arguments: args)]
+                    executedTools: [.init(name: name, arguments: args)],
+                    usedMemory: usedMemory
                 )
             }
             coordinator.reset()
@@ -346,18 +392,23 @@ final class AmoraAgentLoop {
                 executedToolCount: 1,
                 completedSuccessfully: r.isSuccess,
                 attemptedTools: [name],
-                executedTools: [.init(name: name, arguments: args)]
+                executedTools: [.init(name: name, arguments: args)],
+                usedMemory: usedMemory
             )
 
         case .toolBatch(let batch):
             var outputs: [String] = []
             var idx = 0
+            var batchUsedMemory = false
             for call in batch {
+                if call.name.contains("memory") { batchUsedMemory = true }
                 let r = await executeTool(
                     name: call.name,
                     arguments: call.arguments,
                     toolIndex: idx,
-                    contextAwarenessEnabled: settings.contextAwarenessEnabled
+                    settings: settings,
+                    memoryStore: store,
+                    userInput: input
                 )
                 idx += 1
                 if r.deniedConfirmation {
@@ -366,7 +417,8 @@ final class AmoraAgentLoop {
                         executedToolCount: idx,
                         completedSuccessfully: false,
                         attemptedTools: batch.map(\.name),
-                        executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) }
+                        executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) },
+                        usedMemory: batchUsedMemory
                     )
                 }
                 outputs.append(r.output)
@@ -377,7 +429,8 @@ final class AmoraAgentLoop {
                 executedToolCount: idx,
                 completedSuccessfully: true,
                 attemptedTools: batch.map(\.name),
-                executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) }
+                executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) },
+                usedMemory: batchUsedMemory
             )
         }
     }
@@ -387,9 +440,24 @@ final class AmoraAgentLoop {
         settings: AISettingsSnapshot,
         timeoutSeconds: Double
     ) async throws -> String {
-        try await withThrowingTaskGroup(of: String.self) { group in
+        let isLocal = settings.provider.isLocalOrOnDevice && provider.kind.isLocalOrOnDevice
+        let outboundMessages: [AIMessage]
+        if !isLocal {
+            // Privacy guard: Ensure no outbound message sent to remote providers contains saved memories
+            outboundMessages = messages.compactMap { msg in
+                guard msg.provenance != .memoryDerived else { return nil }
+                guard !msg.content.contains("[Relevant user memories]") else { return nil }
+                let trimmed = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return AIMessage(role: msg.role, content: trimmed, timestamp: msg.timestamp, provenance: msg.provenance)
+            }
+        } else {
+            outboundMessages = messages
+        }
+
+        return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask {
-                try await self.provider.send(messages: messages, model: settings.model, apiKey: settings.apiKey)
+                try await self.provider.send(messages: outboundMessages, model: settings.model, apiKey: settings.apiKey)
             }
             group.addTask {
                 let nanoseconds = UInt64(timeoutSeconds * 1_000_000_000)
@@ -417,8 +485,13 @@ final class AmoraAgentLoop {
         name: String,
         arguments: [String: String],
         toolIndex: Int,
-        contextAwarenessEnabled: Bool
+        settings: AISettingsSnapshot,
+        memoryStore: (any AmoraMemoryStoring)? = nil,
+        userInput: String = ""
     ) async -> ToolExecutionResult {
+        let store = memoryStore ?? self.memoryStore
+        let isLocalProvider = settings.provider.isLocalOrOnDevice && provider.kind.isLocalOrOnDevice
+        let contextAwarenessEnabled = settings.contextAwarenessEnabled
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         // 1. Initial Priority Tool: search_notes
@@ -637,6 +710,313 @@ final class AmoraAgentLoop {
             return ToolExecutionResult(isSuccess: result.status == .success, output: result.message, deniedConfirmation: false)
         }
 
+        // 11. Memory: remember_fact
+        if normalized == "remember_fact" || normalized == "rememberfact" || normalized == "memory.save" || normalized == "save_memory" {
+            guard settings.memoryEnabled else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Memory is turned off in Settings. Turn on Memory to save memories.",
+                    deniedConfirmation: false
+                )
+            }
+
+            // Enforce explicit user intent: never save memories from unrelated queries
+            guard AmoraMemoryCommandParser.hasExplicitRememberIntent(userInput) else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "I only save memories when you explicitly ask me to remember something.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let key = arguments["key"] ?? arguments["name"] ?? arguments["title"] ?? arguments["topic"] ?? ""
+            let value = arguments["value"] ?? arguments["fact"] ?? arguments["content"] ?? arguments["text"] ?? ""
+            let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !trimmedKey.isEmpty && !trimmedValue.isEmpty else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Missing required 'key' or 'value' for remember_fact.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let validation = AmoraMemoryPrivacyValidator.shared.validate(key: trimmedKey, value: trimmedValue)
+            if case .rejected(let reason) = validation {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: reason,
+                    deniedConfirmation: false
+                )
+            }
+
+            do {
+                let saved = try await store.save(key: trimmedKey, value: trimmedValue)
+                await AmoraMemoryService.shared.refresh()
+                let msg: String
+                if isLocalProvider {
+                    if saved.key.caseInsensitiveCompare(saved.value) == .orderedSame || saved.value.lowercased().contains(saved.key.lowercased()) {
+                        msg = "I'll remember that: \(saved.value)."
+                    } else {
+                        msg = "I'll remember that \(saved.key): \(saved.value)."
+                    }
+                } else {
+                    msg = "Memory saved locally to device."
+                }
+                return ToolExecutionResult(isSuccess: true, output: msg, deniedConfirmation: false)
+            } catch {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "I couldn't save that memory because local storage failed.",
+                    deniedConfirmation: false
+                )
+            }
+        }
+
+        // 12. Memory: recall_memory
+        if normalized == "recall_memory" || normalized == "recallmemory" || normalized == "memory.recall" || normalized == "search_memory" || normalized == "memory.search" {
+            guard settings.memoryEnabled else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Memory is turned off in Settings.",
+                    deniedConfirmation: false
+                )
+            }
+
+            guard isLocalProvider else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Memory recall is restricted to on-device models to protect your privacy and is unavailable with remote AI providers.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let query = arguments["query"] ?? arguments["q"] ?? arguments["text"] ?? arguments["key"] ?? ""
+            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedQuery.isEmpty else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Missing required 'query' parameter for recall_memory.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let results = await store.relevantMemories(for: trimmedQuery, limit: 5)
+            if results.isEmpty {
+                return ToolExecutionResult(
+                    isSuccess: true,
+                    output: "I couldn't find any saved memories matching '\(trimmedQuery)'.",
+                    deniedConfirmation: false
+                )
+            } else if results.count == 1, let item = results.first {
+                let msg: String
+                if item.key.caseInsensitiveCompare(item.value) == .orderedSame || item.value.lowercased().contains(item.key.lowercased()) {
+                    msg = "You told me: \(item.value)."
+                } else {
+                    msg = "I remember that \(item.key): \(item.value)."
+                }
+                return ToolExecutionResult(isSuccess: true, output: msg, deniedConfirmation: false)
+            } else {
+                let list = results.map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
+                let msg = "Here is what I remember about '\(trimmedQuery)':\n\(list)"
+                return ToolExecutionResult(isSuccess: true, output: msg, deniedConfirmation: false)
+            }
+        }
+
+        // 13. Memory: forget_memory
+        if normalized == "forget_memory" || normalized == "forgetmemory" || normalized == "memory.forget" || normalized == "delete_memory" {
+            // Enforce explicit user intent: never delete memories on unrelated deletion requests (e.g. notes)
+            guard AmoraMemoryCommandParser.hasExplicitForgetIntent(userInput) else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "I only delete memories when you explicitly ask me to forget or delete them.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let query = arguments["query"] ?? arguments["target"] ?? arguments["key"] ?? arguments["topic"] ?? ""
+            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedQuery.isEmpty else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Missing required 'query' parameter for forget_memory.",
+                    deniedConfirmation: false
+                )
+            }
+
+            do {
+                let deleted = try await store.deleteMatching(query: trimmedQuery)
+                if deleted.isEmpty {
+                    return ToolExecutionResult(
+                        isSuccess: true,
+                        output: "I don't have a memory matching '\(trimmedQuery)'.",
+                        deniedConfirmation: false
+                    )
+                } else {
+                    await AmoraMemoryService.shared.refresh()
+                    let msg: String
+                    if isLocalProvider {
+                        let deletedNames = deleted.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+                        msg = "I've forgotten that: \(deletedNames)."
+                    } else {
+                        msg = "Memory removed from local storage."
+                    }
+                    return ToolExecutionResult(
+                        isSuccess: true,
+                        output: msg,
+                        deniedConfirmation: false
+                    )
+                }
+            } catch {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "I couldn't remove that memory because local storage failed.",
+                    deniedConfirmation: false
+                )
+            }
+        }
+
+        // 13b. Memory: update_memory
+        if normalized == "update_memory" || normalized == "updatememory" || normalized == "memory.update" || normalized == "modify_memory" {
+            guard settings.memoryEnabled else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Memory is turned off in Settings. Turn on Memory to update memories.",
+                    deniedConfirmation: false
+                )
+            }
+
+            guard AmoraMemoryCommandParser.hasExplicitUpdateIntent(userInput) else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "I only update memories when you explicitly ask me to change or update them.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let key = arguments["key"] ?? arguments["target"] ?? arguments["name"] ?? arguments["topic"] ?? ""
+            let value = arguments["value"] ?? arguments["newValue"] ?? arguments["new_value"] ?? arguments["text"] ?? ""
+            let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !trimmedKey.isEmpty && !trimmedValue.isEmpty else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Missing required 'target' or 'value' for update_memory.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let validation = AmoraMemoryPrivacyValidator.shared.validate(key: trimmedKey, value: trimmedValue)
+            if case .rejected(let reason) = validation {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: reason,
+                    deniedConfirmation: false
+                )
+            }
+
+            do {
+                if let updated = try await store.updateMatching(query: trimmedKey, newValue: trimmedValue, newKey: nil) {
+                    await AmoraMemoryService.shared.refresh()
+                    let msg: String
+                    if isLocalProvider {
+                        msg = "I've updated your \(updated.key) to: \(updated.value)."
+                    } else {
+                        msg = "Memory updated locally on device."
+                    }
+                    return ToolExecutionResult(isSuccess: true, output: msg, deniedConfirmation: false)
+                } else {
+                    let saved = try await store.save(key: trimmedKey, value: trimmedValue)
+                    await AmoraMemoryService.shared.refresh()
+                    let msg: String
+                    if isLocalProvider {
+                        msg = "I didn't find an existing memory matching that, so I remembered that \(saved.key): \(saved.value)."
+                    } else {
+                        msg = "Memory saved locally to device."
+                    }
+                    return ToolExecutionResult(isSuccess: true, output: msg, deniedConfirmation: false)
+                }
+            } catch {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "I couldn't update that memory because local storage failed.",
+                    deniedConfirmation: false
+                )
+            }
+        }
+
+        // 13c. Memory: clear_memories
+        if normalized == "clear_memories" || normalized == "clearmemories" || normalized == "memory.clear" {
+            let confirmedArg = arguments["confirmed"]?.lowercased() == "true"
+            let confirmed: Bool
+            if confirmedArg {
+                confirmed = true
+            } else {
+                confirmed = await coordinator.requestConfirmation(
+                    for: .clearMemories(confirmed: true),
+                    prompt: "Are you sure you want me to forget everything? This will permanently delete all stored memories.",
+                    at: toolIndex
+                )
+            }
+
+            guard confirmed else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Action cancelled: confirmation was not granted.",
+                    deniedConfirmation: true
+                )
+            }
+
+            do {
+                try await store.clearAll()
+                await AmoraMemoryService.shared.refresh()
+                return ToolExecutionResult(isSuccess: true, output: "I've cleared all stored memories.", deniedConfirmation: false)
+            } catch {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "I couldn't clear your memories because local storage failed.",
+                    deniedConfirmation: false
+                )
+            }
+        }
+
+        // 14. Memory: list_memories
+        if normalized == "list_memories" || normalized == "listmemories" || normalized == "memory.list" {
+            guard settings.memoryEnabled else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Memory is turned off in Settings.",
+                    deniedConfirmation: false
+                )
+            }
+
+            guard isLocalProvider else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Memory listing is restricted to on-device models to protect your privacy and is unavailable with remote AI providers.",
+                    deniedConfirmation: false
+                )
+            }
+
+            let items = await store.list()
+            if items.isEmpty {
+                return ToolExecutionResult(
+                    isSuccess: true,
+                    output: "I don't have any memories stored yet.",
+                    deniedConfirmation: false
+                )
+            } else {
+                let listStr = items.map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
+                return ToolExecutionResult(
+                    isSuccess: true,
+                    output: "Here's what I remember about you:\n\(listStr)",
+                    deniedConfirmation: false
+                )
+            }
+        }
+
         // Unknown / unapproved tool
         return ToolExecutionResult(
             isSuccess: false,
@@ -651,7 +1031,25 @@ final class AmoraAgentLoop {
         return Double(raw)
     }
 
-    public static let systemInstructions = """
+    public static func systemInstructions(isLocalProvider: Bool = true) -> String {
+        let memorySection: String
+        if isLocalProvider {
+            memorySection = """
+- remember_fact: {"key": "topic", "value": "fact to remember"} (save an explicit user preference or fact to local memory)
+- recall_memory: {"query": "topic or keyword"} (search and recall saved local memories)
+- update_memory: {"key": "topic", "value": "new value"} (update or change an existing saved memory)
+- forget_memory: {"query": "topic or preference to delete"} (remove a specific saved memory)
+- list_memories: {} (list all saved local memories)
+"""
+        } else {
+            memorySection = """
+- remember_fact: {"key": "topic", "value": "fact to remember"} (save an explicit user preference or fact to local memory)
+- update_memory: {"key": "topic", "value": "new value"} (update or change an existing saved memory)
+- forget_memory: {"query": "topic or preference to delete"} (remove a specific saved memory)
+"""
+        }
+
+        return """
 [AMORA Local Agent V1 Policy]
 You are AMORA, a friendly, concise, intelligent Mac companion.
 
@@ -663,6 +1061,7 @@ Decision format:
 {"type":"tool_call","tool":"tool_name","arguments":{"param":"value"}}
 
 Approved tools:
+\(memorySection)
 - search_notes: {"query": "text to search"} (search user's saved notes)
 - create_timer: {"minutes": integer} for minute-based requests, or {"seconds": integer} for second-based ones (focus countdown, 1s–86400s). Always put the user's minutes in "minutes"; never pass a number of minutes as seconds.
 - get_battery_status: {} (get current battery level, charging status, and time remaining)
@@ -681,4 +1080,9 @@ Strict safety rules:
 - Never invent shell commands, arbitrary scripts, destructive actions, or unauthorized file access.
 - For unsupported requests (e.g. sending emails, deleting files), return a final_answer explaining your limitations.
 """
+    }
+
+    public static var systemInstructions: String {
+        systemInstructions(isLocalProvider: true)
+    }
 }

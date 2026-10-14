@@ -9,6 +9,13 @@ enum AIProviderKind: String, CaseIterable, Codable, Sendable {
     case openAI = "openai"
     case local
     case none
+
+    var isLocalOrOnDevice: Bool {
+        switch self {
+        case .appleOnDevice, .local: return true
+        case .anthropic, .openAI, .none: return false
+        }
+    }
 }
 
 enum AIProviderError: Error, Equatable, Sendable {
@@ -47,17 +54,25 @@ extension AIAvailability {
 
 struct AIMessage: Identifiable, Equatable, Codable, Sendable {
     enum Role: String, Codable, Sendable { case user, assistant }
+    enum Provenance: String, Codable, Sendable { case standard, memoryDerived }
 
     let id: UUID
     let role: Role
     let content: String
     let timestamp: Date
+    let provenance: Provenance
 
-    init(role: Role, content: String, timestamp: Date = Date()) {
+    init(
+        role: Role,
+        content: String,
+        timestamp: Date = Date(),
+        provenance: Provenance = .standard
+    ) {
         self.id = UUID()
         self.role = role
         self.content = content
         self.timestamp = timestamp
+        self.provenance = provenance
     }
 }
 
@@ -180,11 +195,18 @@ struct HTTPAIProvider: AIProvider {
 
     func send(messages: [AIMessage], model: String, apiKey: String?) async throws -> String {
         guard let apiKey, !apiKey.isEmpty else { throw AIProviderError.unavailable }
+        let outbound = messages.compactMap { msg -> [String: Any]? in
+            guard msg.provenance != .memoryDerived else { return nil }
+            guard !msg.content.contains("[Relevant user memories]") else { return nil }
+            let trimmed = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return ["role": msg.role.rawValue, "content": trimmed]
+        }
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        let payload: [String: Any] = ["model": model, "messages": messages.map { ["role": $0.role.rawValue, "content": $0.content] }]
+        let payload: [String: Any] = ["model": model, "messages": outbound]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -207,13 +229,20 @@ struct AnthropicAIProvider: AIProvider {
 
     func send(messages: [AIMessage], model: String, apiKey: String?) async throws -> String {
         guard let apiKey, !apiKey.isEmpty else { throw AIProviderError.unavailable }
+        let outbound = messages.compactMap { msg -> [String: Any]? in
+            guard msg.provenance != .memoryDerived else { return nil }
+            guard !msg.content.contains("[Relevant user memories]") else { return nil }
+            let trimmed = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return ["role": msg.role.rawValue, "content": trimmed]
+        }
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         let payload: [String: Any] = ["model": model, "max_tokens": 1024,
-                                      "messages": messages.map { ["role": $0.role.rawValue, "content": $0.content] }]
+                                      "messages": outbound]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

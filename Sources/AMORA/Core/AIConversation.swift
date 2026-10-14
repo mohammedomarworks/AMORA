@@ -13,6 +13,25 @@ struct AIConversation: Sendable {
     }
 
     mutating func reset() { messages.removeAll() }
+
+    func messages(for provider: AIProviderKind) -> [AIMessage] {
+        if provider.isLocalOrOnDevice {
+            return messages
+        }
+        return messages.filter { $0.provenance != .memoryDerived && !$0.content.contains("[Relevant user memories]") }
+    }
+
+    mutating func markLastUserMessageAsMemoryDerived() {
+        if let lastIndex = messages.indices.reversed().first(where: { messages[$0].role == .user }) {
+            let original = messages[lastIndex]
+            messages[lastIndex] = AIMessage(
+                role: original.role,
+                content: original.content,
+                timestamp: original.timestamp,
+                provenance: .memoryDerived
+            )
+        }
+    }
 }
 
 public enum AIContextComposer {

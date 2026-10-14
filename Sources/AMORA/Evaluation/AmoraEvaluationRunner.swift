@@ -61,7 +61,7 @@ final class AmoraEvaluationRunner {
 
         let memoryStore = AmoraMemoryStore()
         for mem in scenario.syntheticMemories {
-            _ = await memoryStore.save(key: mem.key, value: mem.value)
+            _ = try? await memoryStore.save(key: mem.key, value: mem.value)
         }
 
         let settings = AISettingsSnapshot(

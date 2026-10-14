@@ -2,19 +2,62 @@ import Foundation
 
 /// Protocol defining operations for storing, retrieving, and searching AMORA long-term memory.
 public protocol AmoraMemoryStoring: Sendable {
-    func save(key: String, value: String) async -> AmoraMemoryItem
+    @discardableResult
+    func save(key: String, value: String) async throws -> AmoraMemoryItem
+    @discardableResult
+    func update(id: UUID, key: String?, value: String) async throws -> AmoraMemoryItem?
     func get(id: UUID) async -> AmoraMemoryItem?
     func get(key: String) async -> AmoraMemoryItem?
     func list() async -> [AmoraMemoryItem]
-    func delete(id: UUID) async -> Bool
-    func deleteMatching(query: String) async -> [AmoraMemoryItem]
-    func clearAll() async
+    func search(query: String) async -> [AmoraMemoryItem]
+    @discardableResult
+    func delete(id: UUID) async throws -> Bool
+    @discardableResult
+    func deleteMatching(query: String) async throws -> [AmoraMemoryItem]
+    func clearAll() async throws
     func relevantMemories(for query: String, limit: Int) async -> [AmoraMemoryItem]
+    @discardableResult
+    func updateMatching(query: String, newValue: String, newKey: String?) async throws -> AmoraMemoryItem?
+}
+
+private final class AsyncSerialQueue: @unchecked Sendable {
+    private var isBusy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let lock = NSLock()
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if !isBusy {
+                isBusy = true
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    func signal() {
+        lock.lock()
+        if !waiters.isEmpty {
+            let next = waiters.removeFirst()
+            lock.unlock()
+            next.resume()
+        } else {
+            isBusy = false
+            lock.unlock()
+        }
+    }
 }
 
 /// Actor-isolated, thread-safe memory store managing long-term memory lifecycle and persistence.
 public actor AmoraMemoryStore: AmoraMemoryStoring {
+    public static let shared = AmoraMemoryStore()
+
     private let storage: any AmoraMemoryStorage
+    private let serialQueue = AsyncSerialQueue()
     private var cachedItems: [AmoraMemoryItem]?
     private var isLoaded: Bool = false
 
@@ -27,38 +70,230 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
             return cached
         }
         let items = await storage.load()
-        self.cachedItems = items
+        if self.cachedItems == nil {
+            self.cachedItems = items
+        }
         self.isLoaded = true
-        return items
+        return self.cachedItems ?? items
     }
 
-    private func persist() async {
-        guard let items = cachedItems else { return }
-        try? await storage.save(items)
-    }
+    /// Saves a memory item. If an item with a matching or conflicting key/subject exists,
+    /// updates its value and updatedAt timestamp. Exact duplicates refresh timestamp.
+    /// Reverts in-memory cache if storage write fails.
+    @discardableResult
+    public func save(key: String, value: String) async throws -> AmoraMemoryItem {
+        await serialQueue.wait()
+        defer { serialQueue.signal() }
 
-    /// Saves a memory item. If an item with a matching key exists (case-insensitive),
-    /// updates its value and updatedAt timestamp. Otherwise, creates a new item.
-    public func save(key: String, value: String) async -> AmoraMemoryItem {
         var items = await ensureLoaded()
         let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previousItems = items
 
-        if let index = items.firstIndex(where: { $0.key.caseInsensitiveCompare(trimmedKey) == .orderedSame }) {
+        // 1. Exact duplicate (same key and value): touch updatedAt and return
+        if let index = items.firstIndex(where: {
+            $0.key.caseInsensitiveCompare(trimmedKey) == .orderedSame &&
+            $0.value.caseInsensitiveCompare(trimmedValue) == .orderedSame
+        }) {
             var existing = items[index]
+            existing.updatedAt = Date()
+            items[index] = existing
+            do {
+                try await storage.save(items)
+                self.cachedItems = items
+                return existing
+            } catch {
+                self.cachedItems = previousItems
+                throw error
+            }
+        }
+
+        // 2. Conflicting or matching key: update value and touch updatedAt
+        if let index = items.firstIndex(where: { isConflictingOrMatching(newKey: trimmedKey, existingKey: $0.key) }) {
+            var existing = items[index]
+            existing.key = trimmedKey
             existing.value = trimmedValue
             existing.updatedAt = Date()
             items[index] = existing
-            self.cachedItems = items
-            await persist()
-            return existing
-        } else {
-            let newItem = AmoraMemoryItem(key: trimmedKey, value: trimmedValue)
-            items.insert(newItem, at: 0)
-            self.cachedItems = items
-            await persist()
-            return newItem
+            do {
+                try await storage.save(items)
+                self.cachedItems = items
+                return existing
+            } catch {
+                self.cachedItems = previousItems
+                throw error
+            }
         }
+
+        // 3. New memory item
+        let newItem = AmoraMemoryItem(key: trimmedKey, value: trimmedValue)
+        items.insert(newItem, at: 0)
+        do {
+            try await storage.save(items)
+            self.cachedItems = items
+            return newItem
+        } catch {
+            self.cachedItems = previousItems
+            throw error
+        }
+    }
+
+    /// Updates a specific memory item by ID.
+    @discardableResult
+    public func update(id: UUID, key: String? = nil, value: String) async throws -> AmoraMemoryItem? {
+        await serialQueue.wait()
+        defer { serialQueue.signal() }
+
+        var items = await ensureLoaded()
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        let previousItems = items
+        var item = items[index]
+        if let key {
+            let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedKey.isEmpty { item.key = trimmedKey }
+        }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        item.value = trimmedValue
+        item.updatedAt = Date()
+        items[index] = item
+
+        do {
+            try await storage.save(items)
+            self.cachedItems = items
+            return item
+        } catch {
+            self.cachedItems = previousItems
+            throw error
+        }
+    }
+
+    /// Updates a memory matching the user's query/topic with a new value.
+    @discardableResult
+    public func updateMatching(query: String, newValue: String, newKey: String? = nil) async throws -> AmoraMemoryItem? {
+        await serialQueue.wait()
+        defer { serialQueue.signal() }
+
+        var items = await ensureLoaded()
+        let normalizedQuery = normalizeForMatching(query)
+        guard !normalizedQuery.isEmpty else { return nil }
+
+        let trimmedValue = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else { return nil }
+
+        let previousItems = items
+
+        // 1. Exact key match (case-insensitive)
+        if let index = items.firstIndex(where: {
+            $0.key.caseInsensitiveCompare(query) == .orderedSame || normalizeForMatching($0.key) == normalizedQuery
+        }) {
+            var item = items[index]
+            if let newKey {
+                let trimmedKey = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedKey.isEmpty { item.key = trimmedKey }
+            }
+            item.value = trimmedValue
+            item.updatedAt = Date()
+            items[index] = item
+            do {
+                try await storage.save(items)
+                self.cachedItems = items
+                return item
+            } catch {
+                self.cachedItems = previousItems
+                throw error
+            }
+        }
+
+        // 2. Conflicting or matching key match (qualifiers & stems, e.g. "music preference" vs "music")
+        if let index = items.firstIndex(where: { isConflictingOrMatching(newKey: query, existingKey: $0.key) }) {
+            var item = items[index]
+            if let newKey {
+                let trimmedKey = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedKey.isEmpty { item.key = trimmedKey }
+            }
+            item.value = trimmedValue
+            item.updatedAt = Date()
+            items[index] = item
+            do {
+                try await storage.save(items)
+                self.cachedItems = items
+                return item
+            } catch {
+                self.cachedItems = previousItems
+                throw error
+            }
+        }
+
+        // 3. Substring match in key or value
+        if let index = items.firstIndex(where: {
+            let normKey = normalizeForMatching($0.key)
+            let normVal = normalizeForMatching($0.value)
+            return normKey.contains(normalizedQuery) || normalizedQuery.contains(normKey) || normVal.contains(normalizedQuery)
+        }) {
+            var item = items[index]
+            if let newKey {
+                let trimmedKey = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedKey.isEmpty { item.key = trimmedKey }
+            }
+            item.value = trimmedValue
+            item.updatedAt = Date()
+            items[index] = item
+            do {
+                try await storage.save(items)
+                self.cachedItems = items
+                return item
+            } catch {
+                self.cachedItems = previousItems
+                throw error
+            }
+        }
+
+        // 4. Token / stem overlap
+        let queryTokens = tokenize(normalizedQuery)
+        let queryStems = Set(queryTokens.map(Self.stem))
+        var bestIndex: Int? = nil
+        var bestScore = 0
+
+        for (idx, item) in items.enumerated() {
+            let keyTokens = tokenize(normalizeForMatching(item.key))
+            let keyStems = Set(keyTokens.map(Self.stem))
+            let valTokens = tokenize(normalizeForMatching(item.value))
+            let valStems = Set(valTokens.map(Self.stem))
+
+            var score = 0
+            score += queryTokens.intersection(keyTokens).count * 4
+            score += queryStems.intersection(keyStems).count * 3
+            score += queryTokens.intersection(valTokens).count * 2
+            score += queryStems.intersection(valStems).count * 1
+
+            if score > bestScore {
+                bestScore = score
+                bestIndex = idx
+            }
+        }
+
+        if let idx = bestIndex, bestScore > 0 {
+            var item = items[idx]
+            if let newKey {
+                let trimmedKey = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedKey.isEmpty { item.key = trimmedKey }
+            }
+            item.value = trimmedValue
+            item.updatedAt = Date()
+            items[idx] = item
+            do {
+                try await storage.save(items)
+                self.cachedItems = items
+                return item
+            } catch {
+                self.cachedItems = previousItems
+                throw error
+            }
+        }
+
+        return nil
     }
 
     public func get(id: UUID) async -> AmoraMemoryItem? {
@@ -76,22 +311,44 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
         await ensureLoaded()
     }
 
-    public func delete(id: UUID) async -> Bool {
+    /// Searches saved memories matching a query.
+    public func search(query: String) async -> [AmoraMemoryItem] {
+        await relevantMemories(for: query, limit: 20)
+    }
+
+    @discardableResult
+    public func delete(id: UUID) async throws -> Bool {
+        await serialQueue.wait()
+        defer { serialQueue.signal() }
+
         var items = await ensureLoaded()
-        if let index = items.firstIndex(where: { $0.id == id }) {
-            items.remove(at: index)
-            self.cachedItems = items
-            await persist()
-            return true
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return false
         }
-        return false
+        let previousItems = items
+        items.remove(at: index)
+        do {
+            try await storage.save(items)
+            self.cachedItems = items
+            return true
+        } catch {
+            self.cachedItems = previousItems
+            throw error
+        }
     }
 
     /// Deletes memories matching the user's forget query (by key or value similarity/overlap).
-    public func deleteMatching(query: String) async -> [AmoraMemoryItem] {
+    @discardableResult
+    public func deleteMatching(query: String) async throws -> [AmoraMemoryItem] {
+        await serialQueue.wait()
+        defer { serialQueue.signal() }
+
         var items = await ensureLoaded()
         let normalizedQuery = normalizeForMatching(query)
         guard !normalizedQuery.isEmpty else { return [] }
+
+        let queryTokens = tokenize(normalizedQuery)
+        let queryStems = Set(queryTokens.map(Self.stem))
 
         var matchedIDs: Set<UUID> = []
         var deletedItems: [AmoraMemoryItem] = []
@@ -108,33 +365,48 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
                 continue
             }
 
-            // Word overlap check
-            let queryTokens = tokenize(normalizedQuery)
             let keyTokens = tokenize(normKey)
             let valTokens = tokenize(normVal)
+            let keyStems = Set(keyTokens.map(Self.stem))
+            let valStems = Set(valTokens.map(Self.stem))
 
-            let keyOverlap = queryTokens.intersection(keyTokens)
-            let valOverlap = queryTokens.intersection(valTokens)
-
-            if !keyOverlap.isEmpty || !valOverlap.isEmpty {
+            if !queryTokens.intersection(keyTokens).isEmpty ||
+               !queryTokens.intersection(valTokens).isEmpty ||
+               !queryStems.intersection(keyStems).isEmpty ||
+               !queryStems.intersection(valStems).isEmpty {
                 matchedIDs.insert(item.id)
                 deletedItems.append(item)
             }
         }
 
         if !matchedIDs.isEmpty {
+            let previousItems = items
             items.removeAll { matchedIDs.contains($0.id) }
-            self.cachedItems = items
-            await persist()
+            do {
+                try await storage.save(items)
+                self.cachedItems = items
+            } catch {
+                self.cachedItems = previousItems
+                throw error
+            }
         }
 
         return deletedItems
     }
 
-    public func clearAll() async {
+    public func clearAll() async throws {
+        await serialQueue.wait()
+        defer { serialQueue.signal() }
+
         _ = await ensureLoaded()
-        self.cachedItems = []
-        await persist()
+        let previousItems = cachedItems
+        do {
+            try await storage.save([])
+            self.cachedItems = []
+        } catch {
+            self.cachedItems = previousItems
+            throw error
+        }
     }
 
     /// Retrieves relevant memories for an input query without injecting the whole store.
@@ -148,6 +420,7 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
 
         let queryTokens = tokenize(normalizedQuery)
         guard !queryTokens.isEmpty else { return [] }
+        let queryStems = Set(queryTokens.map(Self.stem))
 
         var scoredItems: [(item: AmoraMemoryItem, score: Int)] = []
 
@@ -159,36 +432,48 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
 
             // Exact phrase match in key
             if normKey == normalizedQuery {
-                score += 20
+                score += 25
             } else if normKey.contains(normalizedQuery) || normalizedQuery.contains(normKey) {
-                score += 10
+                score += 12
             }
 
             // Exact phrase match in value
             if normVal.contains(normalizedQuery) {
-                score += 8
+                score += 10
             }
 
             let keyTokens = tokenize(normKey)
             let valTokens = tokenize(normVal)
+            let keyStems = Set(keyTokens.map(Self.stem))
+            let valStems = Set(valTokens.map(Self.stem))
 
-            // Token overlap with key
-            let keyOverlap = queryTokens.intersection(keyTokens)
-            score += keyOverlap.count * 4
+            // Token overlap
+            score += queryTokens.intersection(keyTokens).count * 6
+            score += queryTokens.intersection(valTokens).count * 3
 
-            // Token overlap with value
-            let valOverlap = queryTokens.intersection(valTokens)
-            score += valOverlap.count * 2
+            // Stem overlap
+            score += queryStems.intersection(keyStems).count * 4
+            score += queryStems.intersection(valStems).count * 2
 
             // Semantic associations
-            if queryTokens.contains("music") || queryTokens.contains("song") || queryTokens.contains("track") {
-                if normKey.contains("spotify") || normVal.contains("spotify") || normKey.contains("apple music") || normVal.contains("apple music") {
-                    score += 5
+            if queryStems.contains("music") || queryStems.contains("song") || queryStems.contains("track") {
+                if normKey.contains("spotify") || normVal.contains("spotify") ||
+                   normKey.contains("youtube") || normVal.contains("youtube") ||
+                   normKey.contains("apple music") || normVal.contains("apple music") {
+                    score += 6
                 }
             }
-            if queryTokens.contains("editor") || queryTokens.contains("code") || queryTokens.contains("coding") {
-                if normKey.contains("vscode") || normKey.contains("vs code") || normVal.contains("vs code") || normVal.contains("cursor") {
-                    score += 5
+            if queryStems.contains("prefer") {
+                if normKey.contains("prefer") || normVal.contains("prefer") {
+                    score += 8
+                }
+            }
+            if queryStems.contains("program") || queryStems.contains("code") || queryStems.contains("project") {
+                if normKey.contains("project") || normVal.contains("project") ||
+                   normKey.contains("amora") || normVal.contains("amora") ||
+                   normKey.contains("code") || normVal.contains("code") ||
+                   normKey.contains("editor") || normVal.contains("editor") {
+                    score += 6
                 }
             }
 
@@ -210,6 +495,55 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
 
     // MARK: - Helpers
 
+    private func isConflictingOrMatching(newKey: String, existingKey: String) -> Bool {
+        if newKey.caseInsensitiveCompare(existingKey) == .orderedSame {
+            return true
+        }
+        let normNew = normalizeForMatching(newKey)
+        let normExist = normalizeForMatching(existingKey)
+        if normNew == normExist { return true }
+
+        let newTokens = tokenize(normNew)
+        let existTokens = tokenize(normExist)
+
+        if !newTokens.isEmpty && !existTokens.isEmpty {
+            let newStems = Set(newTokens.map(Self.stem))
+            let existStems = Set(existTokens.map(Self.stem))
+            if newStems == existStems {
+                return true
+            }
+
+            // Check if one is just the other plus a qualifier word (preference, favorite, setting, app)
+            let qualifierStems: Set<String> = ["prefer", "favorit", "set", "choic", "app"]
+            let diff1 = newStems.subtracting(existStems)
+            let diff2 = existStems.subtracting(newStems)
+            if (diff1.isEmpty && diff2.isSubset(of: qualifierStems)) ||
+               (diff2.isEmpty && diff1.isSubset(of: qualifierStems)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    public static func stem(_ word: String) -> String {
+        let w = word.lowercased()
+        if w.hasPrefix("prefer") { return "prefer" }
+        if w.hasPrefix("programm") || w.hasPrefix("program") { return "program" }
+        if w.hasPrefix("cod") { return "code" }
+        if w.hasPrefix("favorit") { return "favorit" }
+        if w.hasPrefix("sett") { return "set" }
+        if w.hasPrefix("mus") { return "music" }
+        if w.hasPrefix("work") { return "work" }
+        if w.hasPrefix("project") { return "project" }
+        if w.hasPrefix("edit") { return "editor" }
+        if w.hasSuffix("ing") && w.count > 5 { return String(w.dropLast(3)) }
+        if w.hasSuffix("ies") && w.count > 4 { return String(w.dropLast(3)) + "y" }
+        if w.hasSuffix("es") && w.count > 4 { return String(w.dropLast(2)) }
+        if w.hasSuffix("ed") && w.count > 4 { return String(w.dropLast(2)) }
+        if w.hasSuffix("s") && w.count > 3 && !w.hasSuffix("ss") { return String(w.dropLast(1)) }
+        return w
+    }
+
     private func normalizeForMatching(_ text: String) -> String {
         text.lowercased()
             .replacingOccurrences(of: "’", with: "'")
@@ -226,6 +560,6 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
             "who", "whom", "this", "that", "there", "here", "about", "like"
         ]
         let tokens = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        return Set(tokens.filter { !stopWords.contains($0) && $0.count > 1 })
+        return Set(tokens.filter { !stopWords.contains($0) && !$0.isEmpty })
     }
 }

@@ -1,11 +1,12 @@
 import AppKit
 import Foundation
 
-enum AMORATool: String, CaseIterable, Sendable { case battery, timer, music, browserMedia, notes, clipboard, file, fileShelf, system, application, folder, view }
+enum AMORATool: String, CaseIterable, Sendable { case battery, timer, music, browserMedia, notes, clipboard, file, fileShelf, system, application, folder, view, memory }
 enum AMORAToolOperation: Equatable, Sendable {
     case readBattery, startTimer(seconds: Int), pauseTimer, resumeTimer, stopTimer, addTimerTime(seconds: Int)
     case readMedia, playMedia, pauseMedia, nextTrack, previousTrack, createNote(text: String), listNotes, searchNotes(query: String)
     case openApplication(name: String), openFolder(name: String), readSystem, showView(name: String)
+    case saveMemory(key: String, value: String), recallMemory(query: String), listMemories, forgetMemory(query: String), updateMemory(key: String, value: String), clearMemories(confirmed: Bool)
 }
 enum AMORAToolSafety: String, Codable, Sendable { case readOnly, lowRisk, confirmationRequired }
 struct AMORAToolRequest: Equatable, Sendable { let tool: AMORATool; let operation: AMORAToolOperation }
@@ -22,22 +23,36 @@ struct AMORAToolResult: Equatable, Sendable {
     static let shared = AMORAToolRegistry(); let maximumCallsPerRequest = 4
     static var isControlledEvaluationMode = false
     private init() {}
-    func execute(_ request: AMORAToolRequest, confirmed: Bool = false) -> AMORAToolResult {
+    func execute(_ request: AMORAToolRequest, confirmed: Bool = false) async -> AMORAToolResult {
         switch validate(request) {
         case .rejected(let reason): return .init(tool: request.tool, status: .failure, message: reason)
         case .needsConfirmation(let prompt) where !confirmed: return .init(tool: request.tool, status: .needsConfirmation, message: prompt)
-        case .allowed, .needsConfirmation: return perform(request)
+        case .allowed, .needsConfirmation: return await perform(request)
         }
     }
     func validate(_ request: AMORAToolRequest) -> AMORAToolValidation {
         switch request.operation {
-        case .readBattery, .readMedia, .readSystem, .listNotes, .searchNotes: return .allowed
+        case .readBattery, .readMedia, .readSystem, .listNotes, .searchNotes, .recallMemory, .listMemories, .forgetMemory: return .allowed
         case let .startTimer(seconds), let .addTimerTime(seconds): return (1...86_400).contains(seconds) ? .allowed : .rejected(reason: "Timer duration is outside the supported range.")
         case .pauseTimer, .resumeTimer, .stopTimer, .playMedia, .pauseMedia, .nextTrack, .previousTrack, .createNote, .openApplication, .showView: return .allowed
         case let .openFolder(name): return Self.folderURL(name) == nil ? .rejected(reason: "That folder is not available through AMORA.") : .needsConfirmation(prompt: "Would you like me to open \(name.capitalized)?")
+        case let .saveMemory(key, value):
+            let result = AmoraMemoryPrivacyValidator.shared.validate(key: key, value: value)
+            switch result {
+            case .allowed: return .allowed
+            case .rejected(let reason): return .rejected(reason: reason)
+            }
+        case let .updateMemory(key, value):
+            let result = AmoraMemoryPrivacyValidator.shared.validate(key: key, value: value)
+            switch result {
+            case .allowed: return .allowed
+            case .rejected(let reason): return .rejected(reason: reason)
+            }
+        case .clearMemories(let confirmed):
+            return confirmed ? .allowed : .needsConfirmation(prompt: "Are you sure you want me to forget everything? This will permanently delete all stored memories.")
         }
     }
-    private func perform(_ request: AMORAToolRequest) -> AMORAToolResult {
+    private func perform(_ request: AMORAToolRequest) async -> AMORAToolResult {
         switch request.operation {
         case .readBattery:
             BatteryService.shared.refresh(); guard BatteryService.shared.hasBattery else { return .init(tool: .battery, status: .unsupported, message: "This Mac doesn't report a battery.") }
@@ -69,11 +84,76 @@ struct AMORAToolResult: Equatable, Sendable {
             let countMsg = results.count == 1 ? "1 matching note" : "\(results.count) matching notes"
             return .init(tool: .notes, status: .success, message: "Found \(countMsg):\n\(list)", data: ["count": "\(results.count)", "query": query])
         case let .openApplication(name):
-            let ids = ["safari": "com.apple.Safari", "finder": "com.apple.finder", "terminal": "com.apple.Terminal", "vs code": "com.microsoft.VSCode"]; guard let id = ids[AMORACommandParser.normalize(name)], let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return .init(tool: .application, status: .failure, message: "I couldn't find that app.") }; if !Self.isControlledEvaluationMode { NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) }; return .init(tool: .application, status: .success, message: "Opening \(name.capitalized).")
+            let ids = ["safari": "com.apple.Safari", "finder": "com.apple.finder", "terminal": "com.apple.Terminal", "vs code": "com.microsoft.VSCode"]; guard let id = ids[AMORACommandParser.normalize(name)], let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return .init(tool: .application, status: .failure, message: "I couldn't find that app.") }; if !Self.isControlledEvaluationMode { _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) }; return .init(tool: .application, status: .success, message: "Opening \(name.capitalized).")
         case let .openFolder(name): guard let url = Self.folderURL(name) else { return .init(tool: .folder, status: .failure, message: "I couldn't open that folder.") }; if !Self.isControlledEvaluationMode { guard NSWorkspace.shared.open(url) else { return .init(tool: .folder, status: .failure, message: "I couldn't open that folder.") } }; return .init(tool: .folder, status: .success, message: "Opening \(name.capitalized).")
         case .readSystem: SystemMonitorService.shared.refresh(); let s = SystemMonitorService.shared; return .init(tool: .system, status: .success, message: String(format: "CPU is %.0f%%, with %.1f GB of memory in use.", s.cpuUsagePercent, s.memoryUsedGB), data: ["cpu": "\(s.cpuUsagePercent)", "memoryGB": "\(s.memoryUsedGB)"])
         case let .showView(name):
             switch AMORACommandParser.normalize(name) { case "dashboard", "controls": WindowManager.shared.showDashboard(); case "notes": WindowManager.shared.showDashboard(section: .notes); case "clipboard": WindowManager.shared.showDashboard(section: .clipboard); case "files", "fileshelf", "file shelf", "shelf": WindowManager.shared.showDashboard(section: .fileShelf); case "settings": WindowManager.shared.showSettings(); default: return .init(tool: .view, status: .failure, message: "That AMORA view is not available.") }; return .init(tool: .view, status: .success, message: "Showing \(name).")
+        case let .saveMemory(key, value):
+            let store = AssistantManager.shared.memoryStore
+            do {
+                let saved = try await store.save(key: key, value: value)
+                await AmoraMemoryService.shared.refresh()
+                return .init(tool: .memory, status: .success, message: "I'll remember that \(saved.key): \(saved.value).", data: ["key": saved.key, "value": saved.value, "id": saved.id.uuidString])
+            } catch {
+                return .init(tool: .memory, status: .failure, message: "Failed to save memory: \(error.localizedDescription)")
+            }
+        case let .recallMemory(query):
+            let store = AssistantManager.shared.memoryStore
+            let results = await store.search(query: query)
+            if results.isEmpty {
+                return .init(tool: .memory, status: .success, message: "No memories found matching '\(query)'.", data: ["count": "0", "query": query])
+            }
+            let list = results.prefix(5).map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
+            let countStr = results.count == 1 ? "1 matching memory" : "\(results.count) matching memories"
+            return .init(tool: .memory, status: .success, message: "Found \(countStr):\n\(list)", data: ["count": "\(results.count)", "query": query])
+        case .listMemories:
+            let store = AssistantManager.shared.memoryStore
+            let memories = await store.list()
+            if memories.isEmpty {
+                return .init(tool: .memory, status: .success, message: "You don't have any memories stored yet.", data: ["count": "0"])
+            }
+            let list = memories.map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
+            return .init(tool: .memory, status: .success, message: "Here are your saved memories:\n\(list)", data: ["count": "\(memories.count)"])
+        case let .forgetMemory(query):
+            let store = AssistantManager.shared.memoryStore
+            do {
+                let deleted = try await store.deleteMatching(query: query)
+                if deleted.isEmpty {
+                    return .init(tool: .memory, status: .success, message: "I don't have a memory matching that.", data: ["count": "0"])
+                }
+                await AmoraMemoryService.shared.refresh()
+                let names = deleted.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+                return .init(tool: .memory, status: .success, message: "I've forgotten that: \(names).", data: ["count": "\(deleted.count)"])
+            } catch {
+                return .init(tool: .memory, status: .failure, message: "Failed to delete memory: \(error.localizedDescription)")
+            }
+        case let .updateMemory(key, value):
+            let store = AssistantManager.shared.memoryStore
+            do {
+                if let updated = try await store.updateMatching(query: key, newValue: value, newKey: nil) {
+                    await AmoraMemoryService.shared.refresh()
+                    return .init(tool: .memory, status: .success, message: "I've updated your \(updated.key) to: \(updated.value).", data: ["key": updated.key, "value": updated.value, "id": updated.id.uuidString])
+                } else {
+                    let saved = try await store.save(key: key, value: value)
+                    await AmoraMemoryService.shared.refresh()
+                    return .init(tool: .memory, status: .success, message: "I didn't find an existing memory matching that, so I remembered that \(saved.key): \(saved.value).", data: ["key": saved.key, "value": saved.value, "id": saved.id.uuidString])
+                }
+            } catch {
+                return .init(tool: .memory, status: .failure, message: "Failed to update memory: \(error.localizedDescription)")
+            }
+        case let .clearMemories(confirmed):
+            guard confirmed else {
+                return .init(tool: .memory, status: .needsConfirmation, message: "Are you sure you want me to forget everything? This will permanently delete all stored memories.")
+            }
+            let store = AssistantManager.shared.memoryStore
+            do {
+                try await store.clearAll()
+                await AmoraMemoryService.shared.refresh()
+                return .init(tool: .memory, status: .success, message: "I've cleared all your saved memories.")
+            } catch {
+                return .init(tool: .memory, status: .failure, message: "Failed to clear memories: \(error.localizedDescription)")
+            }
         }
     }
     private func mediaControl(playing: Bool) -> AMORAToolResult {
@@ -94,6 +174,9 @@ struct AMORAToolPlan: Codable, Sendable {
         let seconds: Int?
         let text: String?
         let name: String?
+        let key: String?
+        let value: String?
+        let query: String?
     }
     let calls: [Call]
 
@@ -120,6 +203,24 @@ struct AMORAToolPlan: Codable, Sendable {
             case (.folder, "open"): return call.name.map { .init(tool: tool, operation: .openFolder(name: $0)) }
             case (.system, "read"): return .init(tool: tool, operation: .readSystem)
             case (.view, "show"): return call.name.map { .init(tool: tool, operation: .showView(name: $0)) }
+            case (.memory, "save"), (.memory, "remember"):
+                let key = call.key ?? call.name ?? "preference"
+                guard let value = call.value ?? call.text else { return nil }
+                return .init(tool: tool, operation: .saveMemory(key: key, value: value))
+            case (.memory, "search"), (.memory, "recall"):
+                guard let query = call.query ?? call.text ?? call.name else { return nil }
+                return .init(tool: tool, operation: .recallMemory(query: query))
+            case (.memory, "list"):
+                return .init(tool: tool, operation: .listMemories)
+            case (.memory, "forget"), (.memory, "delete"):
+                guard let query = call.query ?? call.text ?? call.name else { return nil }
+                return .init(tool: tool, operation: .forgetMemory(query: query))
+            case (.memory, "update"), (.memory, "change"), (.memory, "modify"):
+                let key = call.key ?? call.name ?? call.query ?? "preference"
+                guard let value = call.value ?? call.text else { return nil }
+                return .init(tool: tool, operation: .updateMemory(key: key, value: value))
+            case (.memory, "clear"):
+                return .init(tool: tool, operation: .clearMemories(confirmed: true))
             default: return nil
             }
         }

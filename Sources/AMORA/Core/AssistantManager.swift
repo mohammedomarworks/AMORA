@@ -34,7 +34,7 @@ final class AssistantManager {
             self.memoryStore = memoryStore
             self.memoryStoreIsInjected = true
         } else {
-            self.memoryStore = AmoraMemoryStore()
+            self.memoryStore = AmoraMemoryStore.shared
             self.memoryStoreIsInjected = false
         }
     }
@@ -205,12 +205,17 @@ final class AssistantManager {
             let loopResult = try await agentLoop.run(
                 input: input,
                 settings: settings,
-                conversationHistory: conversation.messages,
+                conversationHistory: conversation.messages(for: settings.provider),
                 memoryStore: memoryStore
             )
             self.lastLoopResult = loopResult
             let answer = loopResult.finalAnswer
-            let assistantMessage = AIMessage(role: .assistant, content: answer)
+            let isMemoryTurn = loopResult.usedMemory || AmoraMemoryCommandParser.shared.parse(input) != nil
+            if isMemoryTurn {
+                conversation.markLastUserMessageAsMemoryDerived()
+            }
+            let provenance: AIMessage.Provenance = isMemoryTurn ? .memoryDerived : .standard
+            let assistantMessage = AIMessage(role: .assistant, content: answer, provenance: provenance)
             conversation.append(assistantMessage)
             state = .responding
             response = answer
@@ -255,8 +260,10 @@ final class AssistantManager {
         self.lastLoopResult = result
 
         let answer = result.finalAnswer
-        conversation.append(AIMessage(role: .user, content: input))
-        conversation.append(AIMessage(role: .assistant, content: answer))
+        let isMemory = result.usedMemory || AmoraMemoryCommandParser.shared.parse(input) != nil
+        let prov: AIMessage.Provenance = isMemory ? .memoryDerived : .standard
+        conversation.append(AIMessage(role: .user, content: input, provenance: prov))
+        conversation.append(AIMessage(role: .assistant, content: answer, provenance: prov))
         state = .responding
         response = answer
         AMORAContext.shared.setAIResponse(answer)
@@ -376,12 +383,58 @@ final class AssistantManager {
             case let .rejected(reason):
                 answer = reason
             case .allowed:
-                let saved = await memoryStore.save(key: key, value: value)
-                if saved.key.caseInsensitiveCompare(saved.value) == .orderedSame || saved.value.lowercased().contains(saved.key.lowercased()) {
-                    answer = "I'll remember that: \(saved.value)."
-                } else {
-                    answer = "I'll remember that \(saved.key): \(saved.value)."
+                do {
+                    let saved = try await memoryStore.save(key: key, value: value)
+                    await AmoraMemoryService.shared.refresh()
+                    if saved.key.caseInsensitiveCompare(saved.value) == .orderedSame || saved.value.lowercased().contains(saved.key.lowercased()) {
+                        answer = "I'll remember that: \(saved.value)."
+                    } else {
+                        answer = "I'll remember that \(saved.key): \(saved.value)."
+                    }
+                } catch {
+                    answer = "I couldn't save that memory because local storage failed."
                 }
+            }
+
+        case let .update(target, newValue):
+            guard settings.memoryEnabled else {
+                answer = "Memory is turned off in Settings. Turn on Memory to update memories."
+                break
+            }
+            let validation = AmoraMemoryPrivacyValidator.shared.validate(key: target, value: newValue)
+            switch validation {
+            case let .rejected(reason):
+                answer = reason
+            case .allowed:
+                do {
+                    if let updated = try await memoryStore.updateMatching(query: target, newValue: newValue, newKey: nil) {
+                        await AmoraMemoryService.shared.refresh()
+                        answer = "I've updated your \(updated.key) to: \(updated.value)."
+                    } else {
+                        answer = "I couldn't find a saved memory matching '\(target)' to update."
+                    }
+                } catch {
+                    answer = "I couldn't update that memory because local storage failed."
+                }
+            }
+
+        case let .recall(query):
+            guard settings.memoryEnabled else {
+                answer = "Memory is turned off in Settings."
+                break
+            }
+            let relevant = await memoryStore.relevantMemories(for: query, limit: 5)
+            if relevant.isEmpty {
+                answer = "I don't have any memories stored about that."
+            } else if relevant.count == 1, let item = relevant.first {
+                if item.key.caseInsensitiveCompare(item.value) == .orderedSame || item.value.lowercased().contains(item.key.lowercased()) {
+                    answer = "You told me: \(item.value)."
+                } else {
+                    answer = "I remember that \(item.key): \(item.value)."
+                }
+            } else {
+                let listStr = relevant.map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
+                answer = "Here is what I remember:\n\(listStr)"
             }
 
         case .list:
@@ -398,25 +451,35 @@ final class AssistantManager {
             }
 
         case let .forget(query):
-            let deleted = await memoryStore.deleteMatching(query: query)
-            if deleted.isEmpty {
-                answer = "I don't have a memory matching that."
-            } else {
-                let deletedNames = deleted.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-                answer = "I've forgotten that: \(deletedNames)."
+            do {
+                let deleted = try await memoryStore.deleteMatching(query: query)
+                if deleted.isEmpty {
+                    answer = "I don't have a memory matching that."
+                } else {
+                    await AmoraMemoryService.shared.refresh()
+                    let deletedNames = deleted.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+                    answer = "I've forgotten that: \(deletedNames)."
+                }
+            } catch {
+                answer = "I couldn't remove that memory because local storage failed."
             }
 
         case let .clearAll(confirmed):
             if !confirmed {
                 answer = "Are you sure you want me to forget everything? This will permanently delete all stored memories. Reply 'yes, forget everything' to confirm."
             } else {
-                await memoryStore.clearAll()
-                answer = "I've cleared all stored memories."
+                do {
+                    try await memoryStore.clearAll()
+                    await AmoraMemoryService.shared.refresh()
+                    answer = "I've cleared all stored memories."
+                } catch {
+                    answer = "I couldn't clear your memories because local storage failed."
+                }
             }
         }
 
-        let userMsg = AIMessage(role: .user, content: input)
-        let assistantMsg = AIMessage(role: .assistant, content: answer)
+        let userMsg = AIMessage(role: .user, content: input, provenance: .memoryDerived)
+        let assistantMsg = AIMessage(role: .assistant, content: answer, provenance: .memoryDerived)
         conversation.append(userMsg)
         conversation.append(assistantMsg)
         state = .responding
@@ -670,7 +733,7 @@ final class AMORACommandGateway {
 
         // 3. Fallback for AI or tools if supported
         if case let .unknown(text) = command, (isCompound || !isLocalUnknown(text)) {
-            if let localResults = executeKnownToolSequence(input) {
+            if let localResults = await executeKnownToolSequence(input) {
                 let message = localResults.map(\.message).joined(separator: " ")
                 return .success(message: message)
             }
@@ -957,7 +1020,7 @@ final class AMORACommandGateway {
 
     /// Handles the small set of deterministic multi-tool combinations AMORA
     /// supports without spending an AI request on known local capabilities.
-    private func executeKnownToolSequence(_ input: String) -> [AMORAToolResult]? {
+    private func executeKnownToolSequence(_ input: String) async -> [AMORAToolResult]? {
         let text = AMORACommandParser.normalize(input)
         var requests: [AMORAToolRequest] = []
         if text.contains("timer"), let seconds = durationSeconds(in: text) {
@@ -972,7 +1035,10 @@ final class AMORACommandGateway {
             requests.append(.init(tool: .music, operation: .readMedia))
         }
         guard requests.count > 1, requests.count <= AMORAToolRegistry.shared.maximumCallsPerRequest else { return nil }
-        let results = requests.map { AMORAToolRegistry.shared.execute($0) }
+        var results: [AMORAToolResult] = []
+        for request in requests {
+            results.append(await AMORAToolRegistry.shared.execute(request))
+        }
         return results.allSatisfy { $0.status == .success || $0.status == .unsupported } ? results : results
     }
 

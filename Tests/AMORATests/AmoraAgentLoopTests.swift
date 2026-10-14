@@ -315,7 +315,7 @@ final class AmoraAgentLoopTests: XCTestCase {
         )
 
         let memoryStore = AmoraMemoryStore(storage: AmoraInMemoryStorage())
-        _ = await memoryStore.save(key: "secret", value: "SECRET_PASSWORD_12345")
+        _ = try? await memoryStore.save(key: "secret", value: "SECRET_PASSWORD_12345")
 
         _ = try await loop.run(
             input: "What is my secret?",

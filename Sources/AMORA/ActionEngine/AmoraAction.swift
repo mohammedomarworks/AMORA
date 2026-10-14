@@ -16,6 +16,10 @@ public enum AmoraAction: Equatable, Sendable {
     case resumeTimer
     case showNotification(message: String)
     case confirmTest(actionName: String, prompt: String)
+    case saveMemory(key: String, value: String)
+    case forgetMemory(query: String)
+    case updateMemory(target: String, newValue: String)
+    case clearMemories(confirmed: Bool)
 
     public var identifier: String {
         switch self {
@@ -32,6 +36,10 @@ public enum AmoraAction: Equatable, Sendable {
         case .resumeTimer: return "timer.resume"
         case .showNotification: return "amora.notification"
         case .confirmTest: return "system.confirm_test"
+        case .saveMemory: return "memory.save"
+        case .forgetMemory: return "memory.forget"
+        case .updateMemory: return "memory.update"
+        case .clearMemories: return "memory.clear"
         }
     }
 
@@ -55,6 +63,10 @@ public enum AmoraAction: Equatable, Sendable {
         case .resumeTimer: return "Resume Timer"
         case .showNotification(let msg): return "Show Notification: \(msg)"
         case .confirmTest(let name, _): return "Confirm: \(name)"
+        case .saveMemory(let key, _): return "Save Memory: \(key)"
+        case .forgetMemory(let query): return "Forget Memory: \(query)"
+        case .updateMemory(let target, let value): return "Update Memory (\(target): \(value))"
+        case .clearMemories: return "Clear Memories"
         }
     }
 
@@ -82,6 +94,14 @@ public enum AmoraAction: Equatable, Sendable {
             return lMsg == rMsg
         case (.confirmTest(let lName, let lPrompt), .confirmTest(let rName, let rPrompt)):
             return lName == rName && lPrompt == rPrompt
+        case (.saveMemory(let lK, let lV), .saveMemory(let rK, let rV)):
+            return lK.caseInsensitiveCompare(rK) == .orderedSame && lV == rV
+        case (.updateMemory(let lT, let lV), .updateMemory(let rT, let rV)):
+            return lT.caseInsensitiveCompare(rT) == .orderedSame && lV == rV
+        case (.forgetMemory(let lQ), .forgetMemory(let rQ)):
+            return lQ.caseInsensitiveCompare(rQ) == .orderedSame
+        case (.clearMemories(let lC), .clearMemories(let rC)):
+            return lC == rC
         default:
             return false
         }
@@ -168,6 +188,41 @@ public struct AmoraActionRequest: Codable, Equatable, Sendable {
             let name = parameters["name"] ?? "Test Action"
             let prompt = parameters["prompt"] ?? "Are you sure you want to run this test action?"
             return .success(.confirmTest(actionName: name, prompt: prompt))
+        case "memory.save", "save_memory", "savememory", "remember_fact", "rememberfact", "remember":
+            guard let key = parameters["key"] ?? parameters["name"] ?? parameters["title"] ?? parameters["topic"],
+                  !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'key' parameter for memory.save action."))
+            }
+            guard let value = parameters["value"] ?? parameters["content"] ?? parameters["fact"] ?? parameters["text"] ?? parameters["details"],
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'value' parameter for memory.save action."))
+            }
+            return .success(.saveMemory(
+                key: key.trimmingCharacters(in: .whitespacesAndNewlines),
+                value: value.trimmingCharacters(in: .whitespacesAndNewlines)
+            ))
+        case "memory.forget", "forget_memory", "forgetmemory", "delete_memory", "deletememory", "forget":
+            guard let query = parameters["query"] ?? parameters["key"] ?? parameters["target"] ?? parameters["name"] ?? parameters["topic"],
+                  !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'query' parameter for memory.forget action."))
+            }
+            return .success(.forgetMemory(query: query.trimmingCharacters(in: .whitespacesAndNewlines)))
+        case "memory.update", "update_memory", "updatememory", "change_memory", "changememory", "update":
+            guard let target = parameters["key"] ?? parameters["target"] ?? parameters["name"] ?? parameters["topic"] ?? parameters["query"],
+                  !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'key' or 'target' parameter for memory.update action."))
+            }
+            guard let value = parameters["value"] ?? parameters["newValue"] ?? parameters["content"] ?? parameters["text"],
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'value' parameter for memory.update action."))
+            }
+            return .success(.updateMemory(
+                target: target.trimmingCharacters(in: .whitespacesAndNewlines),
+                newValue: value.trimmingCharacters(in: .whitespacesAndNewlines)
+            ))
+        case "memory.clear", "clear_memories", "clearmemories", "clear_memory", "clearmemory":
+            let confirmed = parameters["confirmed"] == "true"
+            return .success(.clearMemories(confirmed: confirmed))
         default:
             return .failure(.unknownAction("Unknown action identifier: '\(actionId)'."))
         }
@@ -183,6 +238,9 @@ public struct AmoraActionPlan: Codable, Sendable {
         public let name: String?
         public let location: String?
         public let section: String?
+        public let key: String?
+        public let value: String?
+        public let query: String?
         public let parameters: [String: String]?
 
         public init(
@@ -192,6 +250,9 @@ public struct AmoraActionPlan: Codable, Sendable {
             name: String? = nil,
             location: String? = nil,
             section: String? = nil,
+            key: String? = nil,
+            value: String? = nil,
+            query: String? = nil,
             parameters: [String: String]? = nil
         ) {
             self.action = action
@@ -200,6 +261,9 @@ public struct AmoraActionPlan: Codable, Sendable {
             self.name = name
             self.location = location
             self.section = section
+            self.key = key
+            self.value = value
+            self.query = query
             self.parameters = parameters
         }
 
@@ -210,6 +274,9 @@ public struct AmoraActionPlan: Codable, Sendable {
             if let name { params["name"] = name }
             if let location { params["location"] = location }
             if let section { params["section"] = section }
+            if let key { params["key"] = key }
+            if let value { params["value"] = value }
+            if let query { params["query"] = query }
             return AmoraActionRequest(actionId: action, parameters: params)
         }
     }

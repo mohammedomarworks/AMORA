@@ -49,7 +49,7 @@ final class ProactiveAmoraTests: XCTestCase {
         let storage = AmoraInMemoryStorage()
         let store = AmoraMemoryStore(storage: storage)
         for item in items {
-            _ = await store.save(key: item.key, value: item.value)
+            _ = try? await store.save(key: item.key, value: item.value)
         }
         return store
     }

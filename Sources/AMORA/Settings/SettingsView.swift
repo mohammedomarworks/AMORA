@@ -166,6 +166,9 @@ public struct SettingsView: View {
     @State private var showClearAllConfirmation = false
     @State private var showDeleteModelConfirmation = false
     @State private var memoryFilter = ""
+    @State private var editingMemoryId: UUID? = nil
+    @State private var editingKey = ""
+    @State private var editingValue = ""
 
     private var palette: ThemePalette { settings.palette }
 
@@ -1019,58 +1022,122 @@ public struct SettingsView: View {
                             subtitle: "Tell AMORA “Remember that I prefer dark mode” to store a memory."
                         )
                     } else {
-                        // Memory search filter if more than 3 memories
-                        if memoryService.memories.count > 3 {
-                            HStack {
-                                Image(systemName: "magnifyingglass")
-                                    .foregroundStyle(.secondary)
-                                TextField("Filter memories…", text: $memoryFilter)
-                                    .textFieldStyle(.plain)
+                        // Memory search filter
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            TextField("Filter memories…", text: $memoryFilter)
+                                .textFieldStyle(.plain)
+                            if !memoryFilter.isEmpty {
+                                Button {
+                                    memoryFilter = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Clear filter")
                             }
-                            .padding(6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color(nsColor: .controlBackgroundColor))
-                            )
                         }
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
 
                         let filteredMemories = memoryService.memories.filter {
                             memoryFilter.isEmpty || $0.key.localizedCaseInsensitiveContains(memoryFilter) || $0.value.localizedCaseInsensitiveContains(memoryFilter)
                         }
 
-                        VStack(spacing: 6) {
+                        if filteredMemories.isEmpty {
+                            Text("No memories match '\(memoryFilter)'.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 8)
+                        } else {
+                            VStack(spacing: 6) {
                             ForEach(filteredMemories) { item in
-                                HStack(alignment: .center, spacing: 10) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.key)
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundStyle(.primary)
-                                        Text(item.value)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
+                                if editingMemoryId == item.id {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        TextField("Key / Topic", text: $editingKey)
+                                            .textFieldStyle(.roundedBorder)
+                                        TextField("Value / Content", text: $editingValue)
+                                            .textFieldStyle(.roundedBorder)
+                                        HStack {
+                                            Spacer()
+                                            Button("Cancel") {
+                                                editingMemoryId = nil
+                                            }
+                                            .buttonStyle(.plain)
+                                            .font(.caption)
+                                            Button("Save") {
+                                                let id = item.id
+                                                let k = editingKey
+                                                let v = editingValue
+                                                Task {
+                                                    _ = try? await memoryService.update(id: id, key: k, value: v)
+                                                    editingMemoryId = nil
+                                                }
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                            .font(.caption)
+                                            .disabled(editingKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || editingValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                        }
                                     }
-                                    Spacer()
-                                    Button(role: .destructive) {
-                                        Task { await memoryService.delete(id: item.id) }
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(.red)
-                                            .frame(width: 24, height: 24)
-                                            .contentShape(Rectangle())
+                                    .padding(8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color(nsColor: .controlBackgroundColor))
+                                    )
+                                } else {
+                                    HStack(alignment: .center, spacing: 10) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(item.key)
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .foregroundStyle(.primary)
+                                            Text(item.value)
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Button {
+                                            editingMemoryId = item.id
+                                            editingKey = item.key
+                                            editingValue = item.value
+                                        } label: {
+                                            Image(systemName: "pencil")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+                                                .frame(width: 24, height: 24)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .help("Edit this memory")
+                                        .accessibilityLabel("Edit memory \(item.key)")
+
+                                        Button(role: .destructive) {
+                                            Task { await memoryService.delete(id: item.id) }
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.red)
+                                                .frame(width: 24, height: 24)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .help("Delete this memory")
+                                        .accessibilityLabel("Delete memory \(item.key)")
                                     }
-                                    .buttonStyle(.borderless)
-                                    .help("Delete this memory")
-                                    .accessibilityLabel("Delete memory \(item.key)")
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                                    )
                                 }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-                                )
                             }
                         }
+                    }
 
                         HStack {
                             Spacer()
