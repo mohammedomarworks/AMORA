@@ -42,6 +42,9 @@ final class IslandActivityCenter {
         }
         if TimerService.shared.isRunning { return .timer }
         if let focus = userFocus { return focus }
+        if AmoraAutomationService.shared.currentNotification != nil || AmoraProactiveService.shared.currentSuggestion != nil {
+            return .notification
+        }
         if MusicService.shared.isPlaying { return .music }
         return .normal
     }
@@ -94,6 +97,14 @@ final class PersonalityEngine {
 
     // MARK: - Cooldown bookkeeping
 
+    func resetForTesting() {
+        cooldowns.removeAll()
+        message = nil
+        celebrationToken = 0
+        messageToken = 0
+        revertToken = 0
+    }
+
     private func due(_ key: String, every seconds: TimeInterval, now: Date) -> Bool {
         if seconds > 0, let last = cooldowns[key], now.timeIntervalSince(last) < seconds {
             return false
@@ -106,7 +117,8 @@ final class PersonalityEngine {
         message = text
         messageToken &+= 1
         let token = messageToken
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { [weak self] in
+        let linger = max(4.0, min(9.0, Double(text.count) * 0.08))
+        DispatchQueue.main.asyncAfter(deadline: .now() + linger) { [weak self] in
             guard let self, self.messageToken == token else { return }
             self.message = nil
         }
@@ -151,7 +163,7 @@ final class PersonalityEngine {
             return Reaction(key: "timerStart", state: .thinking, message: "Let's focus.", sound: nil,
                             exprCooldown: 2, messageCooldown: 2, revert: 3)
         case .timerPaused:
-            return Reaction(key: "timerPause", state: .curious, message: "Timer paused.", sound: .click,
+            return Reaction(key: "timerPause", state: .curious, message: "Paused.", sound: .click,
                             exprCooldown: 1, messageCooldown: 1, revert: 2)
         case .timerResumed:
             return Reaction(key: "timerResume", state: .focused, message: "Back to it.", sound: .click,
@@ -163,13 +175,13 @@ final class PersonalityEngine {
             return Reaction(key: "charging", state: .happy, message: "Charging up.", sound: nil,
                             exprCooldown: 60, messageCooldown: 300, revert: 3)
         case .chargedFull:
-            return Reaction(key: "full", state: .happy, message: "All charged.", sound: .success,
+            return Reaction(key: "full", state: .happy, message: "Fully charged.", sound: .success,
                             exprCooldown: 300, messageCooldown: 3600, revert: 3)
         case .lowBattery:
-            return Reaction(key: "low", state: .concerned, message: "We're getting low.", sound: nil,
+            return Reaction(key: "low", state: .concerned, message: "Battery is low — let's plug in soon.", sound: nil,
                             exprCooldown: 600, messageCooldown: 900, revert: 4)
         case .criticalBattery:
-            return Reaction(key: "critical", state: .alert, message: "Battery critical.", sound: .notification,
+            return Reaction(key: "critical", state: .alert, message: "Battery critical — please plug in now.", sound: .notification,
                             exprCooldown: 300, messageCooldown: 600, revert: 4)
         case .musicStarted:
             return Reaction(key: "musicOn", state: .music, message: nil, sound: nil,
@@ -204,6 +216,18 @@ final class PersonalityEngine {
         case .aiCancelled:
             return Reaction(key: "aiCancelled", state: .idle, message: nil, sound: nil,
                             exprCooldown: 0, messageCooldown: 0, revert: 1)
+        case .proactiveSuggestionPresented:
+            return Reaction(key: "proactivePresented", state: .curious, message: nil, sound: .notification,
+                            exprCooldown: 0, messageCooldown: 1, revert: 5)
+        case .proactiveSuggestionDismissed:
+            return Reaction(key: "proactiveDismissed", state: .idle, message: nil, sound: nil,
+                            exprCooldown: 0, messageCooldown: 0, revert: 0)
+        case .automationNotificationPresented:
+            return Reaction(key: "autoPresented", state: .alert, message: nil, sound: .notification,
+                            exprCooldown: 0, messageCooldown: 1, revert: 5)
+        case .automationNotificationDismissed:
+            return Reaction(key: "autoDismissed", state: .idle, message: nil, sound: nil,
+                            exprCooldown: 0, messageCooldown: 0, revert: 0)
         case .clipboardRestored:
             return Reaction(key: "clip", state: .happy, message: "Copied.", sound: .click,
                             exprCooldown: 2, messageCooldown: 5, revert: 2)

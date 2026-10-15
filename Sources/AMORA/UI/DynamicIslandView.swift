@@ -424,7 +424,7 @@ struct AIResponseView: View {
                 .padding(.vertical, 12)
             } else {
                 ScrollView {
-                    Text(responseText)
+                    Text(LocalizedStringKey(responseText))
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineSpacing(3)
@@ -435,8 +435,22 @@ struct AIResponseView: View {
                 .frame(maxHeight: 270)
                 .scrollIndicators(.hidden)
 
-                HStack {
+                HStack(spacing: 8) {
                     Spacer()
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(responseText, forType: .string)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 10))
+                            Text("Copy")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                        }
+                    }
+                    .buttonStyle(.amoraPill)
+                    .accessibilityLabel("Copy response")
+
                     Button("Close") {
                         assistant.dismissResponse()
                         coordinator.reset()

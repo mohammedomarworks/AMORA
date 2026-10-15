@@ -92,6 +92,10 @@ final class AMORAContext {
         case .aiCancelled:
             lastAction = "assistant"
             assistantState = .cancelled
+        case .proactiveSuggestionPresented, .proactiveSuggestionDismissed:
+            lastAction = "proactive"
+        case .automationNotificationPresented, .automationNotificationDismissed:
+            lastAction = "automation"
         default:
             break
         }
@@ -128,6 +132,8 @@ enum AMORAEvent: Equatable {
     case clipboardUpdated, clipboardRestored, noteCreated, fileReceived
     case commandProcessing, commandSucceeded, commandFailed
     case aiThinking, aiSucceeded, aiFailed, aiCancelled
+    case proactiveSuggestionPresented, proactiveSuggestionDismissed
+    case automationNotificationPresented, automationNotificationDismissed
     case systemIdle, systemActive
 }
 

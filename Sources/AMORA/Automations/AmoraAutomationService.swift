@@ -184,7 +184,7 @@ public final class AmoraAutomationService: Sendable {
         }
 
         self.currentNotification = notification
-        SoundService.shared.play(.notification)
+        AMORAEventCenter.shared.emit(.automationNotificationPresented)
         if IslandModel.shared.displayState == .collapsed {
             WindowManager.shared.expandIsland()
         }
@@ -193,6 +193,7 @@ public final class AmoraAutomationService: Sendable {
     /// Dismisses the active automation notification.
     public func dismissNotification() {
         self.currentNotification = nil
+        AMORAEventCenter.shared.emit(.automationNotificationDismissed)
     }
 
     /// Executes the optional action attached to the active automation notification.

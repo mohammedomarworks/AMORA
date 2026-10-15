@@ -260,6 +260,7 @@ struct IslandAITalkPage: View {
     @State private var modelManager = AmoraModelManager.shared
 
     @State private var inputText: String = ""
+    @State private var copied: Bool = false
     @FocusState private var isInputFocused: Bool
 
     private var isLocalProvider: Bool {
@@ -270,16 +271,73 @@ struct IslandAITalkPage: View {
         VStack(spacing: 8) {
             // Content Area
             if actionCoordinator.state != .idle {
-                ActionExecutionView(compact: true)
-                    .frame(maxHeight: 100)
-            } else if let response = assistant.response {
                 ScrollView {
-                    Text(response)
-                        .font(.system(size: 12))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                    ActionExecutionView(compact: true)
                 }
-                .frame(maxHeight: 100)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let response = assistant.response {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("AMORA")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.accent)
+
+                        if assistant.lastLoopResult?.usedMemory == true {
+                            HStack(spacing: 3) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 8))
+                                Text("Memory")
+                                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                            }
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(palette.accent.opacity(0.18)))
+                            .foregroundStyle(palette.accent)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(response, forType: .string)
+                            copied = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                                copied = false
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 8, weight: .semibold))
+                                Text(copied ? "Copied" : "Copy")
+                                    .font(.system(size: 8, weight: .medium, design: .rounded))
+                            }
+                            .foregroundStyle(copied ? .green : .white.opacity(0.65))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy answer")
+                        .accessibilityLabel("Copy answer to clipboard")
+                    }
+
+                    ScrollView {
+                        Text(LocalizedStringKey(response))
+                            .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.94))
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 2)
+                    }
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isLocalProvider && !modelManager.isReady && assistant.state != .thinking {
                 VStack(spacing: 6) {
                     HStack(spacing: 6) {
@@ -333,30 +391,66 @@ struct IslandAITalkPage: View {
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.accent.opacity(0.2), lineWidth: 1))
-                .frame(maxHeight: 100)
+                .frame(maxHeight: .infinity)
             } else {
                 switch assistant.state {
                 case .thinking:
                     VStack(spacing: 8) {
                         ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Thinking...")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .scaleEffect(0.85)
+                            .tint(palette.accent)
+                        Text("Thinking it through…")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.75))
                     }
-                    .frame(maxWidth: .infinity, maxHeight: 100)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .failed:
-                    Text("Request failed.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.red)
-                        .frame(maxWidth: .infinity, maxHeight: 100)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                            Text("Notice")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(.orange)
+                        }
+                        Text(assistant.response ?? "Something got in the way. Please try again.")
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.88))
+                            .lineSpacing(2)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 case .cancelled:
-                    Text("Request cancelled.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: 100)
+                    HStack(spacing: 8) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.orange)
+                        Text("Request stopped.")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 default:
-                    Spacer()
+                    VStack(spacing: 8) {
+                        Text("What can I help you with?")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.75))
+
+                        HStack(spacing: 6) {
+                            IslandPromptChip(title: "25m focus timer") {
+                                submitWithPrompt("Start a 25 minute timer")
+                            }
+                            IslandPromptChip(title: "Battery level") {
+                                submitWithPrompt("How much battery do I have left?")
+                            }
+                            IslandPromptChip(title: "Search notes") {
+                                submitWithPrompt("Search my notes")
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
 
@@ -402,6 +496,11 @@ struct IslandAITalkPage: View {
         .padding(.top, 8)
     }
 
+    private func submitWithPrompt(_ prompt: String) {
+        inputText = prompt
+        submitRequest()
+    }
+
     private func submitRequest() {
         guard !inputText.isEmpty else { return }
         let text = inputText
@@ -409,6 +508,29 @@ struct IslandAITalkPage: View {
         Task {
             await assistant.submit(text, settings: AppState.shared.settings.aiSettingsSnapshot)
         }
+    }
+}
+
+@MainActor
+private struct IslandPromptChip: View {
+    let title: String
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(isHovered ? 0.95 : 0.7))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(isHovered ? 0.12 : 0.06))
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 

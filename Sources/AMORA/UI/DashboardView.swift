@@ -336,10 +336,34 @@ struct DashboardView: View {
                 if coordinator.state != .idle {
                     ActionExecutionView(compact: true)
                 } else if let feedback = vm.assistantFeedback {
-                    Text(feedback)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.cyan)
-                        .transition(.opacity)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(LocalizedStringKey(feedback))
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(palette.accent)
+                            .lineSpacing(2.5)
+                            .multilineTextAlignment(.leading)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Button {
+                            withAnimation {
+                                vm.assistantFeedback = nil
+                            }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss message")
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(palette.accent.opacity(0.12))
+                    )
+                    .transition(.opacity)
                 }
 
                 if coordinator.state == .idle && assistant.state == .thinking {
@@ -494,7 +518,8 @@ struct DashboardView: View {
         withAnimation {
             vm.assistantFeedback = msg
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        let linger = max(5.0, min(14.0, Double(msg.count) * 0.08))
+        DispatchQueue.main.asyncAfter(deadline: .now() + linger) {
             withAnimation {
                 if vm.assistantFeedback == msg {
                     vm.assistantFeedback = nil

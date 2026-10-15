@@ -116,34 +116,77 @@ struct AmoraCompanionPanel: View {
     private var personality = PersonalityEngine.shared
     private var palette: ThemePalette { AppState.shared.settings.palette }
 
+    private var idleCompanionGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12:
+            return "Good morning! Ready when you are."
+        case 12..<17:
+            return "Good afternoon. Here if you need me."
+        case 17..<22:
+            return "Good evening. What's on your mind?"
+        default:
+            return "Working late? I'm here with you."
+        }
+    }
+
     private var statusMessage: String {
         if let notification = automation.currentNotification {
             return notification.message
         } else if let suggestion = proactive.currentSuggestion {
             return suggestion.message
         } else if coordinator.state != .idle {
-            return "Executing action…"
+            switch coordinator.state {
+            case .awaitingConfirmation:
+                return "Needs your confirmation"
+            case .executing:
+                if let activeItem = coordinator.items.first(where: { $0.status == .executing }) {
+                    return "\(activeItem.title)…"
+                }
+                return "Taking care of that…"
+            case .completed:
+                return "All set!"
+            case .failed:
+                return coordinator.isCancelled ? "Action cancelled" : "Couldn't complete that action"
+            case .idle, .thinking:
+                return "Taking care of that…"
+            }
         } else if assistant.state == .thinking {
-            return "Thinking…"
+            return "Thinking it through…"
         } else if assistant.state == .responding, let resp = assistant.response, !resp.isEmpty {
-            return "Assistant response ready"
+            let firstLine = resp.split(whereSeparator: \.isNewline).first.map(String.init) ?? resp
+            if firstLine.count <= 42 {
+                return firstLine
+            }
+            return "Here is what I found:"
+        } else if assistant.state == .failed {
+            return "Something got in the way."
+        } else if assistant.state == .cancelled {
+            return "Request stopped."
         } else if timer.isRunning {
             return "Focus timer (\(timer.formattedTime))"
         } else if music.isPlaying && !music.trackTitle.isEmpty {
-            return "Playing: \(music.trackTitle)"
-        } else if nav.selectedPage == .github && gitHub.authState.isConnected {
-            if let cal = gitHub.contributionCalendar, cal.totalContributions > 0 {
-                let plural = cal.totalContributions == 1 ? "contribution" : "contributions"
-                return "\(cal.totalContributions) \(plural) in past year"
-            } else if let user = gitHub.user {
-                return "@\(user.login) activity synced"
-            } else {
-                return "GitHub connected"
-            }
-        } else if let msg = personality.message, !msg.isEmpty {
-            return msg
+            return "Listening to \(music.trackTitle)"
         } else {
-            return "Hey, what should we do next?"
+            let battery = BatteryService.shared
+            if battery.hasBattery && !battery.isCharging && battery.level <= 20 {
+                return "Battery at \(battery.level)% — let's plug in soon."
+            } else if battery.hasBattery && battery.isCharging {
+                return "Charging up nicely (\(battery.level)%)."
+            } else if nav.selectedPage == .github && gitHub.authState.isConnected {
+                if let cal = gitHub.contributionCalendar, cal.totalContributions > 0 {
+                    let plural = cal.totalContributions == 1 ? "contribution" : "contributions"
+                    return "\(cal.totalContributions) \(plural) in past year"
+                } else if let user = gitHub.user {
+                    return "@\(user.login) activity synced"
+                } else {
+                    return "GitHub connected"
+                }
+            } else if let msg = personality.message, !msg.isEmpty {
+                return msg
+            } else {
+                return idleCompanionGreeting
+            }
         }
     }
 
@@ -171,6 +214,10 @@ struct AmoraCompanionPanel: View {
                 AmoraAccessibleStatusBadge(text: timer.formattedTime, systemImage: "timer", tintColor: .orange)
             } else if music.isPlaying {
                 AmoraAccessibleStatusBadge(text: "Music", systemImage: "music.note", tintColor: .green)
+            } else if BatteryService.shared.hasBattery && !BatteryService.shared.isCharging && BatteryService.shared.level <= 20 {
+                AmoraAccessibleStatusBadge(text: "\(BatteryService.shared.level)%", systemImage: "battery.25", tintColor: .orange)
+            } else if BatteryService.shared.hasBattery && BatteryService.shared.isCharging {
+                AmoraAccessibleStatusBadge(text: "Charging", systemImage: "battery.100.bolt", tintColor: .green)
             } else if nav.selectedPage == .github && gitHub.authState.isConnected {
                 AmoraAccessibleStatusBadge(text: "GitHub", systemImage: "chevron.left.forwardslash.chevron.right", tintColor: .green)
             } else {
@@ -187,45 +234,34 @@ struct AmoraCompanionPanel: View {
                 .animation(.easeInOut(duration: 0.2), value: statusMessage)
 
             if let notification = automation.currentNotification {
-                Group {
+                VStack(spacing: 5) {
                     if let action = notification.action {
-                        HStack(spacing: 6) {
-                            Button {
-                                Task {
-                                    await automation.executeCurrentNotificationAction()
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text(notification.actionTitle ?? action.humanReadableName)
-                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                        .lineLimit(1)
-                                    Image(systemName: "arrow.right")
-                                        .font(.system(size: 8, weight: .bold))
-                                }
-                                .frame(maxWidth: .infinity)
+                        Button {
+                            Task {
+                                await automation.executeCurrentNotificationAction()
                             }
-                            .buttonStyle(.amoraPill(fill: palette.accent, foreground: .white))
-                            .accessibilityLabel(notification.actionTitle ?? action.humanReadableName)
-
-                            Button("Dismiss") {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    automation.dismissNotification()
-                                }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(notification.actionTitle ?? action.humanReadableName)
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .lineLimit(1)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 8, weight: .bold))
                             }
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
-                            .accessibilityLabel("Dismiss notification")
+                            .frame(maxWidth: .infinity)
                         }
-                    } else {
-                        Button("Dismiss") {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                automation.dismissNotification()
-                            }
-                        }
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
-                        .accessibilityLabel("Dismiss notification")
+                        .buttonStyle(.amoraPill(fill: palette.accent, foreground: .white))
+                        .accessibilityLabel(notification.actionTitle ?? action.humanReadableName)
                     }
+
+                    Button("Dismiss") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            automation.dismissNotification()
+                        }
+                    }
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .buttonStyle(.amoraPill(fill: Color.white.opacity(0.12), foreground: .white.opacity(0.85)))
+                    .accessibilityLabel("Dismiss notification")
                 }
                 .padding(.horizontal, 8)
                 .padding(.top, 2)
@@ -241,6 +277,7 @@ struct AmoraCompanionPanel: View {
                             HStack(spacing: 4) {
                                 Text(suggestion.actionTitle ?? action.humanReadableName)
                                     .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .lineLimit(1)
                                 Image(systemName: "arrow.right")
                                     .font(.system(size: 8, weight: .bold))
                             }
