@@ -76,9 +76,26 @@ final class SettingsStore {
     }
 
     // AI
-    var aiProvider: String = AIProviderKind.appleOnDevice.rawValue
-    var aiModel: String = "apple-on-device"
+    var aiProvider: String = defaultAIProvider()
+    var aiModel: String = defaultAIModel(for: defaultAIProvider())
     var aiApiKey: String = ""
+
+    static func defaultAIProvider(appleChecker: any AppleOnDeviceAvailabilityChecking = AppleOnDeviceAvailability.current) -> String {
+        if appleChecker.isSupported() {
+            return AIProviderKind.appleOnDevice.rawValue
+        } else {
+            return AIProviderKind.local.rawValue
+        }
+    }
+
+    static func defaultAIModel(for provider: String) -> String {
+        if provider == AIProviderKind.appleOnDevice.rawValue {
+            return "apple-on-device"
+        } else if provider == AIProviderKind.local.rawValue {
+            return AmoraModelDescriptor.defaultModel.id
+        }
+        return "default"
+    }
 
     var aiSettingsSnapshot: AISettingsSnapshot {
         AISettingsSnapshot(enabled: aiEnabled,
@@ -112,10 +129,12 @@ final class SettingsStore {
     /// Centralized colors for the active theme — the single source of brand color.
     var palette: ThemePalette { theme.palette }
 
-    func load() {
+    func load(defaults: UserDefaults = .standard) {
         isLoadingSettings = true
         defer { isLoadingSettings = false }
-        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "AMORA_hasCompletedFirstRun") != nil {
+            self.hasCompletedFirstRun = defaults.bool(forKey: "AMORA_hasCompletedFirstRun")
+        }
         if defaults.object(forKey: "AMORA_hoverToExpand") != nil {
             self.hoverToExpand = defaults.bool(forKey: "AMORA_hoverToExpand")
         }
@@ -192,13 +211,18 @@ final class SettingsStore {
         self.aiApiKey = StorageManager.shared.getSecureItem(forKey: "ai-api-key") ?? ""
         if let provider = defaults.string(forKey: "AMORA_aiProvider") {
             self.aiProvider = provider
+        } else {
+            self.aiProvider = Self.defaultAIProvider()
+            if self.aiProvider == AIProviderKind.local.rawValue {
+                self.aiModel = Self.defaultAIModel(for: self.aiProvider)
+            }
         }
         if let model = defaults.string(forKey: "AMORA_aiModel") { self.aiModel = model }
         defaults.removeObject(forKey: "AMORA_aiApiKey")
     }
 
-    func save() {
-        let defaults = UserDefaults.standard
+    func save(defaults: UserDefaults = .standard) {
+        defaults.set(hasCompletedFirstRun, forKey: "AMORA_hasCompletedFirstRun")
         defaults.set(hoverToExpand, forKey: "AMORA_hoverToExpand")
         defaults.set(clickToExpand, forKey: "AMORA_clickToExpand")
         defaults.set(sleepMode, forKey: "AMORA_sleepMode")

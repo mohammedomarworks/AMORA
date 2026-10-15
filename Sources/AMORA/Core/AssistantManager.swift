@@ -13,6 +13,7 @@ final class AssistantManager {
     private let memoryStoreIsInjected: Bool
     var providerAvailability: AIAvailability { provider.availability }
     var isProviderAvailable: Bool { provider.isAvailable }
+    var currentProviderKind: AIProviderKind { provider.kind }
     private(set) var state: AssistantState = .idle
     private(set) var response: String?
     private(set) var lastError: AIProviderError?
@@ -354,6 +355,9 @@ final class AssistantManager {
         case .authenticationRequired:
             return "Your AI provider needs a valid API key."
         case .unavailable:
+            if provider.kind == .appleOnDevice {
+                return "Apple on-device AI is unsupported on this macOS version. You can use AMORA Local Brain to run offline models directly on this Mac."
+            }
             return "On-device AI is unavailable right now."
         case .cancelled:
             return "Okay — stopped."

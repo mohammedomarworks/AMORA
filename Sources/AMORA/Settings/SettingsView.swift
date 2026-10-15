@@ -222,7 +222,8 @@ public struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will delete the downloaded model file (~491 MB). You can download it again whenever you want.")
+            let sizeMB = Int(Double(modelManager.descriptor.expectedSizeBytes) / (1024 * 1024))
+            Text("This will delete the downloaded model file (~\(sizeMB) MB). You can download it again whenever you want.")
         }
     }
 
@@ -731,6 +732,23 @@ public struct SettingsView: View {
                             )
                             .foregroundStyle(availability == .available ? Color.green : Color.secondary)
                             .font(.subheadline)
+                        }
+
+                        if availability != .available {
+                            HStack {
+                                Text("Apple on-device AI is unsupported on this macOS version. Switch to Local Brain to run offline models directly on this Mac.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Switch to Local Brain") {
+                                    settings.aiProvider = AIProviderKind.local.rawValue
+                                    settings.aiModel = AmoraModelDescriptor.defaultModel.id
+                                    settings.save()
+                                }
+                                .font(.caption)
+                                .buttonStyle(.borderedProminent)
+                            }
+                            .padding(.top, 4)
                         }
 
                         Text("Apple On-Device models run 100% locally on your Mac. No network calls are made and no API key is required.")

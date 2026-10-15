@@ -329,19 +329,80 @@ struct AppleFoundationModelProvider: AIProvider {
 }
 #endif
 
+/// Abstraction for checking Apple On-Device Foundation Models availability.
+/// Enables tests to simulate platform support/unsupport deterministically.
+protocol AppleOnDeviceAvailabilityChecking: Sendable {
+    func isSupported() -> Bool
+    func availability() -> AIAvailability
+}
+
+struct SystemAppleOnDeviceAvailabilityChecker: AppleOnDeviceAvailabilityChecking, Sendable {
+    init() {}
+    func isSupported() -> Bool {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) {
+            return true
+        }
+        #endif
+        return false
+    }
+
+    func availability() -> AIAvailability {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) {
+            return AppleFoundationModelProvider.currentAvailability
+        }
+        #endif
+        return .unsupported
+    }
+}
+
+enum AppleOnDeviceAvailability: Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var _current: any AppleOnDeviceAvailabilityChecking = SystemAppleOnDeviceAvailabilityChecker()
+
+    static var current: any AppleOnDeviceAvailabilityChecking {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _current
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _current = newValue
+        }
+    }
+
+    static func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        _current = SystemAppleOnDeviceAvailabilityChecker()
+    }
+
+    static var isSupported: Bool {
+        current.isSupported()
+    }
+
+    static var availability: AIAvailability {
+        current.availability()
+    }
+}
+
 enum AIProviderFactory {
     static func make(for settings: AISettingsSnapshot) -> any AIProvider {
         guard settings.enabled else { return UnavailableAIProvider(kind: settings.provider) }
         switch settings.provider {
         case .appleOnDevice:
-            if #available(macOS 26.0, *) {
+            if AppleOnDeviceAvailability.isSupported {
                 #if canImport(FoundationModels)
-                return AppleFoundationModelProvider()
-                #else
-                return UnavailableAIProvider(kind: .appleOnDevice, availability: .unsupported)
+                if #available(macOS 26.0, *) {
+                    return AppleFoundationModelProvider()
+                }
                 #endif
+                return UnavailableAIProvider(kind: .appleOnDevice, availability: AppleOnDeviceAvailability.availability)
             }
-            return UnavailableAIProvider(kind: .appleOnDevice, availability: .unsupported)
+            return UnavailableAIProvider(kind: .appleOnDevice, availability: AppleOnDeviceAvailability.availability)
         case .openAI:
             guard settings.apiKey?.isEmpty == false else { return UnavailableAIProvider(kind: .openAI) }
             return HTTPAIProvider(kind: .openAI, endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!)

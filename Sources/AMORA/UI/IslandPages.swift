@@ -263,8 +263,18 @@ struct IslandAITalkPage: View {
     @State private var copied: Bool = false
     @FocusState private var isInputFocused: Bool
 
+    private var settings: SettingsStore { AppState.shared.settings }
+
     private var isLocalProvider: Bool {
-        AppState.shared.settings.aiProvider == AIProviderKind.local.rawValue
+        settings.aiProvider == AIProviderKind.local.rawValue
+    }
+
+    private var isAppleProvider: Bool {
+        settings.aiProvider == AIProviderKind.appleOnDevice.rawValue
+    }
+
+    private var currentProviderAvailable: Bool {
+        AIProviderFactory.make(for: settings.aiSettingsSnapshot).isAvailable
     }
 
     var body: some View {
@@ -275,6 +285,76 @@ struct IslandAITalkPage: View {
                     ActionExecutionView(compact: true)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if assistant.state == .failed {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
+                        Text("Notice")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(.orange)
+                        Spacer()
+                    }
+                    Text(assistant.response ?? "Something got in the way. Please try again.")
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.88))
+                        .lineSpacing(2)
+
+                    // Actionable resolution buttons
+                    HStack(spacing: 8) {
+                        if isLocalProvider && !modelManager.isReady {
+                            if case .downloading(let progress, let downloaded, let total) = modelManager.status {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    ProgressView(value: progress)
+                                        .progressViewStyle(.linear)
+                                        .tint(palette.accent)
+                                    HStack {
+                                        Text(String(format: "%.0f%% • %.1f/%.1f MB", progress * 100, Double(downloaded) / (1024 * 1024), Double(total) / (1024 * 1024)))
+                                            .font(.system(size: 8))
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Button("Cancel") {
+                                            modelManager.cancelDownload()
+                                        }
+                                        .font(.system(size: 8))
+                                        .buttonStyle(.amoraPill)
+                                    }
+                                }
+                            } else {
+                                Button {
+                                    Task { try? await modelManager.startDownload() }
+                                } label: {
+                                    Label("Download Local Brain", systemImage: "arrow.down.circle.fill")
+                                }
+                                .font(.system(size: 9, weight: .semibold))
+                                .buttonStyle(.amoraPill)
+                            }
+                        } else if !isLocalProvider && isAppleProvider {
+                            Button {
+                                settings.aiProvider = AIProviderKind.local.rawValue
+                                settings.aiModel = AmoraModelDescriptor.defaultModel.id
+                                settings.save()
+                            } label: {
+                                Label("Switch to Local Brain", systemImage: "cpu")
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .buttonStyle(.amoraPill)
+                        }
+
+                        Button {
+                            WindowManager.shared.showSettings(section: .aiAssistant)
+                        } label: {
+                            Label("Open Settings", systemImage: "gearshape")
+                        }
+                        .font(.system(size: 9, weight: .regular))
+                        .buttonStyle(.amoraPill)
+                    }
+                    .padding(.top, 2)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let response = assistant.response {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -374,9 +454,39 @@ struct IslandAITalkPage: View {
                             Text(progress > 0 ? String(format: "Verifying checksum (%.0f%%)…", progress * 100) : "Verifying checksum…")
                                 .font(.system(size: 9))
                         }
+                    } else if case .failed(let err) = modelManager.status {
+                        HStack {
+                            Text("Download failed: \(err)")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.red)
+                                .lineLimit(1)
+                            Spacer()
+                            Button("Retry") {
+                                Task { try? await modelManager.startDownload() }
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .buttonStyle(.amoraPill)
+                        }
+                    } else if case .corrupt(let reason) = modelManager.status {
+                        HStack {
+                            Text("Model corrupted: \(reason)")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.red)
+                                .lineLimit(1)
+                            Spacer()
+                            Button("Re-download") {
+                                Task {
+                                    try? await modelManager.deleteModel()
+                                    try? await modelManager.startDownload()
+                                }
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .buttonStyle(.amoraPill)
+                        }
                     } else {
                         HStack {
-                            Text("Offline model (~491 MB). No API keys or cloud required.")
+                            let sizeStr = String(format: "%.1f GB", Double(modelManager.descriptor.expectedSizeBytes) / (1024 * 1024 * 1024))
+                            Text("\(modelManager.descriptor.displayName) (\(sizeStr)). Offline, private.")
                                 .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -392,6 +502,43 @@ struct IslandAITalkPage: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.accent.opacity(0.2), lineWidth: 1))
                 .frame(maxHeight: .infinity)
+            } else if !isLocalProvider && !currentProviderAvailable && assistant.state != .thinking {
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.orange)
+                        Text(isAppleProvider ? "Apple On-Device AI Unavailable" : "AI Provider Unavailable")
+                            .font(.system(size: 11, weight: .bold))
+                        Spacer()
+                        Button("Settings") {
+                            WindowManager.shared.showSettings(section: .aiAssistant)
+                        }
+                        .font(.system(size: 8))
+                        .buttonStyle(.amoraPill)
+                    }
+
+                    HStack {
+                        Text(isAppleProvider
+                             ? "Unsupported on this Mac. Switch to Local Brain to run offline."
+                             : "Provider requires configuration. Switch to Local Brain for offline assistance.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Spacer()
+                        Button("Switch to Local Brain") {
+                            settings.aiProvider = AIProviderKind.local.rawValue
+                            settings.aiModel = AmoraModelDescriptor.defaultModel.id
+                            settings.save()
+                        }
+                        .font(.system(size: 9, weight: .semibold))
+                        .buttonStyle(.amoraPill)
+                    }
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.2), lineWidth: 1))
+                .frame(maxHeight: .infinity)
             } else {
                 switch assistant.state {
                 case .thinking:
@@ -404,24 +551,6 @@ struct IslandAITalkPage: View {
                             .foregroundStyle(.white.opacity(0.75))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .failed:
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.orange)
-                            Text("Notice")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundStyle(.orange)
-                        }
-                        Text(assistant.response ?? "Something got in the way. Please try again.")
-                            .font(.system(size: 11, weight: .regular, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.88))
-                            .lineSpacing(2)
-                    }
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 case .cancelled:
                     HStack(spacing: 8) {
                         Image(systemName: "stop.circle.fill")
