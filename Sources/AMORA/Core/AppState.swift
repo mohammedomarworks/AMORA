@@ -19,10 +19,8 @@ final class AppState {
     }
 
     private func initialize() {
-        Task {
-            await storage.load()
-            settings.load()
-        }
+        storage.load()
+        settings.load()
     }
 
     func handleLaunch() {
@@ -33,9 +31,12 @@ final class AppState {
 
     func handleTerminate() {
         AmoraLlamaCppRuntime.shared.unloadSync()
-        Task {
-            await storage.save()
-        }
+        ClipboardService.shared.stopPolling()
+        SystemMonitorService.shared.stopMonitoring()
+        MusicService.shared.stopPolling()
+        TimerService.shared.stopTimer()
+        AMORARobot.shared.stopAnimations()
+        storage.save()
         settings.save()
     }
 }

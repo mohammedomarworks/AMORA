@@ -25,7 +25,17 @@ final class SettingsStore {
     var volumeEnabled: Bool = true
     var brightnessEnabled: Bool = true
     var batteryEnabled: Bool = true
-    var clipboardEnabled: Bool = true
+    var clipboardEnabled: Bool = true {
+        didSet {
+            guard !isLoadingSettings else { return }
+            if !clipboardEnabled {
+                ClipboardService.shared.clearHistory()
+                ClipboardService.shared.stopPolling()
+            } else {
+                ClipboardService.shared.startPolling()
+            }
+        }
+    }
     var fileShelfEnabled: Bool = true
     var timerEnabled: Bool = true
     var notesEnabled: Bool = true
@@ -179,9 +189,7 @@ final class SettingsStore {
         if let themeStr = defaults.string(forKey: "AMORA_theme"), let th = Theme(rawValue: themeStr) {
             self.theme = th
         }
-        Task { @MainActor in
-            self.aiApiKey = await StorageManager.shared.getSecureItem(forKey: "ai-api-key") ?? ""
-        }
+        self.aiApiKey = StorageManager.shared.getSecureItem(forKey: "ai-api-key") ?? ""
         if let provider = defaults.string(forKey: "AMORA_aiProvider") {
             self.aiProvider = provider
         }
@@ -218,7 +226,7 @@ final class SettingsStore {
         defaults.set(proactiveMusicPlaybackEnabled, forKey: "AMORA_proactiveMusicPlaybackEnabled")
         defaults.set(proactiveInactivityReturnEnabled, forKey: "AMORA_proactiveInactivityReturnEnabled")
         defaults.set(proactiveBatteryCriticalEnabled, forKey: "AMORA_proactiveBatteryCriticalEnabled")
-        Task { await StorageManager.shared.setSecureItem(aiApiKey, forKey: "ai-api-key") }
+        StorageManager.shared.setSecureItem(aiApiKey, forKey: "ai-api-key")
     }
 }
 

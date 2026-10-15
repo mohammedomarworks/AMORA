@@ -26,14 +26,17 @@ final class ClipboardService {
 
     private init() {
         lastChangeCount = NSPasteboard.general.changeCount
-        checkClipboard()
-        if NSClassFromString("XCTestCase") == nil {
-            startPolling()
+        if AppState.shared.settings.clipboardEnabled {
+            checkClipboard()
+            if NSClassFromString("XCTestCase") == nil {
+                startPolling()
+            }
         }
     }
 
     func startPolling() {
         pollTimer?.invalidate()
+        guard AppState.shared.settings.clipboardEnabled else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.checkClipboard()
@@ -47,6 +50,7 @@ final class ClipboardService {
     }
 
     func checkClipboard() {
+        guard AppState.shared.settings.clipboardEnabled else { return }
         let pasteboard = NSPasteboard.general
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount

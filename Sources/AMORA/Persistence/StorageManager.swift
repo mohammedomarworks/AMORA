@@ -41,30 +41,34 @@ actor StorageManager {
         }
     }
 
-    func save() {
+    nonisolated func save() {
         // Called during app termination — persist any pending state
     }
 
-    func load() {
+    nonisolated func load() {
         // Load any cached data
     }
 
     // MARK: - Secure Credential Storage
 
-    func setSecureItem(_ value: String, forKey key: String) -> Bool {
-        guard let data = value.data(using: .utf8) else { return false }
+    @discardableResult
+    nonisolated func setSecureItem(_ value: String, forKey key: String) -> Bool {
+        _ = deleteSecureItem(forKey: key)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else {
+            return true
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
             kSecAttrService as String: "com.amora.app",
             kSecValueData as String: data
         ]
-        SecItemDelete(query as CFDictionary)
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
     }
 
-    func getSecureItem(forKey key: String) -> String? {
+    nonisolated func getSecureItem(forKey key: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
@@ -82,7 +86,7 @@ actor StorageManager {
     }
 
     @discardableResult
-    func deleteSecureItem(forKey key: String) -> Bool {
+    nonisolated func deleteSecureItem(forKey key: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,

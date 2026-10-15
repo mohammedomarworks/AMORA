@@ -725,9 +725,12 @@ public struct SettingsView: View {
                             Text("Runtime Availability")
                                 .font(.subheadline)
                             Spacer()
-                            Label(availability.displayName, systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.subheadline)
+                            Label(
+                                availability.displayName,
+                                systemImage: availability == .available ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+                            )
+                            .foregroundStyle(availability == .available ? Color.green : Color.secondary)
+                            .font(.subheadline)
                         }
 
                         Text("Apple On-Device models run 100% locally on your Mac. No network calls are made and no API key is required.")
@@ -865,7 +868,8 @@ public struct SettingsView: View {
                         Button {
                             Task { try? await modelManager.startDownload() }
                         } label: {
-                            Label("Download & Set Up (491 MB)", systemImage: "arrow.down.circle.fill")
+                            let sizeMB = Double(desc.expectedSizeBytes) / (1024 * 1024)
+                            Label(String(format: "Download & Set Up (%.0f MB)", sizeMB), systemImage: "arrow.down.circle.fill")
                         }
                         .buttonStyle(.borderedProminent)
                     }

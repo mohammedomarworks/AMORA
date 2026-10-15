@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var windowManager: WindowManager?
     private var permissionManager: PermissionManager?
+    private var wakeObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setlinebuf(stdout)
@@ -21,9 +22,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         windowManager?.showNotchWindow()
 
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                await AmoraAutomationService.shared.recoverAfterRelaunch()
+                AMORAContext.shared.refreshFromServices()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
         AppState.shared.handleTerminate()
     }
 

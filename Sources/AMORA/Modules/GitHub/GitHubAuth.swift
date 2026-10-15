@@ -16,15 +16,15 @@ public struct KeychainGitHubTokenStore: GitHubTokenStoring {
     public init() {}
 
     public func getAccessToken() async -> String? {
-        await StorageManager.shared.getSecureItem(forKey: key)
+        StorageManager.shared.getSecureItem(forKey: key)
     }
 
     public func saveAccessToken(_ token: String) async -> Bool {
-        await StorageManager.shared.setSecureItem(token, forKey: key)
+        StorageManager.shared.setSecureItem(token, forKey: key)
     }
 
     public func deleteAccessToken() async -> Bool {
-        await StorageManager.shared.deleteSecureItem(forKey: key)
+        StorageManager.shared.deleteSecureItem(forKey: key)
     }
 }
 
