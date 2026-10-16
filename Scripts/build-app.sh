@@ -106,10 +106,37 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
 </plist>
 EOF
 
-echo "🔏 Ad-hoc code signing $APP_BUNDLE..."
-if [ -d "$FRAMEWORKS_DIR/llama.framework" ]; then
-    codesign --force --sign - "$FRAMEWORKS_DIR/llama.framework" 2>/dev/null || true
+DEVELOPER_ID="${DEVELOPER_ID:-}"
+if [ -n "$DEVELOPER_ID" ] && [ "$DEVELOPER_ID" != "-" ]; then
+    echo "🔏 Code signing with Developer ID: $DEVELOPER_ID..."
+    SIGN_FLAGS=(--force --timestamp --options runtime --sign "$DEVELOPER_ID")
+else
+    echo "🔏 Ad-hoc code signing $APP_BUNDLE..."
+    SIGN_FLAGS=(--force --sign "-")
 fi
-codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
+
+ENTITLEMENTS="${ENTITLEMENTS:-}"
+APP_SIGN_FLAGS=("${SIGN_FLAGS[@]}")
+if [ -n "$ENTITLEMENTS" ] && [ -f "$ENTITLEMENTS" ]; then
+    echo "📄 Applying entitlements: $ENTITLEMENTS..."
+    APP_SIGN_FLAGS+=(--entitlements "$ENTITLEMENTS")
+fi
+
+# Sign nested components inside-out before signing the main bundle
+if [ -d "$FRAMEWORKS_DIR/llama.framework" ]; then
+    echo "  Signing $FRAMEWORKS_DIR/llama.framework..."
+    codesign "${SIGN_FLAGS[@]}" "$FRAMEWORKS_DIR/llama.framework"
+fi
+
+if [ -f "$RESOURCES_DIR/AMORA-BrowserHost" ]; then
+    echo "  Signing $RESOURCES_DIR/AMORA-BrowserHost..."
+    codesign "${SIGN_FLAGS[@]}" "$RESOURCES_DIR/AMORA-BrowserHost"
+fi
+
+echo "  Signing $APP_BUNDLE..."
+codesign "${APP_SIGN_FLAGS[@]}" "$APP_BUNDLE"
+
+echo "🔍 Validating bundle signature..."
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
 echo "✅ AMORA.app built successfully at $DIR/$APP_BUNDLE"
