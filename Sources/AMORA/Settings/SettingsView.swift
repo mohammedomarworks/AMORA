@@ -222,8 +222,7 @@ public struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            let sizeMB = Int(Double(modelManager.descriptor.expectedSizeBytes) / (1024 * 1024))
-            Text("This will delete the downloaded model file (~\(sizeMB) MB). You can download it again whenever you want.")
+            Text("This will delete the downloaded model file (~\(modelManager.descriptor.formattedExpectedSize)). You can download it again whenever you want.")
         }
     }
 
@@ -801,7 +800,7 @@ public struct SettingsView: View {
                     }
                     GridRow {
                         Text("Size:").font(.caption).foregroundStyle(.secondary)
-                        Text(String(format: "%.1f MB", Double(desc.expectedSizeBytes) / (1024 * 1024))).font(.caption)
+                        Text(desc.formattedExpectedSize).font(.caption)
                         Text("RAM:").font(.caption).foregroundStyle(.secondary)
                         Text(String(format: "~%d MB", desc.estimatedRAMBytes / (1024 * 1024))).font(.caption)
                     }
@@ -886,8 +885,14 @@ public struct SettingsView: View {
                         Button {
                             Task { try? await modelManager.startDownload() }
                         } label: {
-                            let sizeMB = Double(desc.expectedSizeBytes) / (1024 * 1024)
-                            Label(String(format: "Download & Set Up (%.0f MB)", sizeMB), systemImage: "arrow.down.circle.fill")
+                            let isReDownload: Bool = {
+                                switch modelManager.status {
+                                case .corrupt, .failed: return true
+                                default: return false
+                                }
+                            }()
+                            let actionTitle = isReDownload ? "Re-download" : "Download & Set Up"
+                            Label("\(actionTitle) (\(desc.formattedExpectedSize))", systemImage: "arrow.down.circle.fill")
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -1385,7 +1390,7 @@ public struct SettingsView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
 
-                Text("Version 1.0.0 (Build 1)")
+                Text(AppVersion.fullDisplay)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 10)

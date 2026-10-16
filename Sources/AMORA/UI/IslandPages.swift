@@ -485,8 +485,7 @@ struct IslandAITalkPage: View {
                         }
                     } else {
                         HStack {
-                            let sizeStr = String(format: "%.1f GB", Double(modelManager.descriptor.expectedSizeBytes) / (1024 * 1024 * 1024))
-                            Text("\(modelManager.descriptor.displayName) (\(sizeStr)). Offline, private.")
+                            Text("\(modelManager.descriptor.displayName) (\(modelManager.descriptor.formattedExpectedSize)). Offline, private.")
                                 .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
                             Spacer()

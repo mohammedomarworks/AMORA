@@ -51,6 +51,24 @@ fi
 echo "🔌 Registering Chrome native messaging host..."
 "$DIR/Scripts/install-chrome-native-host.sh" "$DIR/$RESOURCES_DIR/AMORA-BrowserHost"
 
+VERSION_FILE="$DIR/VERSION"
+APP_VERSION="1.0.0"
+BUILD_NUMBER="1"
+
+if [ -f "$VERSION_FILE" ]; then
+    FILE_VERSION="$(grep '^VERSION=' "$VERSION_FILE" | cut -d '=' -f2 | tr -d '[:space:]')"
+    FILE_BUILD="$(grep '^BUILD=' "$VERSION_FILE" | cut -d '=' -f2 | tr -d '[:space:]')"
+    if [ -n "$FILE_VERSION" ]; then
+        APP_VERSION="$FILE_VERSION"
+    fi
+    if [ -n "$FILE_BUILD" ]; then
+        BUILD_NUMBER="$FILE_BUILD"
+    fi
+    cp "$VERSION_FILE" "$RESOURCES_DIR/VERSION"
+fi
+
+echo "🏷️  Packaging AMORA v$APP_VERSION (Build $BUILD_NUMBER)..."
+
 cat <<EOF > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -69,9 +87,9 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>$APP_VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

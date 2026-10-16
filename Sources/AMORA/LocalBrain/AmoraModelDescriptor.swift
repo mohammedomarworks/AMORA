@@ -53,6 +53,17 @@ public struct AmoraModelDescriptor: Identifiable, Equatable, Sendable {
         self.generationPrefix = generationPrefix
     }
 
+    /// Formatted expected download size for user-facing UI labels (e.g. "1.0 GB" or "469 MB").
+    public var formattedExpectedSize: String {
+        if expectedSizeBytes >= 1024 * 1024 * 1024 {
+            let gigabytes = Double(expectedSizeBytes) / (1024.0 * 1024.0 * 1024.0)
+            return String(format: "%.1f GB", gigabytes)
+        } else {
+            let megabytes = Double(expectedSizeBytes) / (1024.0 * 1024.0)
+            return String(format: "%.0f MB", megabytes)
+        }
+    }
+
     /// Promoted default model for AMORA Local Brain:
     /// Qwen2.5-1.5B-Instruct quantized to Q4_K_M (Apache 2.0 License).
     /// Superior reasoning, zero-shot structured JSON formatting, and 83.6% task completion.

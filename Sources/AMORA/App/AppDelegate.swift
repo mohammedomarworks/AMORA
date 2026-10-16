@@ -118,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openAbout() {
         let alert = NSAlert()
         alert.messageText = "AMORA"
-        alert.informativeText = "Your little Mac companion.\nLiving right around your MacBook notch.\nVersion 1.0.0"
+        alert.informativeText = "Your little Mac companion.\nLiving right around your MacBook notch.\n\(AppVersion.shortDisplay)"
         alert.alertStyle = .informational
         alert.runModal()
     }
