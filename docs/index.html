@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AMORA — Local-First macOS AI Companion</title>
+  <meta name="description" content="AMORA is a local-first macOS companion with a Dynamic Island interface, on-device AI, and privacy-first tools — timers, notes, media, clipboard, and automations.">
+  <meta name="theme-color" content="#0a0a0f">
+  <meta property="og:title" content="AMORA — Local-First macOS AI Companion">
+  <meta property="og:description" content="A native macOS companion with a Dynamic Island interface, on-device AI, and privacy-first utilities.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="style.css">
+  <!-- No external dependencies -->
+</head>
+<body>
+
+  <!-- ============ HEADER / NAV ============ -->
+  <header class="site-header" role="banner">
+    <div class="container header-inner">
+      <a href="./" class="logo" aria-label="AMORA home">
+        <span class="logo-icon" aria-hidden="true">✦</span>
+        <span class="logo-text">AMORA</span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <button class="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Toggle navigation">
+          <span class="nav-toggle-bar"></span>
+          <span class="nav-toggle-bar"></span>
+          <span class="nav-toggle-bar"></span>
+        </button>
+        <ul id="nav-links" class="nav-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#download">Download</a></li>
+          <li><a href="#requirements">Requirements</a></li>
+          <li><a href="#privacy">Privacy</a></li>
+          <li><a href="https://github.com/mohammedomarworks/AMORA" class="nav-gh" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero" aria-labelledby="hero-heading">
+    <div class="container hero-inner">
+      <div class="hero-badge">Native macOS App · Apple Silicon</div>
+      <h1 id="hero-heading">Your Mac's local&#8209;first<br>AI companion</h1>
+      <p class="hero-sub">
+        AMORA lives in a Dynamic Island at the top of your screen — an always&#8209;there workspace for AI chat, timers, notes, media controls, clipboard history, and system monitoring. Powered by on&#8209;device inference. No cloud subscription required.
+      </p>
+      <div class="hero-actions">
+        <a href="#download" class="btn btn-primary">Download for Mac</a>
+        <a href="https://github.com/mohammedomarworks/AMORA" class="btn btn-ghost" target="_blank" rel="noopener noreferrer">View Source</a>
+      </div>
+      <!-- Dynamic Island illustration — pure CSS/SVG, no fake screenshot -->
+      <div class="hero-island" aria-hidden="true">
+        <div class="island-shape">
+          <div class="island-content">
+            <span class="island-dot"></span>
+            <span class="island-label">AMORA</span>
+            <span class="island-status">● Ready</span>
+          </div>
+        </div>
+        <div class="island-glow"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FEATURES ============ -->
+  <section id="features" class="features" aria-labelledby="features-heading">
+    <div class="container">
+      <h2 id="features-heading" class="section-title">What AMORA does</h2>
+      <p class="section-sub">Everything runs natively on your Mac. No Electron. No web wrapper. Pure Swift &amp; Metal.</p>
+
+      <div class="feature-grid">
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">💬</div>
+          <h3>AI Chat</h3>
+          <p>Converse with a local Qwen 2.5 model running entirely on&#8209;device via Metal GPU acceleration, or connect your own Anthropic&nbsp;/ OpenAI API key. Apple Intelligence is also supported on compatible hardware.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">🧠</div>
+          <h3>Local Brain</h3>
+          <p>Built&#8209;in <code>llama.cpp</code> inference engine with quantized models (1.5&nbsp;B&nbsp;/ 0.5&nbsp;B params). Downloads once, runs offline forever — SHA&#8209;256 verified.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">💾</div>
+          <h3>Memory</h3>
+          <p>Save explicit preferences that persist across sessions. A privacy validator automatically rejects passwords, API keys, financial data, and health records before anything is stored.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">📝</div>
+          <h3>Notes</h3>
+          <p>Quick&#8209;capture notes accessible from the Dynamic Island dashboard. Local storage, instant access, zero friction.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">⏱</div>
+          <h3>Timers</h3>
+          <p>Set and manage timers directly from the island. Visual countdown, system notifications, and natural&#8209;language creation through AI chat.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">⚡</div>
+          <h3>Automations</h3>
+          <p>Create recurring and one&#8209;shot automations with proactive suggestions. AMORA executes them deterministically through its sandboxed tool registry.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">📋</div>
+          <h3>Clipboard Privacy Guard</h3>
+          <p>Monitors your clipboard history while automatically filtering password&#8209;manager entries, transient data, and concealed types. Clipboard content is never sent to AI.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">🎵</div>
+          <h3>Media &amp; Chrome Integration</h3>
+          <p>Control Spotify, Apple&nbsp;Music, and YouTube playback from the island. The Chrome extension uses Native Messaging to sync YouTube media state in real time.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">📊</div>
+          <h3>System Monitor &amp; Battery</h3>
+          <p>Live system metrics, battery health diagnostics, and resource monitoring — always one glance away in the dashboard.</p>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW IT WORKS ============ -->
+  <section class="how-it-works" aria-labelledby="how-heading">
+    <div class="container">
+      <h2 id="how-heading" class="section-title">How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num" aria-hidden="true">1</div>
+          <h3>Clone &amp; Build</h3>
+          <p>Clone the repository, run <code>./Scripts/build-app.sh release</code>, and launch <code>AMORA.app</code>.</p>
+        </div>
+        <div class="step">
+          <div class="step-num" aria-hidden="true">2</div>
+          <h3>Choose your AI</h3>
+          <p>Download the built&#8209;in Local Brain model, use Apple Intelligence, or enter a cloud API key. Or run with AI disabled — all core tools work deterministically.</p>
+        </div>
+        <div class="step">
+          <div class="step-num" aria-hidden="true">3</div>
+          <h3>Live in the island</h3>
+          <p>AMORA floats near your notch and expands into a full workspace. Chat, set timers, take notes, control music — without leaving what you're doing.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DOWNLOAD ============ -->
+  <section id="download" class="download" aria-labelledby="download-heading">
+    <div class="container download-inner">
+      <h2 id="download-heading" class="section-title">Download</h2>
+
+      <div class="download-card">
+        <div class="download-card-header">
+          <span class="download-platform">macOS</span>
+          <span class="download-version">v1.0.0 beta</span>
+        </div>
+
+        <div class="download-notice" role="status">
+          <p><strong>Public download is being prepared.</strong></p>
+          <p>AMORA requires code signing and Apple notarization before macOS will allow installation from a downloaded archive. The signed release is not yet available.</p>
+        </div>
+
+        <!-- 
+          When a signed GitHub Release is published, replace the href below
+          with the direct asset URL, e.g.:
+          href="https://github.com/mohammedomarworks/AMORA/releases/download/v1.0.0/AMORA-1.0.0.zip"
+          and change the button text to "Download for Mac".
+        -->
+        <a id="download-btn" href="https://github.com/mohammedomarworks/AMORA/releases" class="btn btn-primary btn-lg" target="_blank" rel="noopener noreferrer">
+          View Releases on GitHub
+        </a>
+
+        <p class="download-alt">
+          Want to build from source?
+          <a href="https://github.com/mohammedomarworks/AMORA#building-and-running-locally" target="_blank" rel="noopener noreferrer">See build instructions →</a>
+        </p>
+      </div>
+
+      <div class="download-req-summary">
+        <span>Apple Silicon (M1+)</span>
+        <span class="dot-sep" aria-hidden="true">·</span>
+        <span>macOS 14 Sonoma+</span>
+        <span class="dot-sep" aria-hidden="true">·</span>
+        <span>~30 MB app + ~1 GB model</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SYSTEM REQUIREMENTS ============ -->
+  <section id="requirements" class="requirements" aria-labelledby="req-heading">
+    <div class="container">
+      <h2 id="req-heading" class="section-title">System Requirements</h2>
+
+      <div class="req-grid">
+        <div class="req-col">
+          <h3>Hardware</h3>
+          <dl class="req-list">
+            <dt>Processor</dt>
+            <dd>Apple Silicon (M1 or later)</dd>
+            <dt>RAM</dt>
+            <dd>Base app: ~100–180 MB idle<br>With Local Brain (1.5B): ~1.4 GB additional</dd>
+            <dt>Disk Space</dt>
+            <dd>~30 MB for the app<br>~1.6 GB free for the default model download</dd>
+          </dl>
+        </div>
+        <div class="req-col">
+          <h3>Software</h3>
+          <dl class="req-list">
+            <dt>OS</dt>
+            <dd>macOS 14.0 (Sonoma) or later</dd>
+            <dt>Permissions</dt>
+            <dd>Core tools require no special permissions.<br>Automation permission needed for Apple Music / Spotify control.</dd>
+            <dt>Optional</dt>
+            <dd>Google Chrome for YouTube integration.<br>Anthropic or OpenAI API key for cloud AI.</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PRIVACY ============ -->
+  <section id="privacy" class="privacy" aria-labelledby="privacy-heading">
+    <div class="container">
+      <h2 id="privacy-heading" class="section-title">Privacy by Design</h2>
+      <p class="section-sub">AMORA is built to keep your data on your Mac.</p>
+
+      <div class="privacy-grid">
+        <div class="privacy-item">
+          <h3>🔒 Local-first inference</h3>
+          <p>The default AI provider runs entirely on-device. No data leaves your Mac during inference.</p>
+        </div>
+        <div class="privacy-item">
+          <h3>🛡 Clipboard filtering</h3>
+          <p>Password manager entries and concealed types are automatically skipped — never stored or sent anywhere.</p>
+        </div>
+        <div class="privacy-item">
+          <h3>🔑 Secure key storage</h3>
+          <p>API keys are stored in the macOS Keychain, never written to disk in plain text.</p>
+        </div>
+        <div class="privacy-item">
+          <h3>🚫 Sandboxed tools</h3>
+          <p>No shell execution. No arbitrary file access. Folder navigation limited to Desktop, Documents, and Downloads with user confirmation.</p>
+        </div>
+      </div>
+
+      <p class="privacy-more">
+        Full privacy policy and security invariants are documented in the
+        <a href="https://github.com/mohammedomarworks/AMORA#privacy-permissions--security-invariants" target="_blank" rel="noopener noreferrer">README</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-inner">
+      <div class="footer-links">
+        <a href="https://github.com/mohammedomarworks/AMORA" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/mohammedomarworks/AMORA/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/mohammedomarworks/AMORA/issues" target="_blank" rel="noopener noreferrer">Issues</a>
+        <a href="https://github.com/mohammedomarworks/AMORA#readme" target="_blank" rel="noopener noreferrer">Documentation</a>
+      </div>
+      <p class="footer-copy">AMORA is open source. Built with Swift, Metal, and llama.cpp.</p>
+    </div>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>
