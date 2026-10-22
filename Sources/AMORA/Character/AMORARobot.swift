@@ -3,6 +3,86 @@ import SwiftUI
 import Observation
 import QuartzCore
 
+/// Discrete expressive mascot reaction states triggered by user interaction.
+enum MascotReaction: String, CaseIterable, Equatable, Sendable {
+    case affection
+    case excited
+    case curious
+    case grumpy
+
+    var displayName: String {
+        switch self {
+        case .affection: return "Affection"
+        case .excited: return "Excited"
+        case .curious: return "Curious"
+        case .grumpy: return "Playfully Grumpy"
+        }
+    }
+
+    var badgeText: String {
+        switch self {
+        case .affection: return "Love"
+        case .excited: return "Excited"
+        case .curious: return "Curious"
+        case .grumpy: return "Grumpy"
+        }
+    }
+
+    var badgeIcon: String {
+        switch self {
+        case .affection: return "heart.fill"
+        case .excited: return "sparkles"
+        case .curious: return "eye.fill"
+        case .grumpy: return "face.dashed"
+        }
+    }
+
+    var expressiveMessage: String {
+        switch self {
+        case .affection: return "Sending positive vibes! ❤️"
+        case .excited: return "Energized and ready! ✨"
+        case .curious: return "Observing closely! 👀"
+        case .grumpy: return "Careful with the visor! 🤖"
+        }
+    }
+
+    var sound: AMORASound {
+        switch self {
+        case .affection: return .pop
+        case .excited: return .success
+        case .curious: return .click
+        case .grumpy: return .click
+        }
+    }
+
+    var expression: Expression {
+        switch self {
+        case .affection: return .affection()
+        case .excited: return .excited()
+        case .curious: return .curious()
+        case .grumpy: return .grumpy()
+        }
+    }
+
+    var state: AMORAState {
+        switch self {
+        case .affection: return .affection
+        case .excited: return .excited
+        case .curious: return .curious
+        case .grumpy: return .grumpy
+        }
+    }
+
+    var accessibilityDescription: String {
+        switch self {
+        case .affection: return "feeling affectionate with heart eyes"
+        case .excited: return "cheerful and excited"
+        case .curious: return "curious and attentive"
+        case .grumpy: return "playfully grumpy pouting"
+        }
+    }
+}
+
 @Observable @MainActor
 final class AMORARobot {
     static let shared = AMORARobot()
@@ -19,6 +99,20 @@ final class AMORARobot {
     /// One-shot celebratory bounce amplitude (0 at rest). Views read this to pop
     /// AMORA on happy moments like a finished focus session.
     var bouncePhase: Double = 0
+    /// Transient head wiggle rotation for playful grumpy reactions.
+    var wigglePhase: Double = 0
+
+    /// Currently active user click reaction, if any.
+    private(set) var activeReaction: MascotReaction?
+    private(set) var activeReactionMessage: String?
+    private var lastClickTime: Date = .distantPast
+    private var rapidClickCount: Int = 0
+    private var reactionCycleIndex: Int = 0
+    private var reactionRevertToken: Int = 0
+    private var previousStateBeforeReaction: AMORAState?
+
+    /// Minimum duration between click interactions to prevent rapid-click animation glitching.
+    var clickDebounceThreshold: TimeInterval = 0.22
 
     private var animationTimer: Timer?
     private var lastBlink: Date = Date()
@@ -67,6 +161,12 @@ final class AMORARobot {
         if bouncePhase > 0.0001 {
             bouncePhase *= 0.85
             if bouncePhase < 0.0001 { bouncePhase = 0 }
+        }
+
+        // Wiggle oscillates and decays back to rest for playful grumpy reactions.
+        if abs(wigglePhase) > 0.001 {
+            wigglePhase = -wigglePhase * 0.75
+            if abs(wigglePhase) < 0.005 { wigglePhase = 0 }
         }
 
         // Smooth eye follow toward the current target.
@@ -149,6 +249,17 @@ final class AMORARobot {
     }
 
     func updateExpression(for newState: AMORAState) {
+        if let active = activeReaction {
+            // High-priority system states (priority >= 80, e.g. alert, speaking, error) override click reactions.
+            if newState.priority >= 80 {
+                activeReaction = nil
+                activeReactionMessage = nil
+            } else if newState != active.state {
+                self.state = newState
+                return
+            }
+        }
+
         let newExpression: Expression
         switch newState {
         case .idle:
@@ -174,6 +285,10 @@ final class AMORARobot {
             newExpression = .curious()
         case .excited:
             newExpression = .excited()
+        case .affection:
+            newExpression = .affection()
+        case .grumpy:
+            newExpression = .grumpy()
         case .concerned:
             newExpression = .concerned()
         case .surprised:
@@ -207,6 +322,107 @@ final class AMORARobot {
 
         self.expression = newExpression
         self.state = newState
+    }
+
+    /// Triggers a discrete expressive mascot reaction to a user click or tap.
+    @discardableResult
+    func reactToClick(now: Date = Date(), forcedReaction: MascotReaction? = nil) -> MascotReaction? {
+        let elapsed = now.timeIntervalSince(lastClickTime)
+        guard elapsed >= clickDebounceThreshold else { return nil }
+
+        if elapsed > 1.5 {
+            rapidClickCount = 1
+        } else {
+            rapidClickCount += 1
+        }
+        lastClickTime = now
+        noteInteraction()
+
+        let chosen: MascotReaction
+        if let forced = forcedReaction {
+            chosen = forced
+        } else if rapidClickCount >= 3 {
+            chosen = .grumpy
+            rapidClickCount = 0
+        } else {
+            let cycle: [MascotReaction] = [.affection, .excited, .curious, .grumpy]
+            chosen = cycle[reactionCycleIndex % cycle.count]
+            reactionCycleIndex += 1
+        }
+
+        triggerReaction(chosen)
+        return chosen
+    }
+
+    func triggerReaction(_ reaction: MascotReaction) {
+        if activeReaction == nil {
+            previousStateBeforeReaction = state
+        }
+        activeReaction = reaction
+        activeReactionMessage = reaction.expressiveMessage
+        reactionRevertToken &+= 1
+        let token = reactionRevertToken
+
+        AppState.shared.stateManager.transition(to: reaction.state)
+        self.expression = reaction.expression
+        self.state = reaction.state
+
+        let motion = AppState.shared.settings.motionScale
+        if motion > 0 {
+            switch reaction {
+            case .affection:
+                bouncePhase = 0.6
+                wigglePhase = 0
+            case .excited:
+                playBounce()
+                wigglePhase = 0
+            case .curious:
+                bouncePhase = 0.2
+                wigglePhase = 0
+                targetEyeDirection = CGPoint(x: 2.0, y: -1.5)
+            case .grumpy:
+                bouncePhase = 0
+                wigglePhase = 0.18
+            }
+        } else {
+            bouncePhase = 0
+            wigglePhase = 0
+        }
+
+        SoundService.shared.play(reaction.sound)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self = self, self.reactionRevertToken == token else { return }
+            self.clearActiveReaction()
+        }
+    }
+
+    func clearActiveReaction() {
+        activeReaction = nil
+        activeReactionMessage = nil
+        let revertState = previousStateBeforeReaction ?? AppState.shared.stateManager.currentState
+        previousStateBeforeReaction = nil
+        if revertState == .idle {
+            AppState.shared.stateManager.resetToIdle()
+        } else {
+            AppState.shared.stateManager.transition(to: revertState)
+        }
+        updateExpression(for: revertState)
+    }
+
+    func resetForTesting() {
+        activeReaction = nil
+        activeReactionMessage = nil
+        lastClickTime = .distantPast
+        rapidClickCount = 0
+        reactionCycleIndex = 0
+        reactionRevertToken = 0
+        previousStateBeforeReaction = nil
+        bouncePhase = 0
+        wigglePhase = 0
+        eyeDirection = .zero
+        targetEyeDirection = .zero
+        updateExpression(for: .idle)
     }
 
     func setEyeDirection(x: Double, y: Double) {

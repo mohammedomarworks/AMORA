@@ -84,6 +84,30 @@ struct Expression: Equatable {
         )
     }
 
+    /// Glowing heart-eyes and soft smile for love / affection.
+    static func affection() -> Expression {
+        Expression(
+            eyes: .heart,
+            eyeOffset: .zero,
+            mouth: .smile,
+            blinkProgress: 0,
+            headTilt: 0.08,
+            antennaPulse: 1.0
+        )
+    }
+
+    /// Playfully grumpy: narrowed slanted eyes and flat pouting mouth — never hostile.
+    static func grumpy() -> Expression {
+        Expression(
+            eyes: .grumpy,
+            eyeOffset: CGPoint(x: 0, y: -0.5),
+            mouth: .flat,
+            blinkProgress: 0,
+            headTilt: -0.16,
+            antennaPulse: 0.25
+        )
+    }
+
     /// Soft downward eyes — gentle worry, never alarming.
     static func concerned() -> Expression {
         Expression(
@@ -142,11 +166,11 @@ struct Expression: Equatable {
     }
 
     enum EyeShape: String, CaseIterable {
-        case normal, happy, sad, wide, narrow, halfClosed
+        case normal, happy, sad, wide, narrow, halfClosed, heart, grumpy
     }
 
     enum MouthShape: String, CaseIterable {
-        case neutral, smile, open, sad
+        case neutral, smile, open, sad, flat
     }
 
     func interpolated(to: Expression, fraction: Double) -> Expression {

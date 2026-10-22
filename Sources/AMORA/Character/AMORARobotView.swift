@@ -16,7 +16,7 @@ struct AMORARobotView: View {
         VStack(spacing: 0) {
             AntennaView(
                 pulse: robot.antennaPhase,
-                tint: robot.state == .alert ? Color.red : palette.accent,
+                tint: antennaTint,
                 compact: compact
             )
 
@@ -55,8 +55,8 @@ struct AMORARobotView: View {
                 // Digital face: eyes + optional mouth.
                 VStack(spacing: compact ? 1.5 : 2.5) {
                     HStack(spacing: compact ? 5 : 8) {
-                        eye
-                        eye
+                        eye(isLeft: true)
+                        eye(isLeft: false)
                     }
                     if robot.expression.mouth != .neutral {
                         MouthView(shape: robot.expression.mouth, tint: palette.accent, compact: compact)
@@ -67,24 +67,55 @@ struct AMORARobotView: View {
             .frame(width: baseWidth, height: baseHeight)
             .scaleEffect(1 + robot.bouncePhase * 0.12, anchor: .center)
             .offset(y: (robot.breathingPhase - 0.5) * (compact ? 1.0 : 1.8) - robot.bouncePhase * 2)
-            .rotationEffect(.radians(robot.headMovementPhase * (compact ? 0.04 : 0.08)))
+            .rotationEffect(.radians(robot.headMovementPhase * (compact ? 0.04 : 0.08) + robot.wigglePhase))
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            robot.reactToClick()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("AMORA")
-        .accessibilityValue(Self.accessibilityDescription(for: robot.state))
+        .accessibilityValue(accessibilityDescription)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Click to interact with AMORA")
+        .accessibilityAction {
+            robot.reactToClick()
+        }
     }
-    private var eye: some View {
-        AMORAEyeView(
+
+    private var antennaTint: Color {
+        if robot.state == .alert {
+            return Color.red
+        } else if robot.activeReaction == .affection {
+            return Color.pink
+        } else if robot.activeReaction == .grumpy {
+            return Color.orange
+        } else {
+            return palette.accent
+        }
+    }
+
+    private func eye(isLeft: Bool) -> some View {
+        let isHeart = robot.expression.eyes == .heart
+        return AMORAEyeView(
             shape: robot.expression.eyes,
             direction: robot.eyeDirection,
             blink: max(robot.blinkPhase, robot.expression.blinkProgress),
             width: compact ? 5.5 : 8.5,
             height: compact ? 7.5 : 12,
-            core: palette.eyeCore,
-            glow: palette.eyeGlow,
+            core: isHeart ? Color.pink : palette.eyeCore,
+            glow: isHeart ? Color.pink : palette.eyeGlow,
             lineWidth: compact ? 1.8 : 2.5,
-            glowRadius: compact ? 2 : 4
+            glowRadius: compact ? 2 : 4,
+            isLeft: isLeft
         )
+    }
+
+    private var accessibilityDescription: String {
+        if let reaction = robot.activeReaction {
+            return reaction.accessibilityDescription
+        }
+        return Self.accessibilityDescription(for: robot.state)
     }
 
     /// A short VoiceOver value describing AMORA's current mood.
@@ -95,6 +126,8 @@ struct AMORARobotView: View {
         case .thinking, .focused: return "focused"
         case .curious: return "curious"
         case .excited: return "excited"
+        case .affection: return "feeling affectionate"
+        case .grumpy: return "playfully grumpy"
         case .concerned: return "concerned"
         case .surprised: return "surprised"
         case .sleepy: return "sleeping"
@@ -124,6 +157,7 @@ struct AMORAEyeView: View {
     let glow: Color
     var lineWidth: CGFloat = 2
     var glowRadius: CGFloat = 2
+    var isLeft: Bool = true
 
     var body: some View {
         Group {
@@ -152,6 +186,17 @@ struct AMORAEyeView: View {
                 Capsule(style: .continuous)
                     .fill(core)
                     .frame(width: width, height: max(1.0, height * 0.45 * (1.0 - blink * 0.8)))
+            case .heart:
+                Image(systemName: "heart.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(Color.pink)
+                    .frame(width: width * 1.35, height: height * 0.95)
+            case .grumpy:
+                Capsule(style: .continuous)
+                    .fill(core)
+                    .frame(width: width * 1.1, height: max(1.0, height * 0.35))
+                    .rotationEffect(.degrees(isLeft ? 18 : -18))
             }
         }
         .shadow(color: glow.opacity(0.85), radius: glowRadius)
@@ -201,6 +246,10 @@ private struct MouthView: View {
                 AMORAArc(up: false)
                     .stroke(tint.opacity(0.8), style: StrokeStyle(lineWidth: compact ? 1.2 : 1.8, lineCap: .round))
                     .frame(width: compact ? 6 : 9, height: compact ? 2.5 : 4)
+            case .flat:
+                Capsule()
+                    .fill(tint.opacity(0.85))
+                    .frame(width: compact ? 5 : 7.5, height: compact ? 1.5 : 2.0)
             case .neutral:
                 EmptyView()
             }

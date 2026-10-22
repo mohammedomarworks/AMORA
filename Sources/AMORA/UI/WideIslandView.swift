@@ -131,7 +131,9 @@ struct AmoraCompanionPanel: View {
     }
 
     private var statusMessage: String {
-        if let notification = automation.currentNotification {
+        if let reactionMessage = robot.activeReactionMessage {
+            return reactionMessage
+        } else if let notification = automation.currentNotification {
             return notification.message
         } else if let suggestion = proactive.currentSuggestion {
             return suggestion.message
@@ -198,7 +200,13 @@ struct AmoraCompanionPanel: View {
                 .padding(.top, 4)
 
             // Contextual status badge
-            if let notification = automation.currentNotification {
+            if let reaction = robot.activeReaction {
+                AmoraAccessibleStatusBadge(
+                    text: reaction.badgeText,
+                    systemImage: reaction.badgeIcon,
+                    tintColor: reaction == .affection ? .pink : (reaction == .grumpy ? .orange : palette.accent)
+                )
+            } else if let notification = automation.currentNotification {
                 AmoraAccessibleStatusBadge(
                     text: notification.triggerName,
                     systemImage: notification.triggerIcon,

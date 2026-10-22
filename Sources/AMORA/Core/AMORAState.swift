@@ -11,6 +11,8 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
     case happy
     case curious
     case excited
+    case affection
+    case grumpy
     case concerned
     case surprised
     case sleepy
@@ -34,6 +36,8 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
         case .alert: return 80
         case .expanded: return 70
         case .surprised: return 68
+        case .grumpy: return 66
+        case .affection: return 64
         case .hover: return 60
         case .concerned: return 56
         case .music: return 50
