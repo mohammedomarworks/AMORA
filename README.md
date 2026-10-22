@@ -60,6 +60,8 @@ Designed to operate entirely on-device, AMORA provides instant access to timers,
 
 ### Building and Running Locally
 
+> 📖 **Step-by-Step Guide**: For detailed prerequisites, verification steps, and Chrome extension setup, see the [Building from Source Guide](docs/BUILD-FROM-SOURCE.md).
+
 To build and run AMORA on your local machine:
 
 1. **Clone the repository**:
