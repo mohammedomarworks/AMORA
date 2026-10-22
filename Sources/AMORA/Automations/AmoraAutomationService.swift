@@ -11,6 +11,7 @@ public final class AmoraAutomationService: Sendable {
     public private(set) var currentNotification: AmoraAutomationNotification?
     public let store: any AmoraAutomationStoring
     public let actionEngine: AmoraActionEngine
+    public let contextProvider: AmoraContextProvider
     public let clock: @Sendable () -> Date
     public let calendar: Calendar
 
@@ -26,6 +27,7 @@ public final class AmoraAutomationService: Sendable {
     public init(
         store: (any AmoraAutomationStoring)? = nil,
         actionEngine: AmoraActionEngine? = nil,
+        contextProvider: AmoraContextProvider? = nil,
         clock: (@Sendable () -> Date)? = nil,
         calendar: Calendar = .current
     ) {
@@ -33,6 +35,7 @@ public final class AmoraAutomationService: Sendable {
         let chosenEngine = actionEngine ?? AmoraActionEngine.shared
         self.store = chosenStore
         self.actionEngine = chosenEngine
+        self.contextProvider = contextProvider ?? .shared
         self.clock = clock ?? { Date() }
         self.calendar = calendar
 
@@ -117,15 +120,13 @@ public final class AmoraAutomationService: Sendable {
 
     // MARK: - Event-Driven Triggers (Battery & Timer Completion)
 
-    /// Handles events emitted by `AMORAEventCenter`.
-    func handleEvent(_ event: AMORAEvent) {
+    /// Handles events emitted by `AMORAEventCenter` asynchronously.
+    func handleEventAsync(_ event: AMORAEvent) async {
         switch event {
         case .timerCompleted:
-            Task { @MainActor in
-                let matching = automations.filter { $0.enabled && $0.trigger == .timerCompletion }
-                for auto in matching {
-                    await executeAutomation(auto, isManual: false)
-                }
+            let matching = automations.filter { $0.enabled && $0.trigger == .timerCompletion }
+            for auto in matching {
+                await executeAutomation(auto, isManual: false)
             }
 
         case .timerStarted:
@@ -133,41 +134,42 @@ public final class AmoraAutomationService: Sendable {
             consecutiveLoopCount.removeAll()
 
         case .criticalBattery, .lowBattery:
-            Task { @MainActor in
-                let currentLevel = BatteryService.shared.level
-                let matching = automations.filter { auto in
-                    guard auto.enabled, case .batteryThreshold(let threshold, let comp) = auto.trigger else {
-                        return false
-                    }
-                    if firedBatteryAutomationIds.contains(auto.id) {
-                        return false
-                    }
-                    switch comp {
-                    case .dropsBelow, .lessThanOrEqual:
-                        return currentLevel <= threshold
-                    case .risesAbove, .greaterThanOrEqual:
-                        return currentLevel >= threshold
-                    }
+            let currentLevel = BatteryService.shared.level
+            let matching = automations.filter { auto in
+                guard auto.enabled, case .batteryThreshold(let threshold, let comp) = auto.trigger else {
+                    return false
                 }
-                for auto in matching {
-                    firedBatteryAutomationIds.insert(auto.id)
-                    await executeAutomation(auto, isManual: false)
+                if firedBatteryAutomationIds.contains(auto.id) {
+                    return false
                 }
+                switch comp {
+                case .dropsBelow, .lessThanOrEqual:
+                    return currentLevel <= threshold
+                case .risesAbove, .greaterThanOrEqual:
+                    return currentLevel >= threshold
+                }
+            }
+            for auto in matching {
+                firedBatteryAutomationIds.insert(auto.id)
+                await executeAutomation(auto, isManual: false)
             }
 
         case .charging, .chargedFull:
-            Task { @MainActor in
-                // Reset low battery fired states when power is reconnected
-                firedBatteryAutomationIds.removeAll()
-            }
+            // Reset low battery fired states when power is reconnected
+            firedBatteryAutomationIds.removeAll()
 
         case .launched:
-            Task { @MainActor in
-                await self.load()
-            }
+            await self.load()
 
         default:
             break
+        }
+    }
+
+    /// Handles events emitted by `AMORAEventCenter`.
+    func handleEvent(_ event: AMORAEvent) {
+        Task { @MainActor in
+            await handleEventAsync(event)
         }
     }
 
@@ -274,7 +276,7 @@ public final class AmoraAutomationService: Sendable {
 
         // 5. Condition evaluation (if condition is present)
         if let condition = automation.condition {
-            let snapshot = AmoraContextProvider.shared.currentSnapshot
+            let snapshot = contextProvider.currentSnapshot
             guard condition.evaluate(snapshot: snapshot) else {
                 return .unavailable(
                     actionId: amoraAction.identifier,
@@ -358,7 +360,7 @@ public final class AmoraAutomationService: Sendable {
         let context = AmoraActionContext(
             isConfirmed: isManual,
             metadata: metadata,
-            snapshot: AmoraContextProvider.shared.currentSnapshot
+            snapshot: contextProvider.currentSnapshot
         )
 
         // For showNotification action, present notification directly on this service

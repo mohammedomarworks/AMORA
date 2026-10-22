@@ -45,12 +45,26 @@ final class AutomationsV1Tests: XCTestCase {
         func advance(by seconds: TimeInterval) { now = now.addingTimeInterval(seconds) }
     }
 
+    struct IsolatedMockMediaContextProvider: AmoraMediaContextProvider {
+        let mediaController: SpyMediaController
+        func currentMediaContext() -> AmoraMediaContext {
+            if mediaController.isPlaying {
+                return AmoraMediaContext(source: mediaController.sourceName, state: "playing", title: mediaController.trackTitle, artist: nil)
+            } else if mediaController.isAvailable {
+                return AmoraMediaContext(source: mediaController.sourceName, state: "paused", title: mediaController.trackTitle, artist: nil)
+            } else {
+                return .inactive
+            }
+        }
+    }
+
     private func makeIsolatedService(
         initialAutomations: [AmoraAutomation] = [],
         now: Date = Date(),
         mediaController: SpyMediaController = SpyMediaController(),
         timerController: SpyTimerController = SpyTimerController(),
-        notificationPresenter: SpyNotificationPresenter = SpyNotificationPresenter()
+        notificationPresenter: SpyNotificationPresenter = SpyNotificationPresenter(),
+        contextProvider: AmoraContextProvider? = nil
     ) async -> (service: AmoraAutomationService, store: AmoraAutomationStore, storage: AmoraInMemoryAutomationStorage) {
         let storage = AmoraInMemoryAutomationStorage(initialItems: initialAutomations)
         let store = AmoraAutomationStore(storage: storage)
@@ -65,9 +79,18 @@ final class AutomationsV1Tests: XCTestCase {
         )
         AmoraActionEngine.registerNotificationAction(into: registry, notificationPresenter: notificationPresenter)
         let engine = AmoraActionEngine(registry: registry)
+        let resolvedContextProvider = contextProvider ?? AmoraContextProvider(
+            appDetector: NativeAmoraApplicationDetector.shared,
+            mediaProvider: IsolatedMockMediaContextProvider(mediaController: mediaController),
+            timerProvider: DefaultAmoraTimerContextProvider(),
+            batteryProvider: DefaultAmoraBatteryContextProvider(),
+            uiProvider: DefaultAmoraUIContextProvider(),
+            fileShelfProvider: DefaultAmoraFileShelfContextProvider()
+        )
         let service = AmoraAutomationService(
             store: store,
             actionEngine: engine,
+            contextProvider: resolvedContextProvider,
             clock: { now },
             calendar: Calendar(identifier: .gregorian)
         )
@@ -362,7 +385,7 @@ final class AutomationsV1Tests: XCTestCase {
         )
         let (service, _, _) = await makeIsolatedService(
             initialAutomations: [auto],
-            now: now,
+            now: now.addingTimeInterval(-100),
             mediaController: mediaSpy
         )
 
@@ -390,10 +413,7 @@ final class AutomationsV1Tests: XCTestCase {
 
         // BatteryService level matches threshold (e.g. 15%)
         BatteryService.shared.level = 15
-        service.handleEvent(.lowBattery)
-
-        // Give Task time to process
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.lowBattery)
 
         XCTAssertEqual(spy.presentedMessages, ["Connect to power soon"])
     }
@@ -412,9 +432,7 @@ final class AutomationsV1Tests: XCTestCase {
 
         // BatteryService level is 80% (well above 20%)
         BatteryService.shared.level = 80
-        service.handleEvent(.charging)
-
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.charging)
 
         XCTAssertTrue(spy.presentedMessages.isEmpty)
     }
@@ -433,9 +451,7 @@ final class AutomationsV1Tests: XCTestCase {
             mediaController: mediaSpy
         )
 
-        service.handleEvent(.timerCompleted)
-
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.timerCompleted)
 
         XCTAssertTrue(mediaSpy.played)
     }
@@ -780,22 +796,18 @@ final class AutomationsV1Tests: XCTestCase {
 
         // 1. Battery drops to 15% -> fires first time
         BatteryService.shared.level = 15
-        service.handleEvent(.lowBattery)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.lowBattery)
         XCTAssertEqual(spy.presentedMessages.count, 1)
 
         // 2. Battery stays at 15% / updates again -> must NOT fire a duplicate
-        service.handleEvent(.criticalBattery)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.criticalBattery)
         XCTAssertEqual(spy.presentedMessages.count, 1, "Must suppress duplicate firing while battery remains low")
 
         // 3. Charger connected -> resets edge trigger
-        service.handleEvent(.charging)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.charging)
 
         // 4. Later drops to 15% again -> fires again
-        service.handleEvent(.lowBattery)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.lowBattery)
         XCTAssertEqual(spy.presentedMessages.count, 2, "Must fire again after battery state resets")
     }
 
@@ -912,10 +924,7 @@ final class AutomationsV1Tests: XCTestCase {
         )
         let (service, _, _) = await makeIsolatedService(initialAutomations: [auto])
 
-        service.handleEvent(.timerCompleted)
-
-        // Wait brief tick for async task
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await service.handleEventAsync(.timerCompleted)
 
         guard let notif = service.currentNotification else {
             XCTFail("Timer completion event must deliver notification to currentNotification")
