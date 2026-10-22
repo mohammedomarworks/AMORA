@@ -127,6 +127,7 @@ final class AMORARobot {
     private(set) var isAsleep: Bool = false
     private var lastIdleMicroReaction: Date = Date()
     private var nextIdleMicroReactionInterval: TimeInterval = 45.0
+    private var idleMicroReactionToken: Int = 0
     var isPerformingIdleMicroReaction: Bool = false
 
     init() {
@@ -194,9 +195,7 @@ final class AMORARobot {
         // Fall asleep after the idle timeout; wake on the next interaction.
         if settings.sleepMode, restful, !isAsleep,
            now.timeIntervalSince(lastInteraction) > settings.idleTimeout {
-            isAsleep = true
-            AppState.shared.stateManager.transition(to: .sleepy)
-            updateExpression(for: .sleepy)
+            fallAsleep()
         }
 
         guard motion > 0, restful, !isAsleep else { return }
@@ -276,6 +275,8 @@ final class AMORARobot {
             if newState.priority >= 80 {
                 activeReaction = nil
                 activeReactionMessage = nil
+                reactionRevertToken &+= 1
+                previousStateBeforeReaction = nil
             } else if newState != active.state {
                 self.state = newState
                 return
@@ -420,10 +421,16 @@ final class AMORARobot {
     }
 
     func clearActiveReaction() {
+        guard activeReaction != nil else { return }
         activeReaction = nil
         activeReactionMessage = nil
-        let revertState = previousStateBeforeReaction ?? AppState.shared.stateManager.currentState
+        let prev = previousStateBeforeReaction
         previousStateBeforeReaction = nil
+
+        // If pre-reaction state was an explicit non-idle state (e.g. focused, music), restore it.
+        // Otherwise, restore the current live ambient state.
+        let revertState = (prev != nil && prev != .idle) ? prev! : PersonalityEngine.shared.currentAmbientState()
+
         if revertState == .idle {
             AppState.shared.stateManager.resetToIdle()
         } else {
@@ -432,18 +439,33 @@ final class AMORARobot {
         updateExpression(for: revertState)
     }
 
+    func cancelIdleMicroReaction(restoreAmbient: Bool = true) {
+        guard isPerformingIdleMicroReaction else { return }
+        isPerformingIdleMicroReaction = false
+        idleMicroReactionToken &+= 1
+        targetEyeDirection = .zero
+        if restoreAmbient {
+            let ambient = PersonalityEngine.shared.currentAmbientState()
+            updateExpression(for: ambient)
+        }
+    }
+
     func triggerIdleMicroReaction(now: Date = Date()) {
         lastIdleMicroReaction = now
         nextIdleMicroReactionInterval = Double.random(in: 40.0...75.0)
         guard activeReaction == nil, !isAsleep else { return }
 
         isPerformingIdleMicroReaction = true
+        idleMicroReactionToken &+= 1
+        let token = idleMicroReactionToken
+
         let roll = Double.random(in: 0...1)
         if roll < 0.5 {
             // Sleepy slow blink with gentle contented look
             blinkOnce(duration: 0.32)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                self?.isPerformingIdleMicroReaction = false
+                guard let self, self.idleMicroReactionToken == token, self.isPerformingIdleMicroReaction else { return }
+                self.isPerformingIdleMicroReaction = false
             }
         } else {
             // Playful subtle glance and soft smile
@@ -457,7 +479,7 @@ final class AMORARobot {
                 antennaPulse: 0.4
             )
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
-                guard let self, self.isPerformingIdleMicroReaction else { return }
+                guard let self, self.idleMicroReactionToken == token, self.isPerformingIdleMicroReaction else { return }
                 self.isPerformingIdleMicroReaction = false
                 self.targetEyeDirection = .zero
                 let ambient = PersonalityEngine.shared.currentAmbientState()
@@ -479,9 +501,19 @@ final class AMORARobot {
         eyeDirection = .zero
         targetEyeDirection = .zero
         isPerformingIdleMicroReaction = false
+        idleMicroReactionToken = 0
         lastIdleMicroReaction = Date()
         nextIdleMicroReactionInterval = 45.0
+        isAsleep = false
         updateExpression(for: .idle)
+    }
+
+    /// Transitions AMORA into sleep mode when idle or resting.
+    func fallAsleep() {
+        guard !isAsleep else { return }
+        isAsleep = true
+        AppState.shared.stateManager.transition(to: .sleepy)
+        updateExpression(for: .sleepy)
     }
 
     func setEyeDirection(x: Double, y: Double) {
@@ -498,18 +530,16 @@ final class AMORARobot {
     /// wakes AMORA if it had drifted off to sleep.
     func noteInteraction() {
         lastInteraction = Date()
-        if isPerformingIdleMicroReaction {
-            isPerformingIdleMicroReaction = false
-            targetEyeDirection = .zero
-            let ambient = PersonalityEngine.shared.currentAmbientState()
-            updateExpression(for: ambient)
-        }
+        cancelIdleMicroReaction(restoreAmbient: true)
         if isAsleep {
             isAsleep = false
-            if AppState.shared.stateManager.currentState == .sleepy {
+            let ambient = PersonalityEngine.shared.currentAmbientState()
+            if ambient == .idle {
                 AppState.shared.stateManager.resetToIdle()
-                updateExpression(for: .idle)
+            } else {
+                AppState.shared.stateManager.transition(to: ambient)
             }
+            updateExpression(for: ambient)
         }
     }
 }

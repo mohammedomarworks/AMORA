@@ -124,6 +124,9 @@ final class ContextAwareEmotionsTests: XCTestCase {
         AMORAEventCenter.shared.emit(.timerStarted)
         XCTAssertEqual(AppState.shared.stateManager.currentState, .alert)
 
+        AMORAEventCenter.shared.emit(.timerCompleted)
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .alert, "Timer completion must not override an active critical alert")
+
         // Explicit dismissal of the alert restores normal operation
         AMORAEventCenter.shared.emit(.automationNotificationDismissed)
         XCTAssertEqual(AppState.shared.stateManager.currentState, .idle)
@@ -201,5 +204,104 @@ final class ContextAwareEmotionsTests: XCTestCase {
         AMORAEventCenter.shared.emit(.commandSucceeded)
         XCTAssertEqual(AppState.shared.stateManager.currentState, .happy)
         XCTAssertEqual(AMORARobot.shared.expression.mouth, .smile)
+    }
+
+    @MainActor
+    func testClickReactionPreemptionByCriticalAlertCancelsClickRevertTimer() {
+        // User triggers a click reaction
+        AMORARobot.shared.triggerReaction(.affection)
+        XCTAssertEqual(AMORARobot.shared.activeReaction, .affection)
+        XCTAssertEqual(AMORARobot.shared.state, .affection)
+
+        // Critical alert arrives while click reaction is active
+        AMORAEventCenter.shared.emit(.criticalBattery)
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .alert)
+        XCTAssertEqual(AMORARobot.shared.state, .alert)
+        XCTAssertNil(AMORARobot.shared.activeReaction, "Click reaction must be cleared by critical alert")
+
+        // Clearing reaction must not wipe out the critical alert
+        AMORARobot.shared.clearActiveReaction()
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .alert)
+    }
+
+    @MainActor
+    func testNewOngoingEventCancelsPreviousTemporaryRevertTimer() {
+        // Temporary reaction scheduled to revert in 2.5s
+        AMORAEventCenter.shared.emit(.commandSucceeded)
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .happy)
+
+        // An ongoing task starts with revert: 0
+        AMORAEventCenter.shared.emit(.commandProcessing)
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .thinking)
+
+        // State remains in thinking rather than reverting to idle
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .thinking)
+    }
+
+    @MainActor
+    func testClickReactionProtectsMotionAndAudioFromRoutineEvents() {
+        // Trigger affection reaction (has its own bounce 0.6)
+        AMORARobot.shared.triggerReaction(.affection)
+        XCTAssertEqual(AMORARobot.shared.activeReaction, .affection)
+        XCTAssertEqual(AMORARobot.shared.bouncePhase, 0.6)
+
+        // A routine failure arrives while user click reaction is playing
+        AMORAEventCenter.shared.emit(.commandFailed)
+
+        // The active click reaction must not have its bounce or heart eyes wiped out by routine background failure
+        XCTAssertEqual(AMORARobot.shared.activeReaction, .affection)
+        XCTAssertEqual(AMORARobot.shared.bouncePhase, 0.6)
+        XCTAssertEqual(AMORARobot.shared.expression.eyes, .heart)
+    }
+
+    @MainActor
+    func testIdleMicroReactionTokenInvalidationOnNewEvent() {
+        // Trigger idle micro-reaction
+        AMORARobot.shared.triggerIdleMicroReaction(now: Date())
+        XCTAssertTrue(AMORARobot.shared.isPerformingIdleMicroReaction)
+
+        // Emitting an event must cancel the micro-reaction immediately
+        AMORAEventCenter.shared.emit(.commandProcessing)
+        XCTAssertFalse(AMORARobot.shared.isPerformingIdleMicroReaction)
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .thinking)
+        XCTAssertEqual(AMORARobot.shared.targetEyeDirection, .zero)
+    }
+
+    @MainActor
+    func testWakeFromSleepRestoresLiveAmbientState() {
+        // Expand island
+        IslandModel.shared.expansion = 1.0
+        IslandModel.shared.targetState = .quick
+        IslandModel.shared.displayState = .quick
+
+        // Put robot to sleep
+        AMORARobot.shared.fallAsleep()
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .sleepy)
+
+        // Wake from sleep via interaction
+        AMORARobot.shared.noteInteraction()
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .expanded, "Waking up should restore expanded island state")
+        XCTAssertEqual(AMORARobot.shared.state, .expanded)
+    }
+
+    @MainActor
+    func testTimerCompletionOverridesClickReactionWithCelebration() {
+        // User triggers a click reaction
+        AMORARobot.shared.triggerReaction(.affection)
+        XCTAssertEqual(AMORARobot.shared.activeReaction, .affection)
+        XCTAssertEqual(AMORARobot.shared.state, .affection)
+
+        let initialCelebration = PersonalityEngine.shared.celebrationToken
+
+        // Timer completes during click reaction
+        AMORAEventCenter.shared.emit(.timerCompleted)
+
+        // Click reaction should be cleared and replaced with timer completion celebration
+        XCTAssertNil(AMORARobot.shared.activeReaction)
+        XCTAssertEqual(AppState.shared.stateManager.currentState, .excited)
+        XCTAssertEqual(AMORARobot.shared.state, .excited)
+        XCTAssertEqual(AMORARobot.shared.bouncePhase, 1.0, "Timer completion celebration bounce must be full pop (1.0)")
+        XCTAssertGreaterThan(PersonalityEngine.shared.celebrationToken, initialCelebration)
+        XCTAssertEqual(PersonalityEngine.shared.message, "Focus session complete! ✨")
     }
 }

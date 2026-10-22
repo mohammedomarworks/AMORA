@@ -69,11 +69,16 @@ final class PersonalityEngine {
     private var revertToken = 0
     private var lastEvent: AMORAEvent?
     private var lastEventTime: Date = .distantPast
+    private var lastSound: AMORASound?
+    private var lastSoundTime: Date = .distantPast
 
     private init() {}
 
     func react(to event: AMORAEvent) {
         let now = Date()
+
+        // Cancel any in-progress idle micro-reaction immediately
+        AMORARobot.shared.cancelIdleMicroReaction(restoreAmbient: false)
 
         // Suppress rapid identical event spam (e.g. repeated progress or status triggers within 350ms)
         if event == lastEvent && now.timeIntervalSince(lastEventTime) < 0.35 {
@@ -99,6 +104,11 @@ final class PersonalityEngine {
             return
         }
 
+        // Timer completion is a major user milestone: clears any active click reaction to show celebration
+        if event == .timerCompleted {
+            AMORARobot.shared.clearActiveReaction()
+        }
+
         // Expression is the primary channel — gated only to avoid rapid flip-flopping.
         if due(r.key + ".expr", every: r.exprCooldown, now: now) {
             AppState.shared.stateManager.transition(to: r.state)
@@ -106,23 +116,30 @@ final class PersonalityEngine {
             scheduleRevert(after: r.revert)
 
             // Context-driven physical movement (respects Reduce Motion inside robot helpers)
-            switch event {
-            case .timerCompleted:
-                AMORARobot.shared.playBounce()
-            case .commandSucceeded, .aiSucceeded:
-                AMORARobot.shared.playRestrainedBounce()
-            case .commandFailed, .aiFailed:
-                AMORARobot.shared.suppressMotion()
-            default:
-                break
+            // Guarded so routine background events do not interrupt an active user click reaction
+            if AMORARobot.shared.activeReaction == nil || r.state.priority >= 80 {
+                switch event {
+                case .timerCompleted:
+                    AMORARobot.shared.playBounce()
+                case .commandSucceeded, .aiSucceeded:
+                    AMORARobot.shared.playRestrainedBounce()
+                case .commandFailed, .aiFailed:
+                    AMORARobot.shared.suppressMotion()
+                default:
+                    break
+                }
             }
         }
 
         // Text + sound are the "loud" channel — gated hard so they stay special.
+        // Also guarded so routine background events do not speak over an active user click reaction.
         if due(r.key + ".msg", every: r.messageCooldown, now: now) {
-            if let m = r.message { showMessage(m) }
-            if let s = r.sound { SoundService.shared.play(s) }
-            if event == .timerCompleted { celebrationToken &+= 1 }
+            let isClickReactionActive = (AMORARobot.shared.activeReaction != nil && r.state.priority < 80)
+            if !isClickReactionActive {
+                if let m = r.message { showMessage(m) }
+                if let s = r.sound { playSound(s, for: r.state, now: now) }
+                if event == .timerCompleted { celebrationToken &+= 1 }
+            }
         }
     }
 
@@ -142,6 +159,23 @@ final class PersonalityEngine {
         revertToken = 0
         lastEvent = nil
         lastEventTime = .distantPast
+        lastSound = nil
+        lastSoundTime = .distantPast
+    }
+
+    private func playSound(_ sound: AMORASound, for state: AMORAState, now: Date) {
+        let elapsed = now.timeIntervalSince(lastSoundTime)
+        // Suppress identical duplicate sound within 350ms
+        if sound == lastSound && elapsed < 0.35 {
+            return
+        }
+        // Avoid sound collision: suppress clicks if another sound played within 100ms
+        if elapsed < 0.10 && sound == .click {
+            return
+        }
+        lastSound = sound
+        lastSoundTime = now
+        SoundService.shared.play(sound)
     }
 
     private func due(_ key: String, every seconds: TimeInterval, now: Date) -> Bool {
@@ -164,8 +198,8 @@ final class PersonalityEngine {
     }
 
     private func scheduleRevert(after seconds: TimeInterval) {
-        guard seconds > 0 else { return }
         revertToken &+= 1
+        guard seconds > 0 else { return }
         let token = revertToken
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self, self.revertToken == token else { return }
