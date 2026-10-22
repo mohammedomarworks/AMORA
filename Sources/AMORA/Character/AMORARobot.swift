@@ -124,7 +124,10 @@ final class AMORARobot {
     private var lastCursorMove: Date = .distantPast
     private var lastGazeShift: Date = Date()
     private var nextGazeInterval: TimeInterval = 5.0
-    private var isAsleep = false
+    private(set) var isAsleep: Bool = false
+    private var lastIdleMicroReaction: Date = Date()
+    private var nextIdleMicroReactionInterval: TimeInterval = 45.0
+    var isPerformingIdleMicroReaction: Bool = false
 
     init() {
         startAnimations()
@@ -213,6 +216,13 @@ final class AMORARobot {
                 )
             }
         }
+
+        // Subtle, low-frequency idle micro-reaction when calm and resting (every 40-75s)
+        if motion > 0, restful, !isAsleep, activeReaction == nil,
+           now.timeIntervalSince(lastInteraction) > 25.0,
+           now.timeIntervalSince(lastIdleMicroReaction) > nextIdleMicroReactionInterval {
+            triggerIdleMicroReaction(now: now)
+        }
     }
 
     /// Natural blinking with varied timing. A small fraction of blinks become a
@@ -246,6 +256,18 @@ final class AMORARobot {
     func playBounce() {
         guard AppState.shared.settings.motionScale > 0 else { return }
         bouncePhase = 1.0
+    }
+
+    /// Pops a subtle, restrained celebratory bounce for task or command successes.
+    func playRestrainedBounce() {
+        guard AppState.shared.settings.motionScale > 0 else { return }
+        bouncePhase = 0.45
+    }
+
+    /// Immediately zeroes any transient physical bouncing or wiggling (e.g. on task failure).
+    func suppressMotion() {
+        bouncePhase = 0
+        wigglePhase = 0
     }
 
     func updateExpression(for newState: AMORAState) {
@@ -410,6 +432,40 @@ final class AMORARobot {
         updateExpression(for: revertState)
     }
 
+    func triggerIdleMicroReaction(now: Date = Date()) {
+        lastIdleMicroReaction = now
+        nextIdleMicroReactionInterval = Double.random(in: 40.0...75.0)
+        guard activeReaction == nil, !isAsleep else { return }
+
+        isPerformingIdleMicroReaction = true
+        let roll = Double.random(in: 0...1)
+        if roll < 0.5 {
+            // Sleepy slow blink with gentle contented look
+            blinkOnce(duration: 0.32)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.isPerformingIdleMicroReaction = false
+            }
+        } else {
+            // Playful subtle glance and soft smile
+            targetEyeDirection = CGPoint(x: 1.5, y: -1.0)
+            expression = Expression(
+                eyes: .normal,
+                eyeOffset: CGPoint(x: 1.5, y: -1.0),
+                mouth: .smile,
+                blinkProgress: 0,
+                headTilt: 0.08,
+                antennaPulse: 0.4
+            )
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+                guard let self, self.isPerformingIdleMicroReaction else { return }
+                self.isPerformingIdleMicroReaction = false
+                self.targetEyeDirection = .zero
+                let ambient = PersonalityEngine.shared.currentAmbientState()
+                self.updateExpression(for: ambient)
+            }
+        }
+    }
+
     func resetForTesting() {
         activeReaction = nil
         activeReactionMessage = nil
@@ -422,6 +478,9 @@ final class AMORARobot {
         wigglePhase = 0
         eyeDirection = .zero
         targetEyeDirection = .zero
+        isPerformingIdleMicroReaction = false
+        lastIdleMicroReaction = Date()
+        nextIdleMicroReactionInterval = 45.0
         updateExpression(for: .idle)
     }
 
@@ -439,6 +498,12 @@ final class AMORARobot {
     /// wakes AMORA if it had drifted off to sleep.
     func noteInteraction() {
         lastInteraction = Date()
+        if isPerformingIdleMicroReaction {
+            isPerformingIdleMicroReaction = false
+            targetEyeDirection = .zero
+            let ambient = PersonalityEngine.shared.currentAmbientState()
+            updateExpression(for: ambient)
+        }
         if isAsleep {
             isAsleep = false
             if AppState.shared.stateManager.currentState == .sleepy {

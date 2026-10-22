@@ -90,6 +90,8 @@ struct AMORARobotView: View {
             return Color.pink
         } else if robot.activeReaction == .grumpy {
             return Color.orange
+        } else if robot.state == .concerned || robot.state == .aiError {
+            return Color.orange.opacity(0.85)
         } else {
             return palette.accent
         }

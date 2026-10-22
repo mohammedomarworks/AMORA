@@ -27,15 +27,15 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
     var priority: Int {
         switch self {
         case .error: return 100
-        case .aiThinking: return 95
-        case .aiError: return 94
-        case .aiResponse: return 93
-        case .thinking: return 90
+        case .alert: return 98
+        case .aiThinking: return 78
+        case .thinking: return 76
+        case .speaking: return 75
         case .focused: return 74
-        case .speaking: return 85
-        case .alert: return 80
         case .expanded: return 70
-        case .surprised: return 68
+        case .aiError: return 69
+        case .aiResponse: return 68
+        case .surprised: return 67
         case .grumpy: return 66
         case .affection: return 64
         case .hover: return 60

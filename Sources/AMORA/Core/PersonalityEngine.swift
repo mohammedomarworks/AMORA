@@ -67,18 +67,55 @@ final class PersonalityEngine {
     private var cooldowns: [String: Date] = [:]
     private var messageToken = 0
     private var revertToken = 0
+    private var lastEvent: AMORAEvent?
+    private var lastEventTime: Date = .distantPast
 
     private init() {}
 
     func react(to event: AMORAEvent) {
         let now = Date()
+
+        // Suppress rapid identical event spam (e.g. repeated progress or status triggers within 350ms)
+        if event == lastEvent && now.timeIntervalSince(lastEventTime) < 0.35 {
+            return
+        }
+        lastEvent = event
+        lastEventTime = now
+
         let r = reaction(for: event)
+        let currentState = AppState.shared.stateManager.currentState
+
+        // Critical safety alerts (priority >= 90, e.g. alert, error) take precedence over general task/routine events.
+        // Explicit dismissal, cancellation, closure, or battery recovery events are permitted through to restore normal operation.
+        let isDismissalOrRecoveryEvent = (
+            event == .automationNotificationDismissed ||
+            event == .proactiveSuggestionDismissed ||
+            event == .aiCancelled ||
+            event == .closed ||
+            event == .charging ||
+            event == .chargedFull
+        )
+        if currentState.priority >= 90 && r.state.priority < currentState.priority && !isDismissalOrRecoveryEvent {
+            return
+        }
 
         // Expression is the primary channel — gated only to avoid rapid flip-flopping.
         if due(r.key + ".expr", every: r.exprCooldown, now: now) {
             AppState.shared.stateManager.transition(to: r.state)
             AMORARobot.shared.updateExpression(for: r.state)
             scheduleRevert(after: r.revert)
+
+            // Context-driven physical movement (respects Reduce Motion inside robot helpers)
+            switch event {
+            case .timerCompleted:
+                AMORARobot.shared.playBounce()
+            case .commandSucceeded, .aiSucceeded:
+                AMORARobot.shared.playRestrainedBounce()
+            case .commandFailed, .aiFailed:
+                AMORARobot.shared.suppressMotion()
+            default:
+                break
+            }
         }
 
         // Text + sound are the "loud" channel — gated hard so they stay special.
@@ -103,6 +140,8 @@ final class PersonalityEngine {
         celebrationToken = 0
         messageToken = 0
         revertToken = 0
+        lastEvent = nil
+        lastEventTime = .distantPast
     }
 
     private func due(_ key: String, every seconds: TimeInterval, now: Date) -> Bool {
@@ -130,11 +169,58 @@ final class PersonalityEngine {
         let token = revertToken
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self, self.revertToken == token else { return }
-            // Return to calm only if the user isn't actively looking at the island.
-            guard !IslandModel.shared.isExpanded else { return }
-            AppState.shared.stateManager.resetToIdle()
-            AMORARobot.shared.updateExpression(for: .idle)
+            self.restoreAmbientState()
         }
+    }
+
+    /// Determines the natural ambient state based on live application and system conditions.
+    func currentAmbientState() -> AMORAState {
+        if let activeReaction = AMORARobot.shared.activeReaction {
+            return activeReaction.state
+        }
+        let battery = BatteryService.shared
+        if battery.hasBattery && !battery.isCharging && battery.level <= 10 {
+            return .alert
+        }
+        if AmoraAutomationService.shared.currentNotification != nil {
+            return .alert
+        }
+        if AssistantManager.shared.state == .thinking {
+            return .aiThinking
+        }
+        if AmoraActionExecutionCoordinator.shared.state == .executing {
+            return .thinking
+        }
+        if TimerService.shared.isRunning {
+            return .focused
+        }
+        if MusicService.shared.isPlaying {
+            return .music
+        }
+        if IslandModel.shared.isExpanded {
+            return .expanded
+        }
+        if AMORARobot.shared.isAsleep {
+            return .sleepy
+        }
+        if AMORARobot.shared.isHovering {
+            return .hover
+        }
+        return .idle
+    }
+
+    func restoreAmbientState() {
+        let ambient = currentAmbientState()
+        if ambient == .idle {
+            AppState.shared.stateManager.resetToIdle()
+        } else {
+            AppState.shared.stateManager.transition(to: ambient)
+        }
+        AMORARobot.shared.updateExpression(for: ambient)
+    }
+
+    func forceRevertForTesting() {
+        restoreAmbientState()
     }
     // MARK: - Event table
 
@@ -200,22 +286,22 @@ final class PersonalityEngine {
                             exprCooldown: 0, messageCooldown: 0, revert: 0)
         case .commandSucceeded:
             return Reaction(key: "commandSucceeded", state: .happy, message: nil, sound: .success,
-                            exprCooldown: 0, messageCooldown: 0, revert: 2)
+                            exprCooldown: 0.25, messageCooldown: 0.25, revert: 2.5)
         case .commandFailed:
             return Reaction(key: "commandFailed", state: .concerned, message: nil, sound: .notification,
-                            exprCooldown: 0, messageCooldown: 0, revert: 2)
+                            exprCooldown: 0.25, messageCooldown: 0.25, revert: 2.5)
         case .aiThinking:
             return Reaction(key: "aiThinking", state: .aiThinking, message: nil, sound: .click,
                             exprCooldown: 0, messageCooldown: 0, revert: 0)
         case .aiSucceeded:
             return Reaction(key: "aiSucceeded", state: .aiResponse, message: nil, sound: .success,
-                            exprCooldown: 0, messageCooldown: 0, revert: 2)
+                            exprCooldown: 0.25, messageCooldown: 0.25, revert: 2.5)
         case .aiFailed:
             return Reaction(key: "aiFailed", state: .aiError, message: nil, sound: .notification,
-                            exprCooldown: 0, messageCooldown: 0, revert: 2)
+                            exprCooldown: 0.25, messageCooldown: 0.25, revert: 2.5)
         case .aiCancelled:
             return Reaction(key: "aiCancelled", state: .idle, message: nil, sound: nil,
-                            exprCooldown: 0, messageCooldown: 0, revert: 1)
+                            exprCooldown: 0, messageCooldown: 0, revert: 0.1)
         case .proactiveSuggestionPresented:
             return Reaction(key: "proactivePresented", state: .curious, message: nil, sound: .notification,
                             exprCooldown: 0, messageCooldown: 1, revert: 5)
