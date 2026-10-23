@@ -221,7 +221,13 @@ final class AssistantManager {
             state = .responding
             response = answer
             AMORAContext.shared.setAIResponse(answer)
-            AMORAEventCenter.shared.emit(.aiSucceeded)
+            if loopResult.completedSuccessfully {
+                AMORAEventCenter.shared.emit(.aiSucceeded)
+            } else if loopResult.deniedConfirmation {
+                AMORAEventCenter.shared.emit(.aiCancelled)
+            } else {
+                AMORAEventCenter.shared.emit(.aiFailed)
+            }
             return answer
         } catch is CancellationError {
             state = .cancelled
@@ -270,6 +276,8 @@ final class AssistantManager {
         AMORAContext.shared.setAIResponse(answer)
         if result.completedSuccessfully {
             AMORAEventCenter.shared.emit(.aiSucceeded)
+        } else if result.deniedConfirmation {
+            AMORAEventCenter.shared.emit(.aiCancelled)
         } else {
             AMORAEventCenter.shared.emit(.aiFailed)
         }

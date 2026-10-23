@@ -357,4 +357,195 @@ final class AmoraAgentLoopTests: XCTestCase {
         XCTAssertEqual(cancelResult.status, .success)
         XCTAssertFalse(TimerService.shared.isRunning)
     }
+
+    // MARK: - Phase 3B: Honest AI Outcomes & Batch Reliability
+
+    func testFailedAgentLoopResultEmitsAIFailedNotAISucceeded() async throws {
+        // Model requests an unknown tool twice, triggering loop failure
+        let unknownTool = #"{"type":"tool_call","tool":"nonexistent_malicious_tool","arguments":{}}"#
+        let provider = MockSequentialAIProvider(responses: [unknownTool, unknownTool])
+
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "local", apiKey: nil)
+
+        let answer = await assistant.submit("Execute something unsupported", settings: settings)
+
+        XCTAssertTrue(answer.localizedCaseInsensitiveContains("could not complete") || answer.localizedCaseInsensitiveContains("unknown tool"))
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, false)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed, "A failed agent loop must emit .aiFailed")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "A failed agent loop must never emit .aiSucceeded")
+    }
+
+    func testSuccessfulAgentLoopResultEmitsAISucceeded() async throws {
+        let finalAnswer = #"{"type":"final_answer","answer":"I can help you with notes, timers, battery, and applications."}"#
+        let provider = MockSequentialAIProvider(response: finalAnswer)
+
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "local", apiKey: nil)
+
+        let answer = await assistant.submit("What can you help me with?", settings: settings)
+
+        XCTAssertEqual(answer, "I can help you with notes, timers, battery, and applications.")
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, true)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "A successful agent loop must emit .aiSucceeded")
+    }
+
+    func testSuccessfulToolAssistedAgentLoopEmitsAISucceeded() async throws {
+        NotesService.shared.addNote("Roadmap V2.1 planning")
+
+        let toolCall = #"{"type":"tool_call","tool":"search_notes","arguments":{"query":"Roadmap"}}"#
+        let finalAnswer = #"{"type":"final_answer","answer":"Found your roadmap note: Roadmap V2.1 planning."}"#
+        let provider = MockSequentialAIProvider(responses: [toolCall, finalAnswer])
+
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "local", apiKey: nil)
+
+        let answer = await assistant.submit("Review my notes and summarize my roadmap", settings: settings)
+
+        XCTAssertTrue(answer.contains("Roadmap V2.1 planning"))
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, true)
+        XCTAssertEqual(assistant.lastLoopResult?.executedToolCount, 1)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "A successful tool-assisted agent loop must emit .aiSucceeded")
+    }
+
+    func testUserCancellationAndDeniedConfirmationRetainIntendedSemantics() async throws {
+        // Part A: User cancellation
+        let slowProvider = MockSequentialAIProvider(response: #"{"type":"final_answer","answer":"Done."}"#)
+        slowProvider.simulatedDelayNanoseconds = 1_000_000_000 // 1s
+        let assistant = AssistantManager(provider: slowProvider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "local", apiKey: nil)
+
+        let cancelTask = Task {
+            await assistant.submit("Take a long time to answer", settings: settings)
+        }
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        assistant.cancel()
+
+        let cancelAnswer = await cancelTask.value
+        XCTAssertTrue(cancelAnswer.localizedCaseInsensitiveContains("stopped") || cancelAnswer.localizedCaseInsensitiveContains("cancel"))
+        XCTAssertEqual(assistant.state, .cancelled)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiCancelled, "User cancellation must emit .aiCancelled")
+
+        // Part B: Denied confirmation
+        let confirmPlan = #"{"type":"tool_call","tool":"folder.open","arguments":{"location":"downloads"}}"#
+        let confirmProvider = MockSequentialAIProvider(response: confirmPlan)
+        let assistant2 = AssistantManager(provider: confirmProvider, providerIsInjected: true)
+
+        let confirmTask = Task {
+            await assistant2.submit("Open my downloads folder please", settings: settings)
+        }
+
+        // Wait for coordinator to enter awaitingConfirmation
+        for _ in 0..<50 {
+            if AmoraActionExecutionCoordinator.shared.state == .awaitingConfirmation { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(AmoraActionExecutionCoordinator.shared.state, .awaitingConfirmation)
+
+        // Deny confirmation
+        AmoraActionExecutionCoordinator.shared.cancelPendingAction()
+
+        let deniedAnswer = await confirmTask.value
+        XCTAssertTrue(deniedAnswer.localizedCaseInsensitiveContains("cancelled") || deniedAnswer.localizedCaseInsensitiveContains("not granted"))
+        XCTAssertEqual(assistant2.lastLoopResult?.completedSuccessfully, false)
+        XCTAssertEqual(assistant2.lastLoopResult?.deniedConfirmation, true)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiCancelled, "Denied confirmation must emit .aiCancelled, not .aiFailed or .aiSucceeded")
+    }
+
+    func testBatchContainingFailedToolIsNotMarkedSuccessful() async throws {
+        let batchJSON = """
+        {
+            "actions": [
+                {"action": "app.open", "name": "NonExistentFakeApp123"},
+                {"action": "notes.list"}
+            ]
+        }
+        """
+        let provider = MockSequentialAIProvider(response: batchJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        let answer = await assistant.submit("open fake app and list notes", settings: settings)
+
+        XCTAssertTrue(answer.contains("Could not find application") || answer.contains("NonExistentFakeApp123"))
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, false, "Batch containing a failed tool must have completedSuccessfully = false")
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed, "Batch containing a failed tool must emit .aiFailed")
+    }
+
+    func testBatchFailureDoesNotIncorrectlyReportUnexecutedLaterActionsAsCompleted() async throws {
+        let batchJSON = """
+        {
+            "actions": [
+                {"action": "app.open", "name": "FakeUninstalledAppXYZ"},
+                {"action": "timer.start", "seconds": 300}
+            ]
+        }
+        """
+        let provider = MockSequentialAIProvider(response: batchJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        // Ensure timer is not running
+        TimerService.shared.stopTimer()
+        XCTAssertFalse(TimerService.shared.isRunning)
+
+        let answer = await assistant.submit("open FakeApp and set timer", settings: settings)
+
+        // Downstream action (timer) must NOT have executed
+        XCTAssertFalse(TimerService.shared.isRunning, "Downstream action must not execute after earlier step failure")
+        XCTAssertEqual(assistant.lastLoopResult?.executedToolCount, 1, "Only the failed action should be counted as executed")
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools.count, 1)
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools.first?.name, "app.open")
+        XCTAssertTrue(answer.contains("Remaining 1 action(s) skipped due to prior failure"))
+        XCTAssertFalse(answer.contains("Timer started"), "Must not claim timer was started")
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, false)
+    }
+
+    func testReachingExecutionLimitIsReportedTruthfully() async throws {
+        // Batch with 5 actions exceeding the 4-call limit
+        let batchJSON = """
+        {
+            "actions": [
+                {"action": "get_battery_status"},
+                {"action": "notes.list"},
+                {"action": "get_battery_status"},
+                {"action": "notes.list"},
+                {"action": "get_battery_status"}
+            ]
+        }
+        """
+        let provider = MockSequentialAIProvider(response: batchJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        let answer = await assistant.submit("check battery and notes multiple times", settings: settings)
+
+        XCTAssertEqual(assistant.lastLoopResult?.executedToolCount, 4, "Must execute exactly up to the 4-call limit")
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools.count, 4)
+        XCTAssertTrue(answer.contains("Skipped remaining 1 action(s): reached the maximum limit of 4 tool executions"))
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, false, "Batch exceeding tool limit must not be marked successful")
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed)
+    }
+
+    func testFullySuccessfulBatchStillSucceeds() async throws {
+        let batchJSON = """
+        {
+            "actions": [
+                {"action": "get_battery_status"},
+                {"action": "notes.list"}
+            ]
+        }
+        """
+        let provider = MockSequentialAIProvider(response: batchJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        let answer = await assistant.submit("check battery and list notes", settings: settings)
+
+        XCTAssertEqual(assistant.lastLoopResult?.executedToolCount, 2)
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools.count, 2)
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, true, "Fully successful batch must have completedSuccessfully = true")
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "Fully successful batch must emit .aiSucceeded")
+        XCTAssertFalse(answer.contains("skipped"), "Successful batch must not report skipped actions")
+    }
 }

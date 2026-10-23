@@ -41,6 +41,7 @@ final class AmoraAgentLoop {
         let attemptedTools: [String]
         let executedTools: [ExecutedToolCall]
         let usedMemory: Bool
+        let deniedConfirmation: Bool
 
         init(
             finalAnswer: String,
@@ -48,7 +49,8 @@ final class AmoraAgentLoop {
             completedSuccessfully: Bool,
             attemptedTools: [String] = [],
             executedTools: [ExecutedToolCall] = [],
-            usedMemory: Bool = false
+            usedMemory: Bool = false,
+            deniedConfirmation: Bool = false
         ) {
             self.finalAnswer = finalAnswer
             self.executedToolCount = executedToolCount
@@ -56,6 +58,7 @@ final class AmoraAgentLoop {
             self.attemptedTools = attemptedTools
             self.executedTools = executedTools
             self.usedMemory = usedMemory
+            self.deniedConfirmation = deniedConfirmation
         }
     }
 
@@ -234,7 +237,8 @@ final class AmoraAgentLoop {
                         completedSuccessfully: false,
                         attemptedTools: attemptedTools,
                         executedTools: executedTools,
-                        usedMemory: usedMemory
+                        usedMemory: usedMemory,
+                        deniedConfirmation: true
                     )
                 }
 
@@ -264,8 +268,19 @@ final class AmoraAgentLoop {
 
             case .toolBatch(let batch):
                 var batchOutputs: [String] = []
-                for call in batch {
-                    guard toolExecutionCount < Self.maximumToolExecutions else { break }
+                var batchSucceeded = true
+
+                for (idx, call) in batch.enumerated() {
+                    try Task.checkCancellation()
+
+                    // Strict check on maximum call limit before executing
+                    guard toolExecutionCount < Self.maximumToolExecutions else {
+                        let remainingCount = batch.count - idx
+                        batchSucceeded = false
+                        batchOutputs.append("Skipped remaining \(remainingCount) action(s): reached the maximum limit of \(Self.maximumToolExecutions) tool executions.")
+                        break
+                    }
+
                     var actualCallName = call.name
                     if isTimerCancellationInput && (actualCallName.contains("timer") || actualCallName == "create_timer") {
                         actualCallName = "timer.cancel"
@@ -276,6 +291,7 @@ final class AmoraAgentLoop {
                     attemptedTools.append(actualCallName)
                     toolExecutionCount += 1
                     executedTools.append(.init(name: actualCallName, arguments: call.arguments))
+
                     let result = await executeTool(
                         name: actualCallName,
                         arguments: call.arguments,
@@ -284,18 +300,33 @@ final class AmoraAgentLoop {
                         memoryStore: store,
                         userInput: input
                     )
+
                     if result.deniedConfirmation {
+                        coordinator.reset()
+                        let remainingCount = batch.count - (idx + 1)
+                        let skippedNote = remainingCount > 0 ? " Remaining \(remainingCount) action(s) cancelled." : ""
                         return LoopResult(
-                            finalAnswer: "Action cancelled: confirmation was not granted.",
+                            finalAnswer: "Action cancelled: confirmation was not granted.\(skippedNote)",
                             executedToolCount: toolExecutionCount,
                             completedSuccessfully: false,
                             attemptedTools: attemptedTools,
                             executedTools: executedTools,
-                            usedMemory: usedMemory
+                            usedMemory: usedMemory,
+                            deniedConfirmation: true
                         )
                     }
+
                     batchOutputs.append(result.output)
                     executedToolSummaries.append(result.output)
+
+                    if !result.isSuccess {
+                        batchSucceeded = false
+                        let remainingCount = batch.count - (idx + 1)
+                        if remainingCount > 0 {
+                            batchOutputs.append("Remaining \(remainingCount) action(s) skipped due to prior failure.")
+                        }
+                        break
+                    }
                 }
 
                 let combinedAnswer = batchOutputs.joined(separator: " ")
@@ -303,7 +334,7 @@ final class AmoraAgentLoop {
                 return LoopResult(
                     finalAnswer: combinedAnswer,
                     executedToolCount: toolExecutionCount,
-                    completedSuccessfully: true,
+                    completedSuccessfully: batchSucceeded,
                     attemptedTools: attemptedTools,
                     executedTools: executedTools,
                     usedMemory: usedMemory
@@ -340,7 +371,7 @@ final class AmoraAgentLoop {
         return LoopResult(
             finalAnswer: "Reached the maximum limit of \(Self.maximumToolExecutions) tool executions for this request. Completed steps: \(summary).",
             executedToolCount: toolExecutionCount,
-            completedSuccessfully: true,
+            completedSuccessfully: false,
             attemptedTools: attemptedTools,
             executedTools: executedTools,
             usedMemory: usedMemory
@@ -383,7 +414,8 @@ final class AmoraAgentLoop {
                     completedSuccessfully: false,
                     attemptedTools: [name],
                     executedTools: [.init(name: name, arguments: args)],
-                    usedMemory: usedMemory
+                    usedMemory: usedMemory,
+                    deniedConfirmation: true
                 )
             }
             coordinator.reset()
@@ -393,14 +425,16 @@ final class AmoraAgentLoop {
                 completedSuccessfully: r.isSuccess,
                 attemptedTools: [name],
                 executedTools: [.init(name: name, arguments: args)],
-                usedMemory: usedMemory
+                usedMemory: usedMemory,
+                deniedConfirmation: false
             )
 
         case .toolBatch(let batch):
             var outputs: [String] = []
             var idx = 0
             var batchUsedMemory = false
-            for call in batch {
+            var batchSucceeded = true
+            for (callIdx, call) in batch.enumerated() {
                 if call.name.contains("memory") { batchUsedMemory = true }
                 let r = await executeTool(
                     name: call.name,
@@ -412,25 +446,38 @@ final class AmoraAgentLoop {
                 )
                 idx += 1
                 if r.deniedConfirmation {
+                    coordinator.reset()
+                    let remainingCount = batch.count - (callIdx + 1)
+                    let skippedNote = remainingCount > 0 ? " Remaining \(remainingCount) action(s) cancelled." : ""
                     return LoopResult(
-                        finalAnswer: "Action cancelled: confirmation was not granted.",
+                        finalAnswer: "Action cancelled: confirmation was not granted.\(skippedNote)",
                         executedToolCount: idx,
                         completedSuccessfully: false,
                         attemptedTools: batch.map(\.name),
-                        executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) },
-                        usedMemory: batchUsedMemory
+                        executedTools: batch.prefix(idx).map { .init(name: $0.name, arguments: $0.arguments) },
+                        usedMemory: batchUsedMemory,
+                        deniedConfirmation: true
                     )
                 }
                 outputs.append(r.output)
+                if !r.isSuccess {
+                    batchSucceeded = false
+                    let remainingCount = batch.count - (callIdx + 1)
+                    if remainingCount > 0 {
+                        outputs.append("Remaining \(remainingCount) action(s) skipped due to prior failure.")
+                    }
+                    break
+                }
             }
             coordinator.reset()
             return LoopResult(
                 finalAnswer: outputs.joined(separator: " "),
                 executedToolCount: idx,
-                completedSuccessfully: true,
+                completedSuccessfully: batchSucceeded,
                 attemptedTools: batch.map(\.name),
-                executedTools: batch.map { .init(name: $0.name, arguments: $0.arguments) },
-                usedMemory: batchUsedMemory
+                executedTools: batch.prefix(idx).map { .init(name: $0.name, arguments: $0.arguments) },
+                usedMemory: batchUsedMemory,
+                deniedConfirmation: false
             )
         }
     }
