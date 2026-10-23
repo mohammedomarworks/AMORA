@@ -548,4 +548,132 @@ final class AmoraAgentLoopTests: XCTestCase {
         XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "Fully successful batch must emit .aiSucceeded")
         XCTAssertFalse(answer.contains("skipped"), "Successful batch must not report skipped actions")
     }
+
+    // MARK: - Phase 3C: Deterministic Compound Request Routing
+
+    func testClearCompoundRequestWithAvailableProviderUsesDeterministicSequence() async throws {
+        let unusedJSON = #"{"type":"final_answer","answer":"Model should not be called"}"#
+        let provider = MockSequentialAIProvider(response: unusedJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        TimerService.shared.stopTimer()
+        XCTAssertFalse(TimerService.shared.isRunning)
+
+        let answer = await assistant.submit("open Finder and start a timer", settings: settings)
+
+        // Verify provider was never invoked
+        XCTAssertTrue(provider.capturedMessages.isEmpty, "Deterministic compound request must not invoke AI provider")
+        XCTAssertEqual(assistant.lastLoopResult?.executedToolCount, 2)
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, true)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+        XCTAssertTrue(TimerService.shared.isRunning)
+        XCTAssertTrue(answer.contains("Timer started"))
+    }
+
+    func testCompoundRequestExecutesBothActionsInCorrectOrderWithCorrectArguments() async throws {
+        let unusedJSON = #"{"type":"final_answer","answer":"Unused"}"#
+        let provider = MockSequentialAIProvider(response: unusedJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        TimerService.shared.stopTimer()
+
+        _ = await assistant.submit("open Finder and start a 10 minute timer", settings: settings)
+
+        XCTAssertTrue(provider.capturedMessages.isEmpty, "Deterministic compound request must bypass AI provider")
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools.count, 2)
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools[0].name, "app.open")
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools[0].arguments["name"], "Finder")
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools[1].name, "create_timer")
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools[1].arguments["seconds"], "600")
+        XCTAssertTrue(TimerService.shared.isRunning)
+        XCTAssertEqual(TimerService.shared.remainingSeconds, 600)
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, true)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+    }
+
+    func testUnsupportedOrIncompleteCompoundRequestFallsBackToAgentLoop() async throws {
+        let fallbackJSON = #"{"type":"final_answer","answer":"I cannot send emails right now."}"#
+        let provider = MockSequentialAIProvider(response: fallbackJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        TimerService.shared.stopTimer()
+
+        let answer = await assistant.submit("open Finder and send an email to Bob", settings: settings)
+
+        // Must invoke the AI provider because the compound request could not be fully parsed deterministically
+        XCTAssertFalse(provider.capturedMessages.isEmpty, "Incomplete or unsupported compound request must fall back to AI agent loop")
+        let promptSent = provider.capturedMessages.first?.last?.content ?? ""
+        XCTAssertTrue(promptSent.contains("open Finder and send an email to Bob"))
+        XCTAssertEqual(answer, "I cannot send emails right now.")
+        XCTAssertFalse(TimerService.shared.isRunning, "No partial deterministic execution should occur on fallback")
+    }
+
+    func testSensitiveCompoundActionRequiresConfirmation() async throws {
+        let unusedJSON = #"{"type":"final_answer","answer":"Unused"}"#
+        let provider = MockSequentialAIProvider(response: unusedJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        TimerService.shared.stopTimer()
+
+        let task = Task {
+            await assistant.submit("open downloads and start a timer", settings: settings)
+        }
+
+        // Wait for confirmation request for downloads folder
+        for _ in 0..<50 {
+            if AmoraActionExecutionCoordinator.shared.state == .awaitingConfirmation { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(AmoraActionExecutionCoordinator.shared.state, .awaitingConfirmation)
+        XCTAssertNotNil(AmoraActionExecutionCoordinator.shared.pendingConfirmation)
+
+        // Deny confirmation
+        AmoraActionExecutionCoordinator.shared.cancelPendingAction()
+
+        let answer = await task.value
+        XCTAssertTrue(answer.localizedCaseInsensitiveContains("cancelled") || answer.localizedCaseInsensitiveContains("not granted"))
+        XCTAssertFalse(TimerService.shared.isRunning, "Timer action must not execute after denied confirmation of earlier step")
+        XCTAssertEqual(assistant.lastLoopResult?.deniedConfirmation, true)
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, false)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiCancelled, "Denied confirmation must emit .aiCancelled")
+    }
+
+    func testFailedFirstActionDoesNotFalselyReportSecondActionAsCompleted() async throws {
+        let unusedJSON = #"{"type":"final_answer","answer":"Unused"}"#
+        let provider = MockSequentialAIProvider(response: unusedJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        TimerService.shared.stopTimer()
+
+        let answer = await assistant.submit("open FakeUninstalledAppXYZ and start a timer", settings: settings)
+
+        XCTAssertTrue(provider.capturedMessages.isEmpty, "Recognized compound command routes deterministically")
+        XCTAssertFalse(TimerService.shared.isRunning, "Downstream timer must not start when first action failed")
+        XCTAssertEqual(assistant.lastLoopResult?.executedToolCount, 1)
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, false)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed)
+        XCTAssertTrue(answer.contains("Remaining 1 action(s) skipped due to prior failure"))
+        XCTAssertFalse(answer.contains("Timer started"))
+    }
+
+    func testExistingSingleActionDeterministicShortcutsContinueWorking() async throws {
+        let unusedJSON = #"{"type":"final_answer","answer":"Unused"}"#
+        let provider = MockSequentialAIProvider(response: unusedJSON)
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        _ = await assistant.submit("how much battery do I have left?", settings: settings)
+
+        XCTAssertTrue(provider.capturedMessages.isEmpty, "Single-action deterministic shortcut must not call AI provider")
+        XCTAssertEqual(assistant.lastLoopResult?.executedToolCount, 1)
+        XCTAssertEqual(assistant.lastLoopResult?.executedTools.first?.name, "get_battery_status")
+        XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, true)
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+    }
 }

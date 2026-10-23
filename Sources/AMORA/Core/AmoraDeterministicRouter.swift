@@ -76,7 +76,7 @@ enum AmoraDeterministicRouter {
     }
 
     /// Maps a resolved `AmoraAction` to the agent loop's validated tool name/args.
-    private static func decision(from action: AmoraAction) -> AmoraAgentDecision? {
+    static func decision(from action: AmoraAction) -> AmoraAgentDecision? {
         switch action {
         case .startTimer(let duration):
             // parseSingleAction already converts minutes/hours to seconds, so emit

@@ -388,7 +388,29 @@ final class AmoraAgentLoop {
         settings: AISettingsSnapshot,
         memoryStore: (any AmoraMemoryStoring)? = nil
     ) async -> LoopResult? {
-        guard let decision = AmoraDeterministicRouter.decision(for: input) else { return nil }
+        let decision: AmoraAgentDecision
+        if let direct = AmoraDeterministicRouter.decision(for: input) {
+            decision = direct
+        } else if AMORACommandGateway.isCompoundRequest(input),
+                  let directActions = AMORACommandGateway.parseDeterministicActions(from: input) {
+            var batch: [AmoraAgentToolCall] = []
+            var allMapped = true
+            for act in directActions {
+                if let dec = AmoraDeterministicRouter.decision(from: act), case .toolCall(let name, let args) = dec {
+                    batch.append(.init(name: name, arguments: args))
+                } else {
+                    allMapped = false
+                    break
+                }
+            }
+            if allMapped && !batch.isEmpty {
+                decision = .toolBatch(batch)
+            } else {
+                return nil
+            }
+        } else {
+            return nil
+        }
         coordinator.beginThinking()
         let store = memoryStore ?? self.memoryStore
 
@@ -435,6 +457,12 @@ final class AmoraAgentLoop {
             var batchUsedMemory = false
             var batchSucceeded = true
             for (callIdx, call) in batch.enumerated() {
+                if idx >= Self.maximumToolExecutions {
+                    let remainingCount = batch.count - callIdx
+                    outputs.append("Skipped remaining \(remainingCount) action(s): reached the maximum limit of \(Self.maximumToolExecutions) tool executions.")
+                    batchSucceeded = false
+                    break
+                }
                 if call.name.contains("memory") { batchUsedMemory = true }
                 let r = await executeTool(
                     name: call.name,

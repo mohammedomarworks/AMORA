@@ -151,6 +151,20 @@ public final class AmoraActionEngine: Sendable {
                 break
             }
 
+            // Enforce tool execution safety limit (max 4 actions)
+            if index >= 4 {
+                let remainingCount = actions.count - index
+                for remainingIndex in index..<actions.count {
+                    let limitResult = AmoraActionResult.invalidInput(
+                        actionId: actions[remainingIndex].identifier,
+                        message: "Skipped remaining \(remainingCount) action(s): reached the maximum limit of 4 tool executions."
+                    )
+                    coordinator.didFailItem(at: remainingIndex, result: limitResult)
+                    results.append(limitResult)
+                }
+                break
+            }
+
             coordinator.willExecuteItem(at: index)
 
             guard let definition = registry.definition(for: action.identifier) else {

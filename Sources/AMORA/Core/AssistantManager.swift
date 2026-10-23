@@ -127,26 +127,7 @@ final class AssistantManager {
         guard provider.isAvailable else {
             // Deterministic single or compound actions fallback when offline model is unavailable
             if let directActions = AMORACommandGateway.parseDeterministicActions(from: input) {
-                WindowManager.shared.showQuickPanel()
-                let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
-                let actionContext = AmoraActionContext(
-                    snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil,
-                    conversationContext: convContext
-                )
-                let results = await AmoraActionEngine.shared.executeSequence(directActions, context: actionContext)
-                if settings.contextAwarenessEnabled {
-                    for act in directActions {
-                        AmoraConversationContextManager.shared.recordAction(act, date: Date())
-                    }
-                }
-                let answer = AmoraActionResult.combineMessages(from: results)
-                let assistantMessage = AIMessage(role: .assistant, content: answer)
-                conversation.append(assistantMessage)
-                state = .responding
-                response = answer
-                AMORAContext.shared.setAIResponse(answer)
-                AMORAEventCenter.shared.emit(.aiSucceeded)
-                return answer
+                return await executeDeterministicCompoundSequence(directActions, input: input, settings: settings)
             }
             if let singleAction = AMORACommandGateway.parseSingleAction(from: input) {
                 WindowManager.shared.showQuickPanel()
@@ -155,7 +136,7 @@ final class AssistantManager {
                     snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil,
                     conversationContext: convContext
                 )
-                let results = await AmoraActionEngine.shared.executeSequence([singleAction], context: actionContext)
+                let results = await actionEngine.executeSequence([singleAction], context: actionContext)
                 if settings.contextAwarenessEnabled {
                     AmoraConversationContextManager.shared.recordAction(singleAction, date: Date())
                 }
@@ -165,7 +146,12 @@ final class AssistantManager {
                 state = .responding
                 response = answer
                 AMORAContext.shared.setAIResponse(answer)
-                AMORAEventCenter.shared.emit(.aiSucceeded)
+                let allSucceeded = results.allSatisfy { $0.status == .success }
+                if allSucceeded {
+                    AMORAEventCenter.shared.emit(.aiSucceeded)
+                } else {
+                    AMORAEventCenter.shared.emit(.aiFailed)
+                }
                 return answer
             }
 
@@ -185,10 +171,8 @@ final class AssistantManager {
         AMORAEventCenter.shared.emit(.aiThinking)
         AmoraActionExecutionCoordinator.shared.beginThinking()
 
-        // Deterministic-first routing: clear, supported single requests execute
-        // against the real services via the validated tool path, so the weak local
-        // model cannot echo the instruction back or mishandle units. Open-ended and
-        // compound requests fall through to the model-driven agent loop below.
+        // Deterministic-first routing: clear, supported single requests and compound
+        // commands execute against the real services via the validated tool path.
         if let deterministic = await runDeterministicShortcut(input, settings: settings) {
             return deterministic
         }
@@ -281,6 +265,80 @@ final class AssistantManager {
         } else {
             AMORAEventCenter.shared.emit(.aiFailed)
         }
+        return answer
+    }
+
+    /// Executes a clearly recognized, fully parsed compound request through the validated sequence executor.
+    private func executeDeterministicCompoundSequence(
+        _ directActions: [AmoraAction],
+        input: String,
+        settings: AISettingsSnapshot
+    ) async -> String {
+        WindowManager.shared.showQuickPanel()
+        let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
+        let actionContext = AmoraActionContext(
+            snapshot: settings.contextAwarenessEnabled ? AmoraContextProvider.shared.captureSnapshot() : nil,
+            conversationContext: convContext
+        )
+
+        let coordinator = AmoraActionExecutionCoordinator.shared
+        let results = await actionEngine.executeSequence(directActions, context: actionContext, coordinator: coordinator)
+
+        if settings.contextAwarenessEnabled {
+            for act in directActions {
+                AmoraConversationContextManager.shared.recordAction(act, date: Date())
+            }
+        }
+
+        let answer = AmoraActionResult.combineMessages(from: results)
+        let allSucceeded = results.allSatisfy { $0.status == .success }
+        let deniedConfirmation = results.contains { $0.message.localizedCaseInsensitiveContains("confirmation was not granted") || $0.message.localizedCaseInsensitiveContains("confirmation was denied") }
+
+        // Populate loopResult so diagnostics, evaluations, and personality tracking receive truthful metrics
+        var executedToolCalls: [AmoraAgentLoop.LoopResult.ExecutedToolCall] = []
+        for (idx, act) in directActions.enumerated() {
+            if idx < results.count {
+                var toolName = act.identifier
+                var args: [String: String] = [:]
+                if let dec = AmoraDeterministicRouter.decision(from: act), case .toolCall(let n, let a) = dec {
+                    toolName = n
+                    args = a
+                }
+                executedToolCalls.append(.init(name: toolName, arguments: args))
+            }
+        }
+
+        let executedCount = results.filter { $0.status == .success || $0.status == .unavailable || $0.status == .failed }.count
+        let loopResult = AmoraAgentLoop.LoopResult(
+            finalAnswer: answer,
+            executedToolCount: executedCount,
+            completedSuccessfully: allSucceeded,
+            attemptedTools: directActions.map { act in
+                if let dec = AmoraDeterministicRouter.decision(from: act), case .toolCall(let n, _) = dec { return n }
+                return act.identifier
+            },
+            executedTools: executedToolCalls,
+            usedMemory: directActions.contains { $0.identifier.contains("memory") },
+            deniedConfirmation: deniedConfirmation
+        )
+        self.lastLoopResult = loopResult
+
+        let isMemory = loopResult.usedMemory || AmoraMemoryCommandParser.shared.parse(input) != nil
+        let prov: AIMessage.Provenance = isMemory ? .memoryDerived : .standard
+        conversation.append(AIMessage(role: .user, content: input, provenance: prov))
+        conversation.append(AIMessage(role: .assistant, content: answer, provenance: prov))
+        state = deniedConfirmation ? .cancelled : .responding
+        response = answer
+        AMORAContext.shared.setAIResponse(answer)
+
+        if allSucceeded {
+            AMORAEventCenter.shared.emit(.aiSucceeded)
+        } else if deniedConfirmation {
+            AMORAEventCenter.shared.emit(.aiCancelled)
+        } else {
+            AMORAEventCenter.shared.emit(.aiFailed)
+        }
+
         return answer
     }
 
