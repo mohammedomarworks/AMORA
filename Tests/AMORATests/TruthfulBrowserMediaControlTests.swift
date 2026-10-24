@@ -8,11 +8,15 @@ final class TruthfulBrowserMediaControlTests: XCTestCase {
         try await super.setUp()
         ChromeMessageBridge.shared.resetForTesting()
         MusicService.shared.resetControlStateForTesting()
+        MusicService.shared.source = .none
+        MusicService.shared.preferredSource = .youtube
     }
 
     override func tearDown() async throws {
         ChromeMessageBridge.shared.resetForTesting()
         MusicService.shared.resetControlStateForTesting()
+        MusicService.shared.source = .none
+        MusicService.shared.preferredSource = nil
         try await super.tearDown()
     }
 
@@ -37,8 +41,8 @@ final class TruthfulBrowserMediaControlTests: XCTestCase {
         }
         """
         bridge.receive(setupPayload)
-        MusicService.shared.checkCurrentTrack()
         MusicService.shared.preferredSource = .youtube
+        MusicService.shared.checkCurrentTrack()
     }
 
     // MARK: - 1. Successful Browser Command Acknowledgment

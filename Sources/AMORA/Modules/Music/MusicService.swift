@@ -270,37 +270,41 @@ final class MusicService {
             if isYouTubePlaying { return .youtube(browserMedia!) }
         }
 
-        // Priority 2: None actively playing — maintain sticky active provider if still running & loaded
-        if previousSource == .spotify, isSpotifyRunning, let track = spotifyTrack, !track.title.isEmpty {
-            return .spotify(track)
-        }
-        if previousSource == .youtube, let media = browserMedia, !media.title.isEmpty {
-            return .youtube(media)
-        }
-        if previousSource == .appleMusic, let track = appleMusicTrack, !track.title.isEmpty {
-            return .appleMusic(track)
-        }
-
-        // Priority 3: Explicit preferred source
-        if preferredSource == .spotify, isSpotifyRunning, let track = spotifyTrack, !track.title.isEmpty {
-            return .spotify(track)
-        }
-        if preferredSource == .appleMusic, let track = appleMusicTrack, !track.title.isEmpty {
-            return .appleMusic(track)
-        }
-        if preferredSource == .youtube, let media = browserMedia, !media.title.isEmpty {
-            return .youtube(media)
+        // Priority 2: Explicit preferred source (when none actively playing)
+        if let preferred = preferredSource {
+            if preferred == .spotify, isSpotifyRunning, let track = spotifyTrack, !track.title.isEmpty {
+                return .spotify(track)
+            }
+            if preferred == .appleMusic, let track = appleMusicTrack, !track.title.isEmpty {
+                return .appleMusic(track)
+            }
+            if preferred == .youtube, let media = browserMedia, !media.title.isEmpty {
+                return .youtube(media)
+            }
         }
 
-        // Priority 4: Deterministic fallback among paused providers with tracks
-        if isSpotifyRunning, let track = spotifyTrack, !track.title.isEmpty {
-            return .spotify(track)
-        }
-        if let track = appleMusicTrack, !track.title.isEmpty {
-            return .appleMusic(track)
-        }
-        if let media = browserMedia, !media.title.isEmpty {
-            return .youtube(media)
+        // Priority 3: None actively playing — maintain sticky active provider if still running & loaded
+        if preferredSource == nil {
+            if previousSource == .spotify, isSpotifyRunning, let track = spotifyTrack, !track.title.isEmpty {
+                return .spotify(track)
+            }
+            if previousSource == .youtube, let media = browserMedia, !media.title.isEmpty {
+                return .youtube(media)
+            }
+            if previousSource == .appleMusic, let track = appleMusicTrack, !track.title.isEmpty {
+                return .appleMusic(track)
+            }
+
+            // Priority 4: Deterministic fallback among paused providers with tracks
+            if isSpotifyRunning, let track = spotifyTrack, !track.title.isEmpty {
+                return .spotify(track)
+            }
+            if let track = appleMusicTrack, !track.title.isEmpty {
+                return .appleMusic(track)
+            }
+            if let media = browserMedia, !media.title.isEmpty {
+                return .youtube(media)
+            }
         }
 
         return .none

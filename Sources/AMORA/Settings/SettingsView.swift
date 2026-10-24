@@ -192,6 +192,7 @@ public struct SettingsView: View {
                 await memoryService.refresh()
                 await AmoraAutomationService.shared.refresh()
                 _ = await modelManager.checkStatus()
+                chromeBridge.probeConnectionIfChromeRunning()
             }
         }
         .onDisappear {

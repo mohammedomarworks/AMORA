@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import AppKit
 
 enum BrowserConnectionStatus: String, Sendable {
     case connected = "Connected"
@@ -61,6 +62,8 @@ final class ChromeMessageBridge {
     var commandTimeoutSeconds: TimeInterval = 5.0
     var postDistributedNotifications: Bool = NSClassFromString("XCTestCase") == nil
     private var observer: NSObjectProtocol?
+    private var workspaceLaunchObserver: NSObjectProtocol?
+    private var workspaceTerminateObserver: NSObjectProtocol?
     private var pending: [String: PendingChromeCommand] = [:]
 
     private init() {
@@ -72,6 +75,8 @@ final class ChromeMessageBridge {
                 self?.receive(payload)
             }
         }
+        setupWorkspaceObservers()
+        probeConnectionIfChromeRunning()
     }
 
     func receive(_ payload: String?) {
@@ -85,19 +90,27 @@ final class ChromeMessageBridge {
         }
         if type == "connectionState" {
             switch object["state"] as? String {
-            case "connected": status = .connected
+            case "connected":
+                status = .connected
+                notifyMediaStateChanged()
             case "disconnected":
                 state = nil
                 status = .extensionDisconnected
                 failPendingCommands(reason: "bridge_disconnected")
                 notifyMediaStateChanged()
-            default: status = .protocolError
+            default:
+                status = .protocolError
+                notifyMediaStateChanged()
             }
             return
         }
         if type == "clear" {
             state = nil
-            if status != .connected { status = .extensionDisconnected }
+            if object["trackedMediaTabCount"] != nil || status == .connected {
+                status = .connected
+            } else {
+                status = .extensionDisconnected
+            }
             notifyMediaStateChanged()
             return
         }
@@ -143,10 +156,16 @@ final class ChromeMessageBridge {
             return
         }
         if type == "contentPong" {
-            guard let requestID = object["requestId"] as? String, let success = object["success"] as? Bool else { status = .protocolError; return }
+            guard let requestID = object["requestId"] as? String, let success = object["success"] as? Bool else {
+                status = .protocolError
+                notifyMediaStateChanged()
+                return
+            }
             contentDiagnostic = ChromeContentDiagnostic(success: success, hasVideo: object["hasVideo"] as? Bool ?? false, reason: object["reason"] as? String, url: object["url"] as? String ?? "")
             contentPingPending = false
+            status = .connected
             print("[AMORA Control] content ping acknowledged requestId=\(requestID) success=\(success) hasVideo=\(object["hasVideo"] as? Bool ?? false)")
+            notifyMediaStateChanged()
             return
         }
         guard type == "mediaState",
@@ -217,14 +236,82 @@ final class ChromeMessageBridge {
         return requestID
     }
 
+    private func setupWorkspaceObservers() {
+        guard postDistributedNotifications else { return }
+        workspaceLaunchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == "com.google.Chrome" else { return }
+            Task { @MainActor [weak self] in
+                self?.handleChromeLaunched()
+            }
+        }
+
+        workspaceTerminateObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == "com.google.Chrome" else { return }
+            Task { @MainActor [weak self] in
+                self?.handleChromeTerminated()
+            }
+        }
+    }
+
+    func handleChromeLaunched() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            self?.probeConnectionIfChromeRunning()
+        }
+    }
+
+    func handleChromeTerminated() {
+        state = nil
+        status = .extensionDisconnected
+        contentPingPending = false
+        failPendingCommands(reason: "bridge_disconnected")
+        notifyMediaStateChanged()
+    }
+
+    func probeConnectionIfChromeRunning() {
+        guard postDistributedNotifications else { return }
+        let isChromeRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty
+        guard isChromeRunning else {
+            if status != .extensionDisconnected {
+                status = .extensionDisconnected
+                state = nil
+                notifyMediaStateChanged()
+            }
+            return
+        }
+        sendProbePing()
+    }
+
+    func sendProbePing() {
+        sendContentPingInternal(timeoutSeconds: 2.0, userInitiated: false)
+    }
+
     func runContentPing() {
+        sendContentPingInternal(timeoutSeconds: 5.0, userInitiated: true)
+    }
+
+    private func sendContentPingInternal(timeoutSeconds: TimeInterval, userInitiated: Bool) {
         let requestID = UUID().uuidString
-        contentPingPending = true
-        contentDiagnostic = nil
+        if userInitiated {
+            contentPingPending = true
+            contentDiagnostic = nil
+        }
         let payload: [String: Any] = ["type": "contentPing", "requestId": requestID]
         guard let data = try? JSONSerialization.data(withJSONObject: payload), let string = String(data: data, encoding: .utf8) else {
-            contentPingPending = false
-            contentDiagnostic = ChromeContentDiagnostic(reason: "encoding_failed")
+            if userInitiated {
+                contentPingPending = false
+                contentDiagnostic = ChromeContentDiagnostic(reason: "encoding_failed")
+            }
             return
         }
         print("[AMORA] sending content ping \(requestID)")
@@ -237,10 +324,12 @@ final class ChromeMessageBridge {
             )
         }
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(5))
-            guard let self, self.contentPingPending else { return }
-            self.contentPingPending = false
-            self.contentDiagnostic = ChromeContentDiagnostic(reason: "content_script_unavailable")
+            try? await Task.sleep(for: .seconds(timeoutSeconds))
+            guard let self else { return }
+            if userInitiated && self.contentPingPending {
+                self.contentPingPending = false
+                self.contentDiagnostic = ChromeContentDiagnostic(reason: "content_script_unavailable")
+            }
         }
     }
 
