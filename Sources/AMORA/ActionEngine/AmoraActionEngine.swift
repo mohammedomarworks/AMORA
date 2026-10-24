@@ -115,8 +115,15 @@ public final class AmoraActionEngine: Sendable {
         switch result.status {
         case .success:
             AMORAEventCenter.shared.emit(.commandSucceeded)
-        case .failed, .invalidInput, .notPermitted, .unavailable, .needsConfirmation:
+        case .failed, .invalidInput, .unavailable, .needsConfirmation:
             AMORAEventCenter.shared.emit(.commandFailed)
+        case .notPermitted:
+            let isCancelled = AmoraActionExecutionCoordinator.shared.isCancelled
+                || result.data["reason"] == "command_cancelled"
+                || result.message.localizedCaseInsensitiveContains("cancelled")
+            if !isCancelled {
+                AMORAEventCenter.shared.emit(.commandFailed)
+            }
         }
         return result
     }
@@ -338,15 +345,7 @@ public final class AmoraActionEngine: Sendable {
             name: "Play Music",
             description: "Starts or resumes audio playback via the active media provider.",
             handler: { _, _ in
-                mediaController.play()
-                return .success(
-                    actionId: "media.play",
-                    message: "Music playback started.",
-                    data: [
-                        "source": mediaController.sourceName,
-                        "track": mediaController.trackTitle
-                    ]
-                )
+                await mediaController.playAsync()
             }
         ))
 
@@ -356,12 +355,7 @@ public final class AmoraActionEngine: Sendable {
             name: "Pause Music",
             description: "Pauses audio playback on the active media provider.",
             handler: { _, _ in
-                mediaController.pause()
-                return .success(
-                    actionId: "media.pause",
-                    message: "Music playback paused.",
-                    data: ["source": mediaController.sourceName]
-                )
+                await mediaController.pauseAsync()
             }
         ))
 

@@ -113,6 +113,19 @@ final class AssistantManager {
                 let answer = AmoraActionResult.combineMessages(from: results)
                 conversation.append(AIMessage(role: .user, content: input))
                 conversation.append(AIMessage(role: .assistant, content: answer))
+                let userCancelled = Task.isCancelled
+                    || AmoraActionExecutionCoordinator.shared.isCancelled
+                    || self.state == .cancelled
+                    || results.contains { $0.data["reason"] == "command_cancelled" || $0.message.localizedCaseInsensitiveContains("action cancelled by user") }
+
+                if userCancelled {
+                    self.state = .cancelled
+                    self.response = answer
+                    AMORAContext.shared.setAIResponse(answer)
+                    AMORAEventCenter.shared.emit(.aiCancelled)
+                    return answer
+                }
+
                 state = .responding
                 response = answer
                 AMORAContext.shared.setAIResponse(answer)
@@ -177,6 +190,19 @@ final class AssistantManager {
                 let answer = AmoraActionResult.combineMessages(from: results)
                 let assistantMessage = AIMessage(role: .assistant, content: answer)
                 conversation.append(assistantMessage)
+                let userCancelled = Task.isCancelled
+                    || AmoraActionExecutionCoordinator.shared.isCancelled
+                    || self.state == .cancelled
+                    || results.contains { $0.data["reason"] == "command_cancelled" || $0.message.localizedCaseInsensitiveContains("action cancelled by user") }
+
+                if userCancelled {
+                    self.state = .cancelled
+                    self.response = answer
+                    AMORAContext.shared.setAIResponse(answer)
+                    AMORAEventCenter.shared.emit(.aiCancelled)
+                    return answer
+                }
+
                 state = .responding
                 response = answer
                 AMORAContext.shared.setAIResponse(answer)
@@ -236,13 +262,25 @@ final class AssistantManager {
             let provenance: AIMessage.Provenance = isMemoryTurn ? .memoryDerived : .standard
             let assistantMessage = AIMessage(role: .assistant, content: answer, provenance: provenance)
             conversation.append(assistantMessage)
+            let userCancelled = Task.isCancelled
+                || AmoraActionExecutionCoordinator.shared.isCancelled
+                || self.state == .cancelled
+                || loopResult.deniedConfirmation
+                || loopResult.finalAnswer.localizedCaseInsensitiveContains("cancelled by user")
+
+            if userCancelled {
+                self.state = .cancelled
+                self.response = answer
+                AMORAContext.shared.setAIResponse(answer)
+                AMORAEventCenter.shared.emit(.aiCancelled)
+                return answer
+            }
+
             state = .responding
             response = answer
             AMORAContext.shared.setAIResponse(answer)
             if loopResult.completedSuccessfully {
                 AMORAEventCenter.shared.emit(.aiSucceeded)
-            } else if loopResult.deniedConfirmation {
-                AMORAEventCenter.shared.emit(.aiCancelled)
             } else {
                 AMORAEventCenter.shared.emit(.aiFailed)
             }
@@ -289,13 +327,25 @@ final class AssistantManager {
         let prov: AIMessage.Provenance = isMemory ? .memoryDerived : .standard
         conversation.append(AIMessage(role: .user, content: input, provenance: prov))
         conversation.append(AIMessage(role: .assistant, content: answer, provenance: prov))
+        let userCancelled = Task.isCancelled
+            || AmoraActionExecutionCoordinator.shared.isCancelled
+            || state == .cancelled
+            || result.deniedConfirmation
+            || result.finalAnswer.localizedCaseInsensitiveContains("cancelled by user")
+
+        if userCancelled {
+            state = .cancelled
+            response = answer
+            AMORAContext.shared.setAIResponse(answer)
+            AMORAEventCenter.shared.emit(.aiCancelled)
+            return answer
+        }
+
         state = .responding
         response = answer
         AMORAContext.shared.setAIResponse(answer)
         if result.completedSuccessfully {
             AMORAEventCenter.shared.emit(.aiSucceeded)
-        } else if result.deniedConfirmation {
-            AMORAEventCenter.shared.emit(.aiCancelled)
         } else {
             AMORAEventCenter.shared.emit(.aiFailed)
         }
@@ -361,14 +411,26 @@ final class AssistantManager {
         let prov: AIMessage.Provenance = isMemory ? .memoryDerived : .standard
         conversation.append(AIMessage(role: .user, content: input, provenance: prov))
         conversation.append(AIMessage(role: .assistant, content: answer, provenance: prov))
-        state = deniedConfirmation ? .cancelled : .responding
+        let userCancelled = Task.isCancelled
+            || AmoraActionExecutionCoordinator.shared.isCancelled
+            || state == .cancelled
+            || deniedConfirmation
+            || results.contains { $0.data["reason"] == "command_cancelled" || $0.message.localizedCaseInsensitiveContains("action cancelled by user") }
+
+        if userCancelled {
+            state = .cancelled
+            response = answer
+            AMORAContext.shared.setAIResponse(answer)
+            AMORAEventCenter.shared.emit(.aiCancelled)
+            return answer
+        }
+
+        state = .responding
         response = answer
         AMORAContext.shared.setAIResponse(answer)
 
         if allSucceeded {
             AMORAEventCenter.shared.emit(.aiSucceeded)
-        } else if deniedConfirmation {
-            AMORAEventCenter.shared.emit(.aiCancelled)
         } else {
             AMORAEventCenter.shared.emit(.aiFailed)
         }

@@ -12,6 +12,34 @@ public protocol AmoraMediaControlling: Sendable {
     var isAvailable: Bool { get }
     var trackTitle: String { get }
     var sourceName: String { get }
+
+    func playAsync() async -> AmoraActionResult
+    func pauseAsync() async -> AmoraActionResult
+}
+
+public typealias AmoraMediaControllerProtocol = AmoraMediaControlling
+
+extension AmoraMediaControlling {
+    public func playAsync() async -> AmoraActionResult {
+        play()
+        return .success(
+            actionId: "media.play",
+            message: "Music playback started.",
+            data: [
+                "source": sourceName,
+                "track": trackTitle
+            ]
+        )
+    }
+
+    public func pauseAsync() async -> AmoraActionResult {
+        pause()
+        return .success(
+            actionId: "media.pause",
+            message: "Music playback paused.",
+            data: ["source": sourceName]
+        )
+    }
 }
 
 /// Default implementation routing directly to `MusicService.shared`.
@@ -49,6 +77,14 @@ public struct DefaultAmoraMediaController: AmoraMediaControlling {
 
     public var sourceName: String {
         MusicService.shared.source.displayName
+    }
+
+    public func playAsync() async -> AmoraActionResult {
+        await MusicService.shared.playActionAsync()
+    }
+
+    public func pauseAsync() async -> AmoraActionResult {
+        await MusicService.shared.pauseActionAsync()
     }
 }
 

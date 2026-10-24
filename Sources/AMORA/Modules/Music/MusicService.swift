@@ -334,6 +334,9 @@ final class MusicService {
         elapsed = selected.elapsed
         isAvailable = selected.isAvailable
         browserMediaState = selected.source == .youtube ? browserMedia : nil
+        if selected.source == .youtube {
+            preferredSource = .youtube
+        }
 
         if source != .none {
             unavailableMessage = nil
@@ -875,9 +878,83 @@ final class MusicService {
         controlPending = false
         controlError = nil
         controlStatus = nil
+        preferredSource = nil
     }
 
     // MARK: - Browser / YouTube Integration
+
+    func sendBrowserMediaCommandAsync(_ action: ChromeMediaAction) async -> (success: Bool, reason: String?) {
+        if Task.isCancelled {
+            controlStatus = nil
+            controlError = Self.friendlyControlError("command_cancelled")
+            scheduleErrorClear(message: controlError)
+            return (false, "command_cancelled")
+        }
+        guard ChromeMessageBridge.shared.status == .connected else {
+            controlStatus = nil
+            controlError = Self.friendlyControlError("bridge_disconnected")
+            scheduleErrorClear(message: controlError)
+            return (false, "bridge_disconnected")
+        }
+        guard let state = ChromeMessageBridge.shared.state else {
+            controlStatus = nil
+            controlError = Self.friendlyControlError("no_media_target")
+            scheduleErrorClear(message: controlError)
+            return (false, "no_media_target")
+        }
+        let isSupported = action == .play ? state.capabilities.supportsPlay : state.capabilities.supportsPause
+        guard isSupported else {
+            controlStatus = nil
+            controlError = Self.friendlyControlError("unsupported")
+            scheduleErrorClear(message: controlError)
+            return (false, "unsupported")
+        }
+        guard state.tabId != nil else {
+            controlStatus = nil
+            controlError = Self.friendlyControlError("missing_target_tab")
+            scheduleErrorClear(message: controlError)
+            return (false, "missing_target_tab")
+        }
+
+        controlError = nil
+        controlPending = true
+        controlStatus = action == .pause ? "Pausing…" : "Playing…"
+
+        final class CommandState: @unchecked Sendable {
+            var requestId: String?
+        }
+        let commandState = CommandState()
+
+        let (success, reason): (Bool, String?) = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                commandState.requestId = ChromeMessageBridge.shared.sendMediaCommand(action) { success, reason in
+                    continuation.resume(returning: (success, reason))
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in
+                if let reqId = commandState.requestId {
+                    ChromeMessageBridge.shared.cancelCommand(requestId: reqId)
+                } else {
+                    ChromeMessageBridge.shared.cancelPendingCommands()
+                }
+            }
+        }
+
+        controlPending = false
+        if success {
+            print("[AMORA Control] UI completion action=\(action.rawValue) success=true")
+            controlStatus = action == .pause ? "Paused" : "Playing"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+        } else {
+            print("[AMORA Control] UI completion action=\(action.rawValue) success=false reason=\(reason ?? "unknown")")
+            controlStatus = nil
+            controlError = Self.friendlyControlError(reason)
+            scheduleErrorClear(message: self.controlError)
+        }
+        checkCurrentTrack()
+        return (success, reason)
+    }
 
     private func sendBrowserCommand(_ action: ChromeMediaAction) {
         guard source == .youtube, browserMediaState?.browser == .chrome else {
@@ -885,27 +962,226 @@ final class MusicService {
             return
         }
         print("[AMORA Control] UI dispatch action=\(action.rawValue) provider=YouTube targetTabId=\(browserMediaState?.tabId.map(String.init) ?? "missing")")
-        controlError = nil
-        controlPending = true
-        controlStatus = action == .pause ? "Pausing…" : "Playing…"
-        ChromeMessageBridge.shared.sendMediaCommand(action) { [weak self] success, reason in
-            guard let self else { return }
-            self.controlPending = false
-            if success {
-                print("[AMORA Control] UI completion action=\(action.rawValue) success=true")
-                self.controlStatus = action == .pause ? "Paused" : "Playing"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
-            } else {
-                print("[AMORA Control] UI completion action=\(action.rawValue) success=false reason=\(reason ?? "unknown")")
-                self.controlStatus = nil
-                self.controlError = Self.friendlyControlError(reason)
-                self.scheduleErrorClear(message: self.controlError)
-            }
-            self.checkCurrentTrack()
+        Task { @MainActor [weak self] in
+            _ = await self?.sendBrowserMediaCommandAsync(action)
         }
     }
 
-    private static func friendlyControlError(_ reason: String?) -> String {
+    func playActionAsync() async -> AmoraActionResult {
+        checkCurrentTrack()
+        let resolved = source == .none ? (preferredSource ?? .none) : source
+        switch resolved {
+        case .youtube:
+            let (success, reason) = await sendBrowserMediaCommandAsync(.play)
+            if success {
+                let currentTrack = ChromeMessageBridge.shared.state?.title ?? trackTitle
+                return .success(
+                    actionId: "media.play",
+                    message: "Music playback started.",
+                    data: [
+                        "source": "YouTube",
+                        "track": currentTrack
+                    ]
+                )
+            } else {
+                let friendly = Self.friendlyControlError(reason)
+                switch reason {
+                case "command_cancelled":
+                    return .notPermitted(
+                        actionId: "media.play",
+                        message: "Action cancelled by user.",
+                        data: ["source": "YouTube", "reason": "command_cancelled"]
+                    )
+                case "target_tab_does_not_exist", "target_tab_not_found", "target_tab_not_youtube", "no_media_target", "bridge_disconnected", "unsupported":
+                    return .unavailable(
+                        actionId: "media.play",
+                        message: friendly,
+                        data: ["source": "YouTube", "reason": reason ?? "unknown"]
+                    )
+                default:
+                    return .failed(
+                        actionId: "media.play",
+                        message: friendly,
+                        data: ["source": "YouTube", "reason": reason ?? "unknown"]
+                    )
+                }
+            }
+
+        case .spotify:
+            guard SpotifyProvider.shared.isRunning || SpotifyProvider.shared.isInstalled else {
+                return .unavailable(
+                    actionId: "media.play",
+                    message: "Spotify is not installed on this Mac.",
+                    data: ["source": "Spotify"]
+                )
+            }
+            playSpotify()
+            return .success(
+                actionId: "media.play",
+                message: "Music playback started.",
+                data: [
+                    "source": "Spotify",
+                    "track": trackTitle
+                ]
+            )
+
+        case .appleMusic:
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+                return .unavailable(
+                    actionId: "media.play",
+                    message: "Apple Music is not currently running.",
+                    data: ["source": "Apple Music"]
+                )
+            }
+            playAppleMusic()
+            return .success(
+                actionId: "media.play",
+                message: "Music playback started.",
+                data: [
+                    "source": "Apple Music",
+                    "track": trackTitle
+                ]
+            )
+
+        case .none:
+            if ChromeMessageBridge.shared.status == .connected, ChromeMessageBridge.shared.state != nil {
+                return await playActionAsync()
+            }
+            if SpotifyProvider.shared.isRunning {
+                playSpotify()
+                return .success(
+                    actionId: "media.play",
+                    message: "Music playback started.",
+                    data: [
+                        "source": "Spotify",
+                        "track": trackTitle
+                    ]
+                )
+            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+                playAppleMusic()
+                return .success(
+                    actionId: "media.play",
+                    message: "Music playback started.",
+                    data: [
+                        "source": "Apple Music",
+                        "track": trackTitle
+                    ]
+                )
+            } else if SpotifyProvider.shared.isInstalled {
+                playSpotify()
+                return .success(
+                    actionId: "media.play",
+                    message: "Music playback started.",
+                    data: [
+                        "source": "Spotify",
+                        "track": trackTitle
+                    ]
+                )
+            } else {
+                return .unavailable(
+                    actionId: "media.play",
+                    message: "No active media player available.",
+                    data: ["source": "None"]
+                )
+            }
+        }
+    }
+
+    func pauseActionAsync() async -> AmoraActionResult {
+        checkCurrentTrack()
+        let resolved = source == .none ? (preferredSource ?? .none) : source
+        switch resolved {
+        case .youtube:
+            let (success, reason) = await sendBrowserMediaCommandAsync(.pause)
+            if success {
+                return .success(
+                    actionId: "media.pause",
+                    message: "Music playback paused.",
+                    data: ["source": "YouTube"]
+                )
+            } else {
+                let friendly = Self.friendlyControlError(reason)
+                switch reason {
+                case "command_cancelled":
+                    return .notPermitted(
+                        actionId: "media.pause",
+                        message: "Action cancelled by user.",
+                        data: ["source": "YouTube", "reason": "command_cancelled"]
+                    )
+                case "target_tab_does_not_exist", "target_tab_not_found", "target_tab_not_youtube", "no_media_target", "bridge_disconnected", "unsupported":
+                    return .unavailable(
+                        actionId: "media.pause",
+                        message: friendly,
+                        data: ["source": "YouTube", "reason": reason ?? "unknown"]
+                    )
+                default:
+                    return .failed(
+                        actionId: "media.pause",
+                        message: friendly,
+                        data: ["source": "YouTube", "reason": reason ?? "unknown"]
+                    )
+                }
+            }
+
+        case .spotify:
+            guard SpotifyProvider.shared.isRunning else {
+                return .unavailable(
+                    actionId: "media.pause",
+                    message: "Spotify is not currently running.",
+                    data: ["source": "Spotify"]
+                )
+            }
+            pauseSpotify()
+            return .success(
+                actionId: "media.pause",
+                message: "Music playback paused.",
+                data: ["source": "Spotify"]
+            )
+
+        case .appleMusic:
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+                return .unavailable(
+                    actionId: "media.pause",
+                    message: "Apple Music is not currently running.",
+                    data: ["source": "Apple Music"]
+                )
+            }
+            pauseAppleMusic()
+            return .success(
+                actionId: "media.pause",
+                message: "Music playback paused.",
+                data: ["source": "Apple Music"]
+            )
+
+        case .none:
+            if ChromeMessageBridge.shared.status == .connected, ChromeMessageBridge.shared.state != nil {
+                return await pauseActionAsync()
+            }
+            if SpotifyProvider.shared.isRunning {
+                pauseSpotify()
+                return .success(
+                    actionId: "media.pause",
+                    message: "Music playback paused.",
+                    data: ["source": "Spotify"]
+                )
+            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+                pauseAppleMusic()
+                return .success(
+                    actionId: "media.pause",
+                    message: "Music playback paused.",
+                    data: ["source": "Apple Music"]
+                )
+            } else {
+                return .unavailable(
+                    actionId: "media.pause",
+                    message: "No active media player to pause.",
+                    data: ["source": "None"]
+                )
+            }
+        }
+    }
+
+    static func friendlyControlError(_ reason: String?) -> String {
         switch reason {
         case "target_tab_does_not_exist", "target_tab_not_found": return "The selected tab is no longer open."
         case "target_tab_not_youtube": return "The selected tab is not playing a YouTube video."
@@ -923,6 +1199,7 @@ final class MusicService {
         case "missing_target_tab": return "AMORA could not identify the selected YouTube tab."
         case "bridge_disconnected": return "Chrome is disconnected."
         case "command_timeout": return "Chrome did not respond in time."
+        case "command_cancelled": return "Action cancelled."
         case "unsupported": return "This media action is not supported here."
         default: return "Chrome could not control this video."
         }

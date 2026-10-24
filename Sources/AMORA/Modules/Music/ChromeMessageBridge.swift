@@ -58,6 +58,8 @@ final class ChromeMessageBridge {
     private(set) var contentDiagnostic: ChromeContentDiagnostic?
     private(set) var contentPingPending = false
     private(set) var commandDiagnostics: [ChromeCommandDiagnostic] = []
+    var commandTimeoutSeconds: TimeInterval = 5.0
+    var postDistributedNotifications: Bool = NSClassFromString("XCTestCase") == nil
     private var observer: NSObjectProtocol?
     private var pending: [String: PendingChromeCommand] = [:]
 
@@ -163,29 +165,30 @@ final class ChromeMessageBridge {
         notifyMediaStateChanged()
     }
 
-    func sendMediaCommand(_ action: ChromeMediaAction, completion: @escaping (Bool, String?) -> Void) {
+    @discardableResult
+    func sendMediaCommand(_ action: ChromeMediaAction, completion: @escaping (Bool, String?) -> Void) -> String? {
         guard status == .connected else {
             print("[AMORA Control] request rejected action=\(action.rawValue) reason=bridge_disconnected")
             completion(false, "bridge_disconnected")
-            return
+            return nil
         }
         guard let state else {
             print("[AMORA Control] request rejected action=\(action.rawValue) reason=no_media_target")
             completion(false, "no_media_target")
-            return
+            return nil
         }
         guard action == .play ? state.capabilities.supportsPlay : state.capabilities.supportsPause else {
             print("[AMORA Control] request rejected action=\(action.rawValue) targetTabId=\(state.tabId.map(String.init) ?? "missing") reason=unsupported")
             completion(false, "unsupported")
-            return
+            return nil
         }
         guard let tabId = state.tabId else {
             print("[AMORA Control] request rejected action=\(action.rawValue) reason=missing_target_tab")
             completion(false, "missing_target_tab")
-            return
+            return nil
         }
         let requestID = UUID().uuidString
-        let timeoutSeconds: TimeInterval = 5
+        let timeoutSeconds: TimeInterval = commandTimeoutSeconds
         recordCommandCreated(requestId: requestID, action: action, tabId: tabId, provider: "YouTube")
         pending[requestID] = PendingChromeCommand(action: action, tabId: tabId, completion: completion)
         let payload: [String: Any] = ["type": "mediaCommand", "provider": "youtube", "action": action.rawValue, "requestId": requestID, "tabId": tabId]
@@ -193,14 +196,16 @@ final class ChromeMessageBridge {
             pending.removeValue(forKey: requestID)
             recordCommandResult(requestId: requestID, success: false, reason: "encoding_failed")
             completion(false, "encoding_failed")
-            return
+            return nil
         }
-        DistributedNotificationCenter.default().postNotificationName(
-            Notification.Name("com.amora.browser.command"),
-            object: nil,
-            userInfo: ["payload": string],
-            deliverImmediately: true
-        )
+        if postDistributedNotifications {
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("com.amora.browser.command"),
+                object: nil,
+                userInfo: ["payload": string],
+                deliverImmediately: true
+            )
+        }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(timeoutSeconds))
             guard let self, let request = self.pending.removeValue(forKey: requestID) else { return }
@@ -209,6 +214,7 @@ final class ChromeMessageBridge {
             print("[AMORA Control][Diagnostics] event=command_timeout requestId=\(requestID) action=\(action.rawValue) targetTabId=\(tabId) provider=YouTube timestamp=\(now) success=false reason=command_timeout")
             request.completion(false, "command_timeout")
         }
+        return requestID
     }
 
     func runContentPing() {
@@ -222,12 +228,14 @@ final class ChromeMessageBridge {
             return
         }
         print("[AMORA] sending content ping \(requestID)")
-        DistributedNotificationCenter.default().postNotificationName(
-            Notification.Name("com.amora.browser.command"),
-            object: nil,
-            userInfo: ["payload": string],
-            deliverImmediately: true
-        )
+        if postDistributedNotifications {
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("com.amora.browser.command"),
+                object: nil,
+                userInfo: ["payload": string],
+                deliverImmediately: true
+            )
+        }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(5))
             guard let self, self.contentPingPending else { return }
@@ -312,5 +320,36 @@ final class ChromeMessageBridge {
             print("[AMORA Control] pending command failed requestId=\(reqId) reason=\(reason)")
             request.completion(false, reason)
         }
+    }
+
+    func cancelCommand(requestId: String) {
+        guard let request = pending.removeValue(forKey: requestId) else { return }
+        recordCommandResult(requestId: requestId, success: false, reason: "command_cancelled")
+        let now = ISO8601DateFormatter().string(from: Date())
+        print("[AMORA Control][Diagnostics] event=command_cancelled requestId=\(requestId) action=\(request.action.rawValue) targetTabId=\(request.tabId) provider=YouTube timestamp=\(now) success=false reason=command_cancelled")
+        request.completion(false, "command_cancelled")
+    }
+
+    func cancelPendingCommands() {
+        failPendingCommands(reason: "command_cancelled")
+    }
+
+    func triggerTimeoutForTesting(requestId: String) {
+        guard let request = pending.removeValue(forKey: requestId) else { return }
+        recordCommandResult(requestId: requestId, success: false, reason: "command_timeout")
+        let now = ISO8601DateFormatter().string(from: Date())
+        print("[AMORA Control][Diagnostics] event=command_timeout requestId=\(requestId) action=\(request.action.rawValue) targetTabId=\(request.tabId) provider=YouTube timestamp=\(now) success=false reason=command_timeout")
+        request.completion(false, "command_timeout")
+    }
+
+    func resetForTesting() {
+        state = nil
+        status = .extensionDisconnected
+        contentDiagnostic = nil
+        contentPingPending = false
+        commandDiagnostics.removeAll()
+        failPendingCommands(reason: "test_reset")
+        commandTimeoutSeconds = 5.0
+        postDistributedNotifications = false
     }
 }
