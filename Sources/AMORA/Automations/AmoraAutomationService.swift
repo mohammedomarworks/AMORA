@@ -204,10 +204,44 @@ public final class AmoraAutomationService: Sendable {
     public func executeCurrentNotificationAction() async {
         guard let current = currentNotification, let action = current.action else { return }
         dismissNotification()
+        if let autoId = current.automationId, var auto = get(id: autoId) {
+            auto.lastRunAt = clock()
+            auto.updatedAt = clock()
+            _ = try? await store.update(auto)
+            if let idx = automations.firstIndex(where: { $0.id == auto.id }) {
+                automations[idx] = auto
+            }
+        }
         _ = await actionEngine.execute(action, context: AmoraActionContext(isConfirmed: true))
     }
 
     // MARK: - Automation Execution & Safety Validation
+
+    /// Advances schedule and persists state after an automation evaluation attempt.
+    /// Recurring automations advance nextRunAt to the next slot.
+    /// One-time automations clear nextRunAt and disable.
+    @discardableResult
+    private func advanceSchedule(
+        for automation: AmoraAutomation,
+        at currentTime: Date
+    ) async -> AmoraAutomation {
+        var updated = automation
+        updated.lastRunAt = currentTime
+        updated.updatedAt = currentTime
+
+        if case .oneTime = updated.trigger {
+            updated.enabled = false
+            updated.nextRunAt = nil
+        } else {
+            updated.updateNextRunAt(from: currentTime, calendar: calendar)
+        }
+
+        _ = try? await store.update(updated)
+        if let idx = automations.firstIndex(where: { $0.id == updated.id }) {
+            automations[idx] = updated
+        }
+        return updated
+    }
 
     /// Executes an automation safely using the Action Engine.
     @discardableResult
@@ -278,6 +312,9 @@ public final class AmoraAutomationService: Sendable {
         if let condition = automation.condition {
             let snapshot = contextProvider.currentSnapshot
             guard condition.evaluate(snapshot: snapshot) else {
+                if !isManual {
+                    await advanceSchedule(for: automation, at: currentTime)
+                }
                 return .unavailable(
                     actionId: amoraAction.identifier,
                     message: "Automation condition was not met."
@@ -289,19 +326,26 @@ public final class AmoraAutomationService: Sendable {
         let validation = actionEngine.validate(amoraAction)
         switch validation {
         case .invalid(let reason):
+            if !isManual {
+                await advanceSchedule(for: automation, at: currentTime)
+            }
             return .invalidInput(actionId: amoraAction.identifier, message: reason)
         case .requiresConfirmation(let prompt) where !isManual:
             // Background automation cannot execute sensitive actions requiring confirmation
-            let notif = AmoraAutomationNotification(
-                automationId: automation.id,
-                automationName: automation.name,
-                triggerIcon: automation.trigger.systemImage,
-                triggerName: automation.trigger.displayName,
-                message: prompt,
-                action: amoraAction,
-                actionTitle: amoraAction.humanReadableName
-            )
-            self.presentNotification(notif)
+            let isAwaitingDecision = currentNotification?.automationId == automation.id
+            if !isAwaitingDecision {
+                let notif = AmoraAutomationNotification(
+                    automationId: automation.id,
+                    automationName: automation.name,
+                    triggerIcon: automation.trigger.systemImage,
+                    triggerName: automation.trigger.displayName,
+                    message: prompt,
+                    action: amoraAction,
+                    actionTitle: amoraAction.humanReadableName
+                )
+                self.presentNotification(notif)
+            }
+            await advanceSchedule(for: automation, at: currentTime)
             return .needsConfirmation(actionId: amoraAction.identifier, prompt: prompt)
         case .valid, .requiresConfirmation:
             break
@@ -310,16 +354,20 @@ public final class AmoraAutomationService: Sendable {
         // 7. Sensitive action confirmation requirement
         if !isManual, let def = actionEngine.registry.definition(for: amoraAction.identifier) {
             if def.isConfirmationRequiredByDefault {
-                let notif = AmoraAutomationNotification(
-                    automationId: automation.id,
-                    automationName: automation.name,
-                    triggerIcon: automation.trigger.systemImage,
-                    triggerName: automation.trigger.displayName,
-                    message: "This action requires user confirmation before execution.",
-                    action: amoraAction,
-                    actionTitle: amoraAction.humanReadableName
-                )
-                self.presentNotification(notif)
+                let isAwaitingDecision = currentNotification?.automationId == automation.id
+                if !isAwaitingDecision {
+                    let notif = AmoraAutomationNotification(
+                        automationId: automation.id,
+                        automationName: automation.name,
+                        triggerIcon: automation.trigger.systemImage,
+                        triggerName: automation.trigger.displayName,
+                        message: "This action requires user confirmation before execution.",
+                        action: amoraAction,
+                        actionTitle: amoraAction.humanReadableName
+                    )
+                    self.presentNotification(notif)
+                }
+                await advanceSchedule(for: automation, at: currentTime)
                 return .needsConfirmation(
                     actionId: amoraAction.identifier,
                     prompt: "This action requires user confirmation before execution."
@@ -380,21 +428,7 @@ public final class AmoraAutomationService: Sendable {
         let result = await actionEngine.execute(amoraAction, context: context)
 
         // 9. Update lastRunAt, updatedAt, and deterministic nextRunAt
-        var updated = automation
-        updated.lastRunAt = currentTime
-        updated.updatedAt = currentTime
-
-        if case .oneTime = updated.trigger {
-            updated.enabled = false
-            updated.nextRunAt = nil
-        } else {
-            updated.updateNextRunAt(from: currentTime, calendar: calendar)
-        }
-
-        _ = try? await store.update(updated)
-        if let idx = automations.firstIndex(where: { $0.id == updated.id }) {
-            automations[idx] = updated
-        }
+        await advanceSchedule(for: automation, at: currentTime)
 
         return result
     }

@@ -1047,4 +1047,270 @@ final class AutomationsV1Tests: XCTestCase {
         XCTAssertEqual(notif.actionTitle, "Open Automations")
         XCTAssertNotNil(notif.action)
     }
+
+    // MARK: - 16. Phase 4B Schedule Progression & Confirmation Tests
+
+    func testRecurringAutomation_unmetCondition_advancesScheduleWithoutFiring() async throws {
+        let media = SpyMediaController()
+        media.isPlaying = false
+        let now = Date()
+        let auto = AmoraAutomation(
+            name: "Interval Music",
+            trigger: .interval(seconds: 300),
+            condition: .mediaPlaying(true),
+            action: .mediaPlay,
+            nextRunAt: now
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [auto],
+            now: now.addingTimeInterval(-100),
+            mediaController: media
+        )
+
+        let results = await service.fireDueAutomations(now: now)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.status, .unavailable)
+        XCTAssertFalse(media.played, "Action must not execute when condition is unmet")
+
+        let updated = service.get(id: auto.id)
+        XCTAssertNotNil(updated?.nextRunAt)
+        XCTAssertEqual(updated?.nextRunAt, now.addingTimeInterval(300), "Schedule must advance to next interval on condition mismatch")
+
+        // 1 second later, automation is not due and does not fire
+        let subsequentResults = await service.fireDueAutomations(now: now.addingTimeInterval(1))
+        XCTAssertTrue(subsequentResults.isEmpty)
+        XCTAssertFalse(media.played)
+    }
+
+    func testRecurringAutomation_requiresConfirmation_advancesScheduleWithoutRepeatedPrompts() async throws {
+        let media = SpyMediaController()
+        let now = Date()
+        let auto = AmoraAutomation(
+            name: "Sensitive Interval",
+            trigger: .interval(seconds: 300),
+            action: .mediaPlay,
+            nextRunAt: now
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [auto],
+            now: now.addingTimeInterval(-100),
+            mediaController: media
+        )
+
+        service.actionEngine.registry.register(AmoraActionDefinition(
+            identifier: "media.play",
+            name: "Play Music",
+            description: "Sensitive play action",
+            isConfirmationRequiredByDefault: true,
+            handler: { _, _ in
+                media.play()
+                return .success(actionId: "media.play", message: "Playing.")
+            }
+        ))
+
+        let results = await service.fireDueAutomations(now: now)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.status, .needsConfirmation)
+        XCTAssertFalse(media.played, "Sensitive action must not run automatically without user confirmation")
+
+        let currentNotif = service.currentNotification
+        XCTAssertNotNil(currentNotif)
+        XCTAssertEqual(currentNotif?.automationId, auto.id)
+
+        let updated = service.get(id: auto.id)
+        XCTAssertEqual(updated?.nextRunAt, now.addingTimeInterval(300), "Schedule must advance to next slot while awaiting confirmation")
+
+        // Subsequent check 10 seconds later while decision is pending: no duplicate prompts
+        let secondResults = await service.fireDueAutomations(now: now.addingTimeInterval(10))
+        XCTAssertTrue(secondResults.isEmpty)
+        XCTAssertEqual(service.currentNotification?.id, currentNotif?.id, "Pending prompt must not be duplicated")
+
+        // At next interval slot (300s later), if still pending: advances schedule to 600s without replacing prompt
+        let thirdResults = await service.fireDueAutomations(now: now.addingTimeInterval(300))
+        XCTAssertEqual(thirdResults.count, 1)
+        XCTAssertEqual(thirdResults.first?.status, .needsConfirmation)
+        XCTAssertEqual(service.currentNotification?.id, currentNotif?.id, "Pending prompt must not be replaced")
+        let updatedTwice = service.get(id: auto.id)
+        XCTAssertEqual(updatedTwice?.nextRunAt, now.addingTimeInterval(600))
+    }
+
+    func testConfirmationApprovalExecutesActionOnce_denialDoesNotExecute() async throws {
+        let media = SpyMediaController()
+        let now = Date()
+        let auto = AmoraAutomation(
+            name: "Confirmable Auto",
+            trigger: .interval(seconds: 300),
+            action: .mediaPlay,
+            nextRunAt: now
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [auto],
+            now: now.addingTimeInterval(-100),
+            mediaController: media
+        )
+
+        service.actionEngine.registry.register(AmoraActionDefinition(
+            identifier: "media.play",
+            name: "Play Music",
+            description: "Sensitive play action",
+            isConfirmationRequiredByDefault: true,
+            handler: { _, _ in
+                media.play()
+                return .success(actionId: "media.play", message: "Playing.")
+            }
+        ))
+
+        // 1. Approval path
+        let results = await service.fireDueAutomations(now: now)
+        XCTAssertEqual(results.first?.status, .needsConfirmation)
+        XCTAssertNotNil(service.currentNotification)
+        XCTAssertFalse(media.played)
+
+        await service.executeCurrentNotificationAction()
+        XCTAssertTrue(media.played, "Action must execute once on approval")
+        XCTAssertNil(service.currentNotification, "Notification must be dismissed after approval")
+
+        // Calling again does not execute again
+        media.played = false
+        await service.executeCurrentNotificationAction()
+        XCTAssertFalse(media.played, "Dismissed confirmation must not execute twice")
+
+        // 2. Denial path
+        media.played = false
+        var nextAuto = auto
+        nextAuto.nextRunAt = now.addingTimeInterval(600)
+        let _ = await service.executeAutomation(nextAuto, isManual: false, now: now.addingTimeInterval(600))
+        XCTAssertNotNil(service.currentNotification)
+
+        // Deny by dismissing
+        service.dismissNotification()
+        XCTAssertNil(service.currentNotification)
+        XCTAssertFalse(media.played, "Denial must not execute action")
+
+        await service.executeCurrentNotificationAction()
+        XCTAssertFalse(media.played, "Denial prevents pending action execution")
+    }
+
+    func testOneTimeAutomation_cannotRemainOverdueOrRunRepeatedly() async throws {
+        let media = SpyMediaController()
+        media.isPlaying = false
+        let now = Date()
+        let target = now.addingTimeInterval(10)
+
+        // Subcase A: One-time with unmet condition
+        let autoUnmet = AmoraAutomation(
+            name: "One-time Condition Unmet",
+            trigger: .oneTime(date: target),
+            condition: .mediaPlaying(true),
+            action: .mediaPlay,
+            nextRunAt: target
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [autoUnmet],
+            now: now,
+            mediaController: media
+        )
+
+        let resultsA = await service.fireDueAutomations(now: target)
+        XCTAssertEqual(resultsA.first?.status, .unavailable)
+        XCTAssertFalse(media.played)
+
+        let updatedA = service.get(id: autoUnmet.id)
+        XCTAssertFalse(updatedA?.enabled ?? true, "One-time automation must be disabled when condition fails")
+        XCTAssertNil(updatedA?.nextRunAt, "One-time automation nextRunAt must be nil so it is not overdue")
+
+        // Future check: does not run
+        let resultsFutureA = await service.fireDueAutomations(now: target.addingTimeInterval(100))
+        XCTAssertTrue(resultsFutureA.isEmpty)
+
+        // Subcase B: One-time requiring confirmation
+        let mediaB = SpyMediaController()
+        let autoConfirm = AmoraAutomation(
+            name: "One-time Confirm",
+            trigger: .oneTime(date: target),
+            action: .mediaPlay,
+            nextRunAt: target
+        )
+        let (serviceB, _, _) = await makeIsolatedService(
+            initialAutomations: [autoConfirm],
+            now: now,
+            mediaController: mediaB
+        )
+
+        serviceB.actionEngine.registry.register(AmoraActionDefinition(
+            identifier: "media.play",
+            name: "Play Music",
+            description: "Sensitive play action",
+            isConfirmationRequiredByDefault: true,
+            handler: { _, _ in
+                mediaB.play()
+                return .success(actionId: "media.play", message: "Playing.")
+            }
+        ))
+
+        let resultsB = await serviceB.fireDueAutomations(now: target)
+        XCTAssertEqual(resultsB.first?.status, .needsConfirmation)
+        XCTAssertNotNil(serviceB.currentNotification)
+
+        let updatedB = serviceB.get(id: autoConfirm.id)
+        XCTAssertFalse(updatedB?.enabled ?? true, "One-time automation must be deactivated after triggering")
+        XCTAssertNil(updatedB?.nextRunAt, "One-time automation must not remain overdue")
+
+        // Future check: does not re-trigger or re-prompt
+        let resultsFutureB = await serviceB.fireDueAutomations(now: target.addingTimeInterval(100))
+        XCTAssertTrue(resultsFutureB.isEmpty)
+
+        // Confirm pending prompt: executes successfully once with authorization
+        await serviceB.executeCurrentNotificationAction()
+        XCTAssertTrue(mediaB.played, "Pending confirmation on one-time automation must still be executable")
+        XCTAssertNil(serviceB.currentNotification)
+    }
+
+    func testInvalidActionInput_advancesOrDeactivatesScheduleCorrectly() async throws {
+        let now = Date()
+
+        // 1. Recurring with invalid action (duration 0 is rejected by timer.start validator)
+        let autoRecurring = AmoraAutomation(
+            name: "Invalid Recurring",
+            trigger: .interval(seconds: 300),
+            action: .startTimer(duration: 0),
+            nextRunAt: now
+        )
+        let (service, _, _) = await makeIsolatedService(
+            initialAutomations: [autoRecurring],
+            now: now.addingTimeInterval(-100)
+        )
+
+        let results1 = await service.fireDueAutomations(now: now)
+        XCTAssertEqual(results1.count, 1)
+        XCTAssertEqual(results1.first?.status, .invalidInput)
+
+        let updatedRec = service.get(id: autoRecurring.id)
+        XCTAssertEqual(updatedRec?.nextRunAt, now.addingTimeInterval(300), "Invalid recurring action must advance schedule to next slot")
+
+        // 2. One-time with invalid action
+        let target = now.addingTimeInterval(10)
+        let autoOneTime = AmoraAutomation(
+            name: "Invalid One-Time",
+            trigger: .oneTime(date: target),
+            action: .startTimer(duration: 0),
+            nextRunAt: target
+        )
+        let (service2, _, _) = await makeIsolatedService(
+            initialAutomations: [autoOneTime],
+            now: now
+        )
+
+        let results2 = await service2.fireDueAutomations(now: target)
+        XCTAssertEqual(results2.count, 1)
+        XCTAssertEqual(results2.first?.status, .invalidInput)
+
+        let updatedOne = service2.get(id: autoOneTime.id)
+        XCTAssertFalse(updatedOne?.enabled ?? true, "Invalid one-time automation must be deactivated")
+        XCTAssertNil(updatedOne?.nextRunAt, "Invalid one-time automation nextRunAt must be nil")
+
+        // Future run does not execute
+        let resultsFuture = await service2.fireDueAutomations(now: target.addingTimeInterval(50))
+        XCTAssertTrue(resultsFuture.isEmpty)
+    }
 }
