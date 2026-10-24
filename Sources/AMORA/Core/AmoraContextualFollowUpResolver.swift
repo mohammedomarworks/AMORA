@@ -46,6 +46,19 @@ public struct AmoraContextualFollowUpResolver: AmoraContextualFollowUpResolving 
         let normalized = AMORACommandParser.normalize(rawTrimmed)
         guard !normalized.isEmpty else { return .unhandled }
 
+        // --- 0. In-flight Clarification Follow-up ---
+        if let pending = ctx.pendingClarification, !pending.isExpired(at: Date(), ttl: ctx.ttl) {
+            if let clarificationResolution = resolvePendingClarification(
+                normalized: normalized,
+                rawInput: rawTrimmed,
+                pending: pending,
+                ctx: ctx,
+                snapshot: snapshot
+            ) {
+                return clarificationResolution
+            }
+        }
+
         // --- 1. Timer Modification (Relative addition: "add 5 minutes to it", "extend it by 10 mins") ---
         if let relSeconds = parseRelativeTimerModification(normalized) {
             let isTimerEligible = ctx.activeTimerReference != nil ||
@@ -146,6 +159,150 @@ public struct AmoraContextualFollowUpResolver: AmoraContextualFollowUpResolving 
     }
 
     // MARK: - Private Helpers
+
+    private func resolvePendingClarification(
+        normalized: String,
+        rawInput: String,
+        pending: AmoraPendingClarification,
+        ctx: AmoraConversationContext,
+        snapshot: AmoraContextSnapshot?
+    ) -> AmoraFollowUpResolution? {
+        switch pending.kind {
+        case .targetChoice(let actionVerb, let candidates):
+            let lowerVerb = actionVerb.lowercased()
+            let isPauseAction = lowerVerb.contains("pause")
+            let isStopAction = lowerVerb.contains("stop") || lowerVerb.contains("cancel")
+            let isResumeAction = lowerVerb.contains("resume") || lowerVerb.contains("play")
+
+            // 1. Check if user response is still ambiguous
+            let ambiguousResponses = [
+                "both", "both of them", "all", "all of them",
+                "yes", "yeah", "yep", "sure", "ok", "okay",
+                "either", "whatever", "it", "that", "that one", "this one",
+                "idk", "i don't know", "i dont know", "dont know", "which one"
+            ]
+            if ambiguousResponses.contains(normalized) {
+                return .ambiguous(
+                    prompt: "Please specify whether you mean the timer or music.",
+                    candidates: candidates
+                )
+            }
+
+            // 2. Check if user explicitly chose Timer
+            let timerKeywords = [
+                "timer", "the timer", "timer please", "stop timer", "pause timer",
+                "cancel timer", "resume timer", "pause the timer", "stop the timer",
+                "cancel the timer", "resume the timer", "first", "first one", "1", "one"
+            ]
+            let isTimer = timerKeywords.contains(normalized) ||
+                (normalized.hasPrefix("timer") && !normalized.contains("set") && !normalized.contains("start")) ||
+                (normalized.hasSuffix("timer") && (normalized.contains("the") || normalized.contains("my")))
+
+            // 3. Check if user explicitly chose Music
+            let musicKeywords = [
+                "music", "the music", "music please", "spotify", "apple music",
+                "song", "the song", "track", "the track", "audio",
+                "pause music", "stop music", "play music", "resume music",
+                "pause the music", "stop the music", "play the music", "resume the music",
+                "pause spotify", "stop spotify", "play spotify", "resume spotify",
+                "second", "second one", "2", "two"
+            ]
+            let isMusic = musicKeywords.contains(normalized) ||
+                normalized.hasPrefix("music") ||
+                normalized.hasSuffix("music")
+
+            // If user mentioned both in the same phrase (e.g. "timer and music")
+            if isTimer && isMusic {
+                return .ambiguous(
+                    prompt: "Please specify whether you mean the timer or music.",
+                    candidates: candidates
+                )
+            }
+
+            if isTimer {
+                if isPauseAction {
+                    return .resolvedAction(.pauseTimer)
+                } else if isStopAction {
+                    return .resolvedAction(.cancelTimer)
+                } else if isResumeAction {
+                    return .resolvedAction(.resumeTimer)
+                }
+                return .resolvedAction(.pauseTimer)
+            }
+
+            if isMusic {
+                if isPauseAction || isStopAction {
+                    return .resolvedAction(.pauseMusic)
+                } else if isResumeAction {
+                    return .resolvedAction(.playMusic)
+                }
+                return .resolvedAction(.pauseMusic)
+            }
+
+            // Not an answer to targetChoice — let caller treat as new request
+            return nil
+
+        case .applicationName:
+            let ambiguousResponses = [
+                "the app", "it", "that", "this", "that one", "this one",
+                "an app", "which app", "app", "whatever", "yes", "sure", "idk"
+            ]
+            if ambiguousResponses.contains(normalized) {
+                return .ambiguous(
+                    prompt: "Please tell me the name of the application you want to open.",
+                    candidates: []
+                )
+            }
+
+            // Explicit cancel / never mind
+            if normalized == "never mind" || normalized == "nevermind" || normalized == "cancel" {
+                return nil
+            }
+
+            // Independent commands / queries should clear clarification and run independently
+            let isIndependentCommand = normalized.contains("timer") ||
+                normalized.contains("battery") ||
+                normalized.contains("note") ||
+                normalized.contains("weather") ||
+                normalized.hasPrefix("what") ||
+                normalized.hasPrefix("how") ||
+                normalized.hasPrefix("which") ||
+                normalized.hasPrefix("is ") ||
+                normalized.contains("?")
+            if isIndependentCommand {
+                return nil
+            }
+
+            var appCandidate = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalized.hasPrefix("open ") {
+                appCandidate = String(appCandidate.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if normalized.hasPrefix("launch ") {
+                appCandidate = String(appCandidate.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let clean = appCandidate.trimmingCharacters(in: CharacterSet(charactersIn: "\"'\u{201C}\u{201D}\u{2018}\u{2019}"))
+
+            let reserved = [
+                "downloads", "download", "documents", "document", "docs",
+                "desktop", "home", "workspace", "dashboard", "settings",
+                "clipboard", "notes", "file shelf"
+            ]
+            if reserved.contains(clean.lowercased()) {
+                return nil
+            }
+
+            guard !clean.isEmpty else {
+                return .ambiguous(
+                    prompt: "Please tell me the name of the application you want to open.",
+                    candidates: []
+                )
+            }
+
+            return .resolvedAction(.openApplication(name: clean))
+
+        case .custom:
+            return nil
+        }
+    }
 
     private func isActionTimer(_ action: AmoraAction?) -> Bool {
         guard let action else { return false }

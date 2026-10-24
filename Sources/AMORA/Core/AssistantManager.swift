@@ -40,6 +40,12 @@ final class AssistantManager {
         }
     }
 
+    /// Records a user request and assistant answer in the bounded conversation history.
+    func recordExchange(userMessage: String, assistantResponse: String) {
+        conversation.append(AIMessage(role: .user, content: userMessage))
+        conversation.append(AIMessage(role: .assistant, content: assistantResponse))
+    }
+
     func configure(provider: any AIProvider) { self.provider = provider }
     func configure(memoryStore: any AmoraMemoryStoring) { self.memoryStore = memoryStore }
 
@@ -79,7 +85,21 @@ final class AssistantManager {
                 contextAwarenessEnabled: settings.contextAwarenessEnabled
             )
             switch resolution {
-            case .ambiguous(let prompt, _):
+            case .ambiguous(let prompt, let candidates):
+                let clarificationKind: AmoraPendingClarification.Kind
+                if candidates.isEmpty {
+                    clarificationKind = .applicationName
+                } else {
+                    let norm = AMORACommandParser.normalize(input)
+                    let verb = norm.contains("pause") ? "pause" : (norm.contains("stop") ? "stop" : (norm.contains("resume") ? "resume" : (norm.contains("cancel") ? "cancel" : input)))
+                    clarificationKind = .targetChoice(action: verb, candidates: candidates)
+                }
+                let pending = AmoraPendingClarification(originalInput: input, prompt: prompt, kind: clarificationKind)
+                AmoraConversationContextManager.shared.recordClarification(pending)
+
+                conversation.append(AIMessage(role: .user, content: input))
+                conversation.append(AIMessage(role: .assistant, content: prompt))
+
                 state = .responding
                 response = prompt
                 AMORAContext.shared.setAIResponse(prompt)
@@ -89,26 +109,36 @@ final class AssistantManager {
                 let actionContext = AmoraActionContext(snapshot: snapshot, conversationContext: convContext)
                 let results = await AmoraActionEngine.shared.executeSequence([action], context: actionContext)
                 AmoraConversationContextManager.shared.recordAction(action, date: Date())
+                AmoraConversationContextManager.shared.clearClarification()
                 let answer = AmoraActionResult.combineMessages(from: results)
-                let assistantMessage = AIMessage(role: .assistant, content: answer)
-                conversation.append(assistantMessage)
+                conversation.append(AIMessage(role: .user, content: input))
+                conversation.append(AIMessage(role: .assistant, content: answer))
                 state = .responding
                 response = answer
                 AMORAContext.shared.setAIResponse(answer)
-                AMORAEventCenter.shared.emit(.aiSucceeded)
+                let allSucceeded = results.allSatisfy { $0.status == .success }
+                if allSucceeded {
+                    AMORAEventCenter.shared.emit(.aiSucceeded)
+                } else {
+                    AMORAEventCenter.shared.emit(.aiFailed)
+                }
                 return answer
             case .resolvedCommand(let cmd):
                 let result = AMORACommandRouter.shared.execute(cmd)
                 AmoraConversationContextManager.shared.recordCommand(cmd, date: Date())
+                AmoraConversationContextManager.shared.clearClarification()
                 let answer = result.message
-                let assistantMessage = AIMessage(role: .assistant, content: answer)
-                conversation.append(assistantMessage)
+                conversation.append(AIMessage(role: .user, content: input))
+                conversation.append(AIMessage(role: .assistant, content: answer))
                 state = .responding
                 response = answer
                 AMORAContext.shared.setAIResponse(answer)
                 AMORAEventCenter.shared.emit(.aiSucceeded)
                 return answer
             case .unhandled:
+                if convContext?.pendingClarification != nil {
+                    AmoraConversationContextManager.shared.clearClarification()
+                }
                 break
             }
         }
@@ -754,21 +784,39 @@ final class AMORACommandGateway {
                 contextAwarenessEnabled: settings.contextAwarenessEnabled
             )
             switch resolution {
-            case .ambiguous(let prompt, _):
+            case .ambiguous(let prompt, let candidates):
+                let clarificationKind: AmoraPendingClarification.Kind
+                if candidates.isEmpty {
+                    clarificationKind = .applicationName
+                } else {
+                    let norm = AMORACommandParser.normalize(input)
+                    let verb = norm.contains("pause") ? "pause" : (norm.contains("stop") ? "stop" : (norm.contains("resume") ? "resume" : (norm.contains("cancel") ? "cancel" : input)))
+                    clarificationKind = .targetChoice(action: verb, candidates: candidates)
+                }
+                let pending = AmoraPendingClarification(originalInput: input, prompt: prompt, kind: clarificationKind)
+                AmoraConversationContextManager.shared.recordClarification(pending)
+                assistant.recordExchange(userMessage: input, assistantResponse: prompt)
                 return .needsInformation(prompt: prompt)
             case .resolvedAction(let action):
                 WindowManager.shared.showQuickPanel()
                 let actionContext = AmoraActionContext(snapshot: snapshot, conversationContext: convContext)
                 let results = await AmoraActionEngine.shared.executeSequence([action], context: actionContext)
                 AmoraConversationContextManager.shared.recordAction(action, date: Date())
+                AmoraConversationContextManager.shared.clearClarification()
                 let answer = AmoraActionResult.combineMessages(from: results)
+                assistant.recordExchange(userMessage: input, assistantResponse: answer)
                 let allSucceeded = results.allSatisfy { $0.status == .success }
                 return allSucceeded ? .success(message: answer) : .failure(message: answer)
             case .resolvedCommand(let cmd):
                 let result = router.execute(cmd)
                 AmoraConversationContextManager.shared.recordCommand(cmd, date: Date())
+                AmoraConversationContextManager.shared.clearClarification()
+                assistant.recordExchange(userMessage: input, assistantResponse: result.message)
                 return result
             case .unhandled:
+                if convContext?.pendingClarification != nil {
+                    AmoraConversationContextManager.shared.clearClarification()
+                }
                 break
             }
         }
@@ -1070,7 +1118,8 @@ final class AMORACommandGateway {
         let targetLower = rawTarget.lowercased()
 
         let reserved = ["downloads", "download", "documents", "document", "docs", "desktop", "home",
-                        "workspace", "dashboard", "settings", "clipboard", "notes", "file shelf"]
+                        "workspace", "dashboard", "settings", "clipboard", "notes", "file shelf",
+                        "it", "that", "this", "app", "the app"]
         if reserved.contains(targetLower) { return nil }
 
         // Must NOT contain embedded command keywords (prevents command pollution)

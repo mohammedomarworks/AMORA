@@ -6,11 +6,13 @@ final class ContextAwareIntelligenceV2Tests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
+        TimerService.shared.stopTimer()
         AmoraConversationContextManager.shared.reset()
         AmoraActionExecutionCoordinator.shared.reset()
     }
 
     override func tearDown() async throws {
+        TimerService.shared.stopTimer()
         AmoraConversationContextManager.shared.reset()
         AmoraActionExecutionCoordinator.shared.reset()
         try await super.tearDown()
@@ -450,5 +452,175 @@ final class ContextAwareIntelligenceV2Tests: XCTestCase {
 
         let result = await gateway.submit("pause it", settings: settings)
         XCTAssertEqual(result, AMORACommandResult.needsInformation(prompt: "Did you mean the timer or music?"))
+    }
+
+    // MARK: - 9. Clarification & Conversation Continuity (Phase 3D)
+
+    func testAmbiguousRequestFollowedByClarificationAnswerResolvesIntendedAction() async {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(
+            enabled: true,
+            provider: .local,
+            model: "mock",
+            apiKey: nil,
+            contextAwarenessEnabled: true
+        )
+
+        // Seed both timer and media as active with no tiebreaker
+        AmoraConversationContextManager.shared.reset()
+        TimerService.shared.startTimer(minutes: 10)
+        XCTAssertTrue(TimerService.shared.isRunning)
+        AmoraConversationContextManager.shared.recordTimer(AmoraTimerReference(duration: 600, remainingSeconds: 600, isPaused: false))
+        AmoraConversationContextManager.shared.recordMedia(AmoraMediaReference(source: "Spotify", isPlaying: true))
+        AmoraConversationContextManager.shared.recordAction(.openWorkspace())
+
+        // 1. Ambiguous initial request
+        let prompt = await assistant.submit("stop it", settings: settings)
+        XCTAssertEqual(prompt, "Did you mean the timer or music?")
+        XCTAssertNotNil(AmoraConversationContextManager.shared.currentContext.pendingClarification)
+        XCTAssertEqual(assistant.conversation.messages.count, 2)
+        XCTAssertEqual(assistant.conversation.messages[0].content, "stop it")
+        XCTAssertEqual(assistant.conversation.messages[1].content, "Did you mean the timer or music?")
+
+        // 2. Clarification response specifying timer
+        let answer = await assistant.submit("the timer", settings: settings)
+        XCTAssertTrue(answer.localizedCaseInsensitiveContains("cancelled") || answer.localizedCaseInsensitiveContains("stopped") || answer.localizedCaseInsensitiveContains("timer"))
+        XCTAssertFalse(TimerService.shared.isRunning)
+
+        // 3. Verify conversation continuity and no duplicate execution
+        XCTAssertEqual(assistant.conversation.messages.count, 4)
+        XCTAssertEqual(assistant.conversation.messages[2].content, "the timer")
+        XCTAssertNil(AmoraConversationContextManager.shared.currentContext.pendingClarification, "Clarification should be cleared upon resolution")
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+    }
+
+    func testAmbiguousAppRequestFollowedByAppNameResolvesAppOpen() async {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(
+            enabled: true,
+            provider: .local,
+            model: "mock",
+            apiKey: nil,
+            contextAwarenessEnabled: true
+        )
+
+        AmoraConversationContextManager.shared.reset()
+        // Seed active conversation context without an application reference
+        AmoraConversationContextManager.shared.recordTimer(AmoraTimerReference(duration: 600))
+
+        // 1. Ambiguous app request
+        let prompt = await assistant.submit("open it", settings: settings)
+        XCTAssertEqual(prompt, "Which application would you like me to open?")
+        XCTAssertNotNil(AmoraConversationContextManager.shared.currentContext.pendingClarification)
+        XCTAssertEqual(assistant.conversation.messages.count, 2)
+
+        // 2. User specifies app name
+        let answer = await assistant.submit("Finder", settings: settings)
+        XCTAssertTrue(answer.localizedCaseInsensitiveContains("Opening Finder") || answer.localizedCaseInsensitiveContains("Finder"))
+        XCTAssertEqual(assistant.conversation.messages.count, 4)
+        XCTAssertEqual(assistant.conversation.messages[2].content, "Finder")
+        XCTAssertNil(AmoraConversationContextManager.shared.currentContext.pendingClarification)
+    }
+
+    func testStillAmbiguousAnswerDoesNotTriggerUnsafeAction() async {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(
+            enabled: true,
+            provider: .local,
+            model: "mock",
+            apiKey: nil,
+            contextAwarenessEnabled: true
+        )
+
+        AmoraConversationContextManager.shared.reset()
+        TimerService.shared.startTimer(minutes: 10)
+        XCTAssertTrue(TimerService.shared.isRunning)
+        XCTAssertFalse(TimerService.shared.isPaused)
+        AmoraConversationContextManager.shared.recordTimer(AmoraTimerReference(duration: 600, remainingSeconds: 600, isPaused: false))
+        AmoraConversationContextManager.shared.recordMedia(AmoraMediaReference(source: "Spotify", isPlaying: true))
+        AmoraConversationContextManager.shared.recordAction(.openWorkspace())
+
+        // 1. Ambiguous initial request
+        let prompt1 = await assistant.submit("pause", settings: settings)
+        XCTAssertEqual(prompt1, "Did you mean the timer or music?")
+
+        // 2. Still ambiguous reply
+        let prompt2 = await assistant.submit("both", settings: settings)
+        XCTAssertEqual(prompt2, "Please specify whether you mean the timer or music.")
+
+        // Invariant: timer must NOT have been paused or cancelled
+        XCTAssertFalse(TimerService.shared.isPaused, "Still ambiguous answer must not trigger a mutation")
+        XCTAssertTrue(TimerService.shared.isRunning)
+        XCTAssertNotNil(AmoraConversationContextManager.shared.currentContext.pendingClarification)
+        XCTAssertEqual(assistant.conversation.messages.count, 4)
+    }
+
+    func testSeparateRequestDoesNotInheritOldClarification() async {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(
+            enabled: true,
+            provider: .local,
+            model: "mock",
+            apiKey: nil,
+            contextAwarenessEnabled: true
+        )
+
+        AmoraConversationContextManager.shared.reset()
+        TimerService.shared.startTimer(minutes: 10)
+        AmoraConversationContextManager.shared.recordTimer(AmoraTimerReference(duration: 600, remainingSeconds: 600, isPaused: false))
+        AmoraConversationContextManager.shared.recordMedia(AmoraMediaReference(source: "Spotify", isPlaying: true))
+        AmoraConversationContextManager.shared.recordAction(.openWorkspace())
+
+        // 1. Ambiguous request triggers clarification
+        let prompt = await assistant.submit("pause it", settings: settings)
+        XCTAssertEqual(prompt, "Did you mean the timer or music?")
+        XCTAssertNotNil(AmoraConversationContextManager.shared.currentContext.pendingClarification)
+
+        // 2. Unrelated request is submitted
+        let batteryAnswer = await assistant.submit("how much battery do I have left?", settings: settings)
+        XCTAssertTrue(batteryAnswer.localizedCaseInsensitiveContains("Battery"))
+
+        // Invariant: clarification must be cleared and not inherited by unrelated turn
+        XCTAssertNil(AmoraConversationContextManager.shared.currentContext.pendingClarification)
+        XCTAssertFalse(TimerService.shared.isPaused, "Unrelated request must not mutate active timer")
+    }
+
+    func testContextExpirationViaTTLClearsClarification() async {
+        let baseDate = Date()
+        let manager = AmoraConversationContextManager(ttl: 300, dateProvider: { baseDate })
+
+        let pending = AmoraPendingClarification(
+            originalInput: "pause it",
+            prompt: "Did you mean the timer or music?",
+            kind: .targetChoice(action: "pause", candidates: ["Timer", "Music"]),
+            createdAt: baseDate
+        )
+        manager.recordClarification(pending, date: baseDate)
+        XCTAssertNotNil(manager.validContext(at: baseDate)?.pendingClarification)
+
+        // Check at future date past 300s TTL
+        let futureDate = baseDate.addingTimeInterval(301)
+        XCTAssertNil(manager.validContext(at: futureDate), "Context must expire past TTL")
+    }
+
+    func testPrivacyGuardPreservedWithClarificationHistory() {
+        var conversation = AIConversation()
+        conversation.append(AIMessage(role: .user, content: "pause it"))
+        conversation.append(AIMessage(role: .assistant, content: "Did you mean the timer or music?"))
+        conversation.append(AIMessage(role: .user, content: "My secret PIN is 1234", provenance: .memoryDerived))
+        conversation.append(AIMessage(role: .assistant, content: "Timer paused."))
+
+        // Local provider sees all messages
+        let localMessages = conversation.messages(for: .local)
+        XCTAssertEqual(localMessages.count, 4)
+
+        // Remote provider (e.g. OpenAI) must NOT see memory-derived message
+        let remoteMessages = conversation.messages(for: .openAI)
+        XCTAssertEqual(remoteMessages.count, 3)
+        XCTAssertFalse(remoteMessages.contains(where: { $0.content.contains("1234") }))
     }
 }

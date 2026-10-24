@@ -48,6 +48,40 @@ public struct AmoraTimerReference: Equatable, Codable, Sendable {
     }
 }
 
+/// An in-flight clarification question awaiting user answer in ephemeral context.
+/// Strictly in-memory, zero persistence.
+public struct AmoraPendingClarification: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        /// Ambiguity between targets (e.g., "pause" when both timer and media are active)
+        case targetChoice(action: String, candidates: [String])
+        /// Missing application name (e.g., "open it" when no app was referenced)
+        case applicationName
+        /// Custom clarification
+        case custom(prompt: String)
+    }
+
+    public let originalInput: String
+    public let prompt: String
+    public let kind: Kind
+    public let createdAt: Date
+
+    public init(
+        originalInput: String,
+        prompt: String,
+        kind: Kind,
+        createdAt: Date = Date()
+    ) {
+        self.originalInput = originalInput
+        self.prompt = prompt
+        self.kind = kind
+        self.createdAt = createdAt
+    }
+
+    public func isExpired(at date: Date = Date(), ttl: TimeInterval = 300) -> Bool {
+        date.timeIntervalSince(createdAt) > ttl
+    }
+}
+
 /// Ephemeral conversational context layer for short-term follow-up understanding.
 /// Strictly in-memory: NEVER persisted to disk, UserDefaults, or files.
 /// Strictly limited to minimal state:
@@ -56,6 +90,7 @@ public struct AmoraTimerReference: Equatable, Codable, Sendable {
 /// - last referenced media
 /// - active timer reference
 /// - current Workspace section
+/// - in-flight clarification question
 /// NEVER contains clipboard contents, file contents, keystrokes, or screen data.
 public struct AmoraConversationContext: Equatable, Sendable {
     public var lastRelevantAction: AmoraAction?
@@ -63,6 +98,7 @@ public struct AmoraConversationContext: Equatable, Sendable {
     public var lastReferencedMedia: AmoraMediaReference?
     public var activeTimerReference: AmoraTimerReference?
     public var currentWorkspaceSection: String?
+    public var pendingClarification: AmoraPendingClarification?
     public var lastUpdatedAt: Date
     public var ttl: TimeInterval
 
@@ -72,6 +108,7 @@ public struct AmoraConversationContext: Equatable, Sendable {
         lastReferencedMedia: AmoraMediaReference? = nil,
         activeTimerReference: AmoraTimerReference? = nil,
         currentWorkspaceSection: String? = nil,
+        pendingClarification: AmoraPendingClarification? = nil,
         lastUpdatedAt: Date = Date(),
         ttl: TimeInterval = 300 // 5 minutes default TTL
     ) {
@@ -80,6 +117,7 @@ public struct AmoraConversationContext: Equatable, Sendable {
         self.lastReferencedMedia = lastReferencedMedia
         self.activeTimerReference = activeTimerReference
         self.currentWorkspaceSection = currentWorkspaceSection
+        self.pendingClarification = pendingClarification
         self.lastUpdatedAt = lastUpdatedAt
         self.ttl = ttl
     }
@@ -91,7 +129,8 @@ public struct AmoraConversationContext: Equatable, Sendable {
         lastReferencedApp == nil &&
         lastReferencedMedia == nil &&
         activeTimerReference == nil &&
-        currentWorkspaceSection == nil
+        currentWorkspaceSection == nil &&
+        pendingClarification == nil
     }
 
     public func isExpired(at date: Date = Date()) -> Bool {
@@ -104,6 +143,7 @@ public struct AmoraConversationContext: Equatable, Sendable {
         lastReferencedMedia = nil
         activeTimerReference = nil
         currentWorkspaceSection = nil
+        pendingClarification = nil
         lastUpdatedAt = Date()
     }
 }
@@ -117,6 +157,8 @@ public protocol AmoraConversationContextManaging: AnyObject, Sendable {
     @MainActor func recordMedia(_ media: AmoraMediaReference, date: Date?)
     @MainActor func recordTimer(_ timer: AmoraTimerReference?, date: Date?)
     @MainActor func recordWorkspaceSection(_ section: String?, date: Date?)
+    @MainActor func recordClarification(_ clarification: AmoraPendingClarification?, date: Date?)
+    @MainActor func clearClarification()
     @MainActor func reset()
     @MainActor func isExpired(at date: Date?) -> Bool
     @MainActor func validContext(at date: Date?) -> AmoraConversationContext?
@@ -158,11 +200,15 @@ public final class AmoraConversationContextManager: AmoraConversationContextMana
             _context.reset()
             return nil
         }
+        if let clarification = _context.pendingClarification, clarification.isExpired(at: checkDate, ttl: ttl) {
+            _context.pendingClarification = nil
+        }
         return _context
     }
 
     public func recordAction(_ action: AmoraAction, date: Date? = nil) {
         let recordDate = date ?? dateProvider()
+        _context.pendingClarification = nil
         _context.lastRelevantAction = action
         _context.lastUpdatedAt = recordDate
 
@@ -198,6 +244,7 @@ public final class AmoraConversationContextManager: AmoraConversationContextMana
 
     public func recordCommand(_ command: AMORACommand, date: Date? = nil) {
         let recordDate = date ?? dateProvider()
+        _context.pendingClarification = nil
         _context.lastUpdatedAt = recordDate
 
         switch command {
@@ -296,6 +343,16 @@ public final class AmoraConversationContextManager: AmoraConversationContextMana
         let recordDate = date ?? dateProvider()
         _context.currentWorkspaceSection = section
         _context.lastUpdatedAt = recordDate
+    }
+
+    public func recordClarification(_ clarification: AmoraPendingClarification?, date: Date? = nil) {
+        let recordDate = date ?? dateProvider()
+        _context.pendingClarification = clarification
+        _context.lastUpdatedAt = recordDate
+    }
+
+    public func clearClarification() {
+        _context.pendingClarification = nil
     }
 
     public func reset() {
