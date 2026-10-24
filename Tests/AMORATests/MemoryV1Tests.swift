@@ -1398,4 +1398,244 @@ final class MemoryV1Tests: XCTestCase {
         let nonMatch = try await store.updateMatching(query: "unrelated topic", newValue: "something", newKey: nil)
         XCTAssertNil(nonMatch)
     }
+
+    // MARK: - 36. Precise Deletion Leaves Unrelated Memories Sharing Generic Words Intact
+    func testPreciseDeletion_forgetFavoriteMusic_leavesOtherFavoritesIntact() async throws {
+        let storage = AmoraInMemoryStorage()
+        let store = AmoraMemoryStore(storage: storage)
+
+        _ = try await store.save(key: "favorite music", value: "jazz")
+        _ = try await store.save(key: "favorite food", value: "pizza")
+        _ = try await store.save(key: "favorite color", value: "blue")
+
+        let initialList = await store.list()
+        XCTAssertEqual(initialList.count, 3)
+
+        // Forgetting "favorite music" must only delete "favorite music"
+        let deleted = try await store.deleteMatching(query: "favorite music")
+        XCTAssertEqual(deleted.count, 1)
+        XCTAssertEqual(deleted.first?.key, "favorite music")
+        XCTAssertEqual(deleted.first?.value, "jazz")
+
+        let remaining = await store.list()
+        XCTAssertEqual(remaining.count, 2)
+        let remainingKeys = Set(remaining.map(\.key))
+        XCTAssertTrue(remainingKeys.contains("favorite food"))
+        XCTAssertTrue(remainingKeys.contains("favorite color"))
+        XCTAssertFalse(remainingKeys.contains("favorite music"))
+    }
+
+    // MARK: - 37. Uniquely Identified Memory Can Still Be Forgotten
+    func testPreciseDeletion_uniquelyIdentifiedMemoryCanBeForgotten() async throws {
+        let storage = AmoraInMemoryStorage()
+        let store = AmoraMemoryStore(storage: storage)
+
+        _ = try await store.save(key: "editor", value: "VS Code")
+        _ = try await store.save(key: "theme", value: "Nord")
+
+        // Uniquely identified by key
+        let deletedByKey = try await store.deleteMatching(query: "editor")
+        XCTAssertEqual(deletedByKey.count, 1)
+        XCTAssertEqual(deletedByKey.first?.key, "editor")
+
+        let afterKeyDelete = await store.list()
+        XCTAssertEqual(afterKeyDelete.count, 1)
+        XCTAssertEqual(afterKeyDelete.first?.key, "theme")
+
+        // Uniquely identified by value
+        let deletedByVal = try await store.deleteMatching(query: "Nord")
+        XCTAssertEqual(deletedByVal.count, 1)
+        XCTAssertEqual(deletedByVal.first?.key, "theme")
+
+        let finalList = await store.list()
+        XCTAssertTrue(finalList.isEmpty)
+    }
+
+    // MARK: - 38. Ambiguous Deletion Removes Nothing
+    func testPreciseDeletion_ambiguousDeletionRemovesNothing() async throws {
+        let storage = AmoraInMemoryStorage()
+        let store = AmoraMemoryStore(storage: storage)
+
+        _ = try await store.save(key: "favorite music", value: "jazz")
+        _ = try await store.save(key: "favorite food", value: "pizza")
+        _ = try await store.save(key: "favorite color", value: "blue")
+
+        // Query "favorite" matches multiple items ambiguously
+        let deletedGeneric = try await store.deleteMatching(query: "favorite")
+        XCTAssertTrue(deletedGeneric.isEmpty, "Ambiguous deletion matching multiple items must delete nothing")
+
+        let listAfterGeneric = await store.list()
+        XCTAssertEqual(listAfterGeneric.count, 3, "All items must remain intact when query is ambiguous")
+
+        // Non-qualifier ambiguous query
+        let storage2 = AmoraInMemoryStorage()
+        let store2 = AmoraMemoryStore(storage: storage2)
+        _ = try await store2.save(key: "project alpha", value: "iOS app")
+        _ = try await store2.save(key: "project beta", value: "Mac app")
+
+        let deletedMulti = try await store2.deleteMatching(query: "project")
+        XCTAssertTrue(deletedMulti.isEmpty, "Ambiguous query matching multiple projects must delete nothing")
+        let listMulti = await store2.list()
+        XCTAssertEqual(listMulti.count, 2, "Both projects must remain intact")
+    }
+
+    // MARK: - 39. Gateway Submission Returns Failure on Memory Operations Failure or Rejection
+    @MainActor
+    func testGatewaySubmission_returnsFailureOnOperationFailureOrRejection() async {
+        let store = AmoraMemoryStore(storage: AmoraInMemoryStorage())
+        let assistant = AssistantManager(provider: MockAIProvider(), providerIsInjected: true, memoryStore: store)
+        let gateway = AMORACommandGateway(assistant: assistant)
+        let enabledSettings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: true)
+        let disabledSettings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: false)
+
+        // 1. Rejection: sensitive data (password)
+        let sensitiveResult = await gateway.submit("Remember that my password is secret123", settings: enabledSettings)
+        guard case let .failure(reason) = sensitiveResult else {
+            XCTFail("Expected .failure for sensitive memory rejection, got: \(sensitiveResult)")
+            return
+        }
+        XCTAssertTrue(reason.contains("passwords") || reason.contains("security"))
+
+        // 2. Disabled memory setting
+        let disabledResult = await gateway.submit("Remember that my pet is a cat", settings: disabledSettings)
+        guard case let .failure(disabledMsg) = disabledResult else {
+            XCTFail("Expected .failure when memory is disabled in settings, got: \(disabledResult)")
+            return
+        }
+        XCTAssertTrue(disabledMsg.contains("Memory is turned off in Settings"))
+
+        // 3. Missing update target
+        let missingUpdate = await gateway.submit("Change my spaceship to Apollo", settings: enabledSettings)
+        guard case let .failure(updateMsg) = missingUpdate else {
+            XCTFail("Expected .failure for missing update target, got: \(missingUpdate)")
+            return
+        }
+        XCTAssertTrue(updateMsg.contains("couldn't find a saved memory"))
+
+        // 4. Missing forget target
+        let missingForget = await gateway.submit("Forget my nonexistent_hobby", settings: enabledSettings)
+        guard case let .failure(forgetMsg) = missingForget else {
+            XCTFail("Expected .failure for missing forget target, got: \(missingForget)")
+            return
+        }
+        XCTAssertTrue(forgetMsg.contains("don't have a memory matching"))
+
+        // 5. Successful remember returns .success
+        let successResult = await gateway.submit("Remember that my coffee is espresso", settings: enabledSettings)
+        guard case let .success(successMsg) = successResult else {
+            XCTFail("Expected .success for valid remember command, got: \(successResult)")
+            return
+        }
+        XCTAssertTrue(successMsg.contains("espresso"))
+    }
+
+    // MARK: - 40. Clear All Confirmation Denial Leaves Stored Data Unchanged
+    @MainActor
+    func testClearAllConfirmationDenialLeavesStoredDataUnchanged() async throws {
+        let storage = AmoraInMemoryStorage()
+        let store = AmoraMemoryStore(storage: storage)
+        _ = try await store.save(key: "drink", value: "tea")
+        _ = try await store.save(key: "city", value: "Kyoto")
+
+        let assistant = AssistantManager(provider: MockAIProvider(), providerIsInjected: true, memoryStore: store)
+        let gateway = AMORACommandGateway(assistant: assistant)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: true)
+
+        // Request clear all without confirmation
+        let unconfirmedResult = await gateway.submit("Forget everything", settings: settings)
+        guard case let .needsConfirmation(prompt) = unconfirmedResult else {
+            XCTFail("Expected .needsConfirmation for unconfirmed clear-all, got: \(unconfirmedResult)")
+            return
+        }
+        XCTAssertTrue(prompt.contains("Are you sure you want me to forget everything?"))
+
+        // Stored items must remain untouched
+        let itemsAfterDenial = await store.list()
+        XCTAssertEqual(itemsAfterDenial.count, 2)
+        let keys = Set(itemsAfterDenial.map(\.key))
+        XCTAssertTrue(keys.contains("drink"))
+        XCTAssertTrue(keys.contains("city"))
+    }
+
+    // MARK: - 41. Action Engine Memory Mutations Refresh Memory Service
+    @MainActor
+    func testActionEngineMemoryMutations_refreshMemoryServiceOnSuccess() async throws {
+        let storage = AmoraInMemoryStorage()
+        let store = AmoraMemoryStore(storage: storage)
+        let service = AmoraMemoryService(store: store)
+        let engine = AmoraActionEngine.makeDefault(memoryStore: store, memoryService: service)
+
+        // 1. Save mutation refreshes service
+        let saveResult = await engine.execute(.saveMemory(key: "role", value: "Architect"))
+        XCTAssertEqual(saveResult.status, .success)
+        XCTAssertEqual(service.memories.count, 1)
+        XCTAssertEqual(service.memories.first?.key, "role")
+        XCTAssertEqual(service.memories.first?.value, "Architect")
+
+        // 2. Update mutation refreshes service
+        let updateResult = await engine.execute(.updateMemory(target: "role", newValue: "Principal Engineer"))
+        XCTAssertEqual(updateResult.status, .success)
+        XCTAssertEqual(service.memories.count, 1)
+        XCTAssertEqual(service.memories.first?.value, "Principal Engineer")
+
+        // 3. Forget mutation refreshes service
+        let forgetResult = await engine.execute(.forgetMemory(query: "role"))
+        XCTAssertEqual(forgetResult.status, .success)
+        XCTAssertTrue(service.memories.isEmpty)
+
+        // 4. Clear mutation refreshes service
+        _ = try await store.save(key: "item_a", value: "val_a")
+        await service.refresh()
+        XCTAssertEqual(service.memories.count, 1)
+
+        let clearResult = await engine.execute(.clearMemories(confirmed: true))
+        XCTAssertEqual(clearResult.status, .success)
+        XCTAssertTrue(service.memories.isEmpty)
+    }
+
+    // MARK: - 42. Failed Action Engine Mutations Do Not Falsely Report Success or Refresh Stale Data
+    @MainActor
+    func testActionEngineMemoryMutations_failedMutationsDoNotRefreshOrReportSuccess() async throws {
+        let storage = AmoraInMemoryStorage()
+        let store = AmoraMemoryStore(storage: storage)
+        let service = AmoraMemoryService(store: store)
+        let engine = AmoraActionEngine.makeDefault(memoryStore: store, memoryService: service)
+
+        _ = try await store.save(key: "valid_key", value: "valid_val")
+        await service.refresh()
+        XCTAssertEqual(service.memories.count, 1)
+
+        // 1. Rejected input (privacy) returns invalidInput and does not alter service
+        let sensitiveResult = await engine.execute(.saveMemory(key: "token", value: "ghp_1234567890abcdef"))
+        XCTAssertEqual(sensitiveResult.status, .invalidInput)
+        XCTAssertEqual(service.memories.count, 1)
+        XCTAssertEqual(service.memories.first?.key, "valid_key")
+
+        // 2. Missing target for forget returns unavailable and does not alter service
+        let missingForget = await engine.execute(.forgetMemory(query: "nonexistent_target"))
+        XCTAssertEqual(missingForget.status, .unavailable)
+        XCTAssertEqual(service.memories.count, 1)
+
+        // 3. Missing target for update returns unavailable and does not alter service
+        let missingUpdate = await engine.execute(.updateMemory(target: "nonexistent_target", newValue: "new_val"))
+        XCTAssertEqual(missingUpdate.status, .unavailable)
+        XCTAssertEqual(service.memories.count, 1)
+
+        // 4. Failing storage write returns failed and does not alter service or cache
+        final class ThrowingStorage: AmoraMemoryStorage, @unchecked Sendable {
+            func load() async -> [AmoraMemoryItem] { [] }
+            func save(_ items: [AmoraMemoryItem]) async throws {
+                throw NSError(domain: "AmoraTestError", code: 500, userInfo: [NSLocalizedDescriptionKey: "Disk write prohibited"])
+            }
+        }
+        let failingStore = AmoraMemoryStore(storage: ThrowingStorage())
+        let failingService = AmoraMemoryService(store: failingStore)
+        let failingEngine = AmoraActionEngine.makeDefault(memoryStore: failingStore, memoryService: failingService)
+
+        let failSaveResult = await failingEngine.execute(.saveMemory(key: "new_key", value: "new_val"))
+        XCTAssertEqual(failSaveResult.status, AmoraActionResultStatus.failed)
+        XCTAssertTrue(failingService.memories.isEmpty)
+        let failingStoreItems = await failingStore.list()
+        XCTAssertTrue(failingStoreItems.isEmpty, "Failed storage save must roll back in-memory cache")
+    }
 }

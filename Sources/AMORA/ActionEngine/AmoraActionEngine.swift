@@ -23,6 +23,7 @@ public final class AmoraActionEngine: Sendable {
         workspaceController: any AmoraWorkspaceControlling = DefaultAmoraWorkspaceController(),
         timerController: any AmoraTimerControlling = DefaultAmoraTimerController(),
         memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared,
+        memoryService: AmoraMemoryService = .shared,
         decider: any AmoraActionDeciding = AmoraActionDecisionEngine()
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
@@ -33,7 +34,8 @@ public final class AmoraActionEngine: Sendable {
             folderOpener: folderOpener,
             workspaceController: workspaceController,
             timerController: timerController,
-            memoryStore: memoryStore
+            memoryStore: memoryStore,
+            memoryService: memoryService
         )
         return AmoraActionEngine(registry: registry, decider: decider)
     }
@@ -43,7 +45,8 @@ public final class AmoraActionEngine: Sendable {
     public static func makeControlledForEvaluation(
         onAppOpen: (@Sendable (URL) -> Void)? = nil,
         onFolderOpen: (@Sendable (URL) -> Void)? = nil,
-        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore(storage: AmoraInMemoryStorage())
+        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore(storage: AmoraInMemoryStorage()),
+        memoryService: AmoraMemoryService = .shared
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
         registerDefaultActions(
@@ -53,7 +56,8 @@ public final class AmoraActionEngine: Sendable {
             folderOpener: ControlledAmoraFolderOpener(onOpen: onFolderOpen),
             workspaceController: ControlledAmoraWorkspaceController(),
             timerController: DefaultAmoraTimerController(),
-            memoryStore: memoryStore
+            memoryStore: memoryStore,
+            memoryService: memoryService
         )
         return AmoraActionEngine(registry: registry, decider: AmoraActionDecisionEngine())
     }
@@ -337,7 +341,8 @@ public final class AmoraActionEngine: Sendable {
         folderOpener: any AmoraFolderOpening,
         workspaceController: any AmoraWorkspaceControlling,
         timerController: any AmoraTimerControlling,
-        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared
+        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared,
+        memoryService: AmoraMemoryService = .shared
     ) {
         // --- 1. Media: Play ---
         registry.register(AmoraActionDefinition(
@@ -610,6 +615,10 @@ public final class AmoraActionEngine: Sendable {
                 }
                 do {
                     try await memoryStore.save(key: key, value: value)
+                    await memoryService.refresh()
+                    if memoryService !== AmoraMemoryService.shared {
+                        await AmoraMemoryService.shared.refresh()
+                    }
                     return .success(
                         actionId: "memory.save",
                         message: "Remembered that \(key) is \(value).",
@@ -643,6 +652,10 @@ public final class AmoraActionEngine: Sendable {
                 do {
                     let deleted = try await memoryStore.deleteMatching(query: query)
                     if !deleted.isEmpty {
+                        await memoryService.refresh()
+                        if memoryService !== AmoraMemoryService.shared {
+                            await AmoraMemoryService.shared.refresh()
+                        }
                         let count = deleted.count
                         return .success(
                             actionId: "memory.forget",
@@ -690,6 +703,10 @@ public final class AmoraActionEngine: Sendable {
                 }
                 do {
                     if let updated = try await memoryStore.updateMatching(query: target, newValue: newValue, newKey: nil) {
+                        await memoryService.refresh()
+                        if memoryService !== AmoraMemoryService.shared {
+                            await AmoraMemoryService.shared.refresh()
+                        }
                         return .success(
                             actionId: "memory.update",
                             message: "Updated \(updated.key) to: \(updated.value).",
@@ -733,6 +750,10 @@ public final class AmoraActionEngine: Sendable {
                 }
                 do {
                     try await memoryStore.clearAll()
+                    await memoryService.refresh()
+                    if memoryService !== AmoraMemoryService.shared {
+                        await AmoraMemoryService.shared.refresh()
+                    }
                     return .success(actionId: "memory.clear", message: "Cleared all stored memories.")
                 } catch {
                     return .failed(actionId: "memory.clear", message: "Failed to clear memories: \(error.localizedDescription)")

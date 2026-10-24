@@ -337,61 +337,105 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
         }
     }
 
-    /// Deletes memories matching the user's forget query (by key or value similarity/overlap).
+    /// Recognized qualifier stems that represent modifier categories rather than specific entity topics.
+    public static let qualifierStems: Set<String> = ["prefer", "favorit", "set", "choic", "app"]
+
+    /// Deletes memories matching the user's forget query, preferring uniquely identified targets
+    /// and rejecting ambiguous or overly broad queries to prevent collateral deletion.
     @discardableResult
     public func deleteMatching(query: String) async throws -> [AmoraMemoryItem] {
         await serialQueue.wait()
         defer { serialQueue.signal() }
 
-        var items = await ensureLoaded()
+        let items = await ensureLoaded()
         let normalizedQuery = normalizeForMatching(query)
         guard !normalizedQuery.isEmpty else { return [] }
 
         let queryTokens = tokenize(normalizedQuery)
         let queryStems = Set(queryTokens.map(Self.stem))
+        let qualifierStems = Self.qualifierStems
 
-        var matchedIDs: Set<UUID> = []
-        var deletedItems: [AmoraMemoryItem] = []
-
-        for item in items {
+        // 1. Strict exact matches on key or value (Tier 1a)
+        let tier1a = items.filter { item in
             let normKey = normalizeForMatching(item.key)
             let normVal = normalizeForMatching(item.value)
+            return normKey == normalizedQuery ||
+                   normVal == normalizedQuery ||
+                   item.key.caseInsensitiveCompare(query) == .orderedSame ||
+                   item.value.caseInsensitiveCompare(query) == .orderedSame
+        }
 
-            // Direct substring matches
-            if normKey.contains(normalizedQuery) || normalizedQuery.contains(normKey) ||
-               normVal.contains(normalizedQuery) || normalizedQuery.contains(normVal) {
-                matchedIDs.insert(item.id)
-                deletedItems.append(item)
-                continue
-            }
+        if tier1a.count == 1, let target = tier1a.first {
+            return try await executeDeletion(of: [target], from: items)
+        } else if tier1a.count > 1 {
+            // Ambiguous exact matches: remove nothing
+            return []
+        }
 
+        // 2. Key equivalence with qualifier stems (Tier 1b)
+        // e.g. "favorite music" vs "music"
+        let tier1b = items.filter { item in
+            isConflictingOrMatching(newKey: query, existingKey: item.key)
+        }
+
+        if tier1b.count == 1, let target = tier1b.first {
+            return try await executeDeletion(of: [target], from: items)
+        } else if tier1b.count > 1 {
+            // Ambiguous equivalent matches: remove nothing
+            return []
+        }
+
+        // 3. Specific phrase or significant token overlap (Tier 2)
+        let tier2 = items.filter { item in
+            let normKey = normalizeForMatching(item.key)
+            let normVal = normalizeForMatching(item.value)
             let keyTokens = tokenize(normKey)
             let valTokens = tokenize(normVal)
-            let keyStems = Set(keyTokens.map(Self.stem))
-            let valStems = Set(valTokens.map(Self.stem))
+            let allItemTokens = keyTokens.union(valTokens)
+            let allItemStems = Set(allItemTokens.map(Self.stem))
 
-            if !queryTokens.intersection(keyTokens).isEmpty ||
-               !queryTokens.intersection(valTokens).isEmpty ||
-               !queryStems.intersection(keyStems).isEmpty ||
-               !queryStems.intersection(valStems).isEmpty {
-                matchedIDs.insert(item.id)
-                deletedItems.append(item)
+            // Disallow single generic qualifier word from matching via phrase/stem overlap
+            if queryTokens.count == 1, let singleToken = queryTokens.first, qualifierStems.contains(Self.stem(singleToken)) {
+                return false
             }
+
+            // Must share at least one meaningful (non-qualifier) stem
+            let meaningfulOverlap = queryStems.intersection(allItemStems).subtracting(qualifierStems)
+            guard !meaningfulOverlap.isEmpty else { return false }
+
+            let phraseMatch = (!normKey.isEmpty && (normKey.contains(normalizedQuery) || normalizedQuery.contains(normKey))) ||
+                              (!normVal.isEmpty && (normVal.contains(normalizedQuery) || normalizedQuery.contains(normVal)))
+
+            let tokenMatch = queryTokens.isSubset(of: allItemTokens) ||
+                             keyTokens.isSubset(of: queryTokens) ||
+                             queryStems.isSubset(of: allItemStems) ||
+                             allItemStems.isSubset(of: queryStems)
+
+            return phraseMatch || tokenMatch
         }
 
-        if !matchedIDs.isEmpty {
-            let previousItems = items
-            items.removeAll { matchedIDs.contains($0.id) }
-            do {
-                try await storage.save(items)
-                self.cachedItems = items
-            } catch {
-                self.cachedItems = previousItems
-                throw error
-            }
+        if tier2.count == 1, let target = tier2.first {
+            return try await executeDeletion(of: [target], from: items)
+        } else {
+            // Ambiguous (> 1) or no match (0): remove nothing
+            return []
         }
+    }
 
-        return deletedItems
+    private func executeDeletion(of targetItems: [AmoraMemoryItem], from currentItems: [AmoraMemoryItem]) async throws -> [AmoraMemoryItem] {
+        guard !targetItems.isEmpty else { return [] }
+        let targetIDs = Set(targetItems.map(\.id))
+        var updatedItems = currentItems
+        updatedItems.removeAll { targetIDs.contains($0.id) }
+        let previousItems = self.cachedItems ?? currentItems
+        do {
+            try await storage.save(updatedItems)
+            self.cachedItems = updatedItems
+            return targetItems
+        } catch {
+            self.cachedItems = previousItems
+            throw error
+        }
     }
 
     public func clearAll() async throws {
@@ -514,7 +558,7 @@ public actor AmoraMemoryStore: AmoraMemoryStoring {
             }
 
             // Check if one is just the other plus a qualifier word (preference, favorite, setting, app)
-            let qualifierStems: Set<String> = ["prefer", "favorit", "set", "choic", "app"]
+            let qualifierStems = Self.qualifierStems
             let diff1 = newStems.subtracting(existStems)
             let diff2 = existStems.subtracting(newStems)
             if (diff1.isEmpty && diff2.isSubset(of: qualifierStems)) ||

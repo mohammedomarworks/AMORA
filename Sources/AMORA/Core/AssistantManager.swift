@@ -66,7 +66,8 @@ final class AssistantManager {
     private func performSubmit(_ input: String, settings: AISettingsSnapshot) async -> String {
         // Explicit memory commands intercept before general AI processing
         if let memoryCommand = AmoraMemoryCommandParser.shared.parse(input) {
-            return await handleMemoryCommand(input, command: memoryCommand, settings: settings)
+            let outcome = await handleMemoryCommand(input, command: memoryCommand, settings: settings)
+            return outcome.message
         }
 
         // Explicit automation commands intercept before general AI processing
@@ -530,7 +531,13 @@ final class AssistantManager {
         }
     }
 
-    func handleMemoryCommand(_ input: String, command: AmoraMemoryCommand, settings: AISettingsSnapshot) async -> String {
+    struct MemoryCommandOutcome: Sendable {
+        let message: String
+        let isSuccess: Bool
+        let isConfirmationPrompt: Bool
+    }
+
+    func handleMemoryCommand(_ input: String, command: AmoraMemoryCommand, settings: AISettingsSnapshot) async -> MemoryCommandOutcome {
         state = .thinking
         response = nil
         lastError = nil
@@ -680,7 +687,7 @@ final class AssistantManager {
         } else {
             AMORAEventCenter.shared.emit(.aiFailed)
         }
-        return answer
+        return MemoryCommandOutcome(message: answer, isSuccess: isSuccess, isConfirmationPrompt: isConfirmationPrompt)
     }
 
     func handleAutomationCommand(_ input: String, command: AmoraAutomationCommand, settings: AISettingsSnapshot) async -> String {
@@ -847,11 +854,15 @@ final class AMORACommandGateway {
         AmoraActionExecutionCoordinator.shared.reset()
 
         if let memoryCommand = AmoraMemoryCommandParser.shared.parse(input) {
-            let answer = await assistant.handleMemoryCommand(input, command: memoryCommand, settings: settings)
-            if case .clearAll(let confirmed) = memoryCommand, !confirmed {
-                return .needsConfirmation(prompt: answer)
+            let outcome = await assistant.handleMemoryCommand(input, command: memoryCommand, settings: settings)
+            if outcome.isConfirmationPrompt {
+                return .needsConfirmation(prompt: outcome.message)
             }
-            return .success(message: answer)
+            if outcome.isSuccess {
+                return .success(message: outcome.message)
+            } else {
+                return .failure(message: outcome.message)
+            }
         }
 
         let isCompound = Self.isCompoundRequest(input)
