@@ -676,4 +676,120 @@ final class AmoraAgentLoopTests: XCTestCase {
         XCTAssertEqual(assistant.lastLoopResult?.completedSuccessfully, true)
         XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
     }
+
+    // MARK: - Phase 3 Outcome Accuracy: Memory and Automation Handlers
+
+    func testMemoryFailureWhenDisabledEmitsAIFailed() async throws {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: false)
+
+        let answer = await assistant.submit("Remember that my project name is ProjectZephyr", settings: settings)
+
+        XCTAssertTrue(answer.contains("Memory is turned off in Settings"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed, "Memory command when disabled must emit .aiFailed")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "Memory command when disabled must never emit .aiSucceeded")
+    }
+
+    func testMemoryPrivacyRejectionEmitsAIFailed() async throws {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: true)
+
+        let answer = await assistant.submit("Remember that my password is SuperSecretPassword123", settings: settings)
+
+        XCTAssertTrue(answer.localizedCaseInsensitiveContains("password") || answer.localizedCaseInsensitiveContains("sensitive"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed, "Privacy-rejected memory save must emit .aiFailed")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "Privacy-rejected memory save must never emit .aiSucceeded")
+    }
+
+    func testMemoryStorageFailureEmitsAIFailed() async throws {
+        struct FailingMemoryStorage: AmoraMemoryStorage {
+            func load() async -> [AmoraMemoryItem] { [] }
+            func save(_ items: [AmoraMemoryItem]) async throws {
+                throw NSError(domain: "FailingMemoryStorage", code: 1, userInfo: [NSLocalizedDescriptionKey: "Disk write failure"])
+            }
+        }
+
+        let failingStore = AmoraMemoryStore(storage: FailingMemoryStorage())
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true, memoryStore: failingStore)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: true)
+
+        let answer = await assistant.submit("Remember that my favorite beverage is Green Tea", settings: settings)
+
+        XCTAssertTrue(answer.contains("couldn't save that memory because local storage failed"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed, "Storage failure in memory command must emit .aiFailed")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "Storage failure in memory command must never emit .aiSucceeded")
+    }
+
+    func testMemoryClearAllUnconfirmedEmitsAICancelled() async throws {
+        let store = AmoraMemoryStore(storage: AmoraInMemoryStorage())
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true, memoryStore: store)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: true)
+
+        let answer = await assistant.submit("Forget everything you remember", settings: settings)
+
+        XCTAssertTrue(answer.contains("Are you sure"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiCancelled, "Unconfirmed clearAll must emit .aiCancelled rather than celebrating premature success")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+    }
+
+    func testMemorySuccessEmitsAISucceeded() async throws {
+        let store = AmoraMemoryStore(storage: AmoraInMemoryStorage())
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true, memoryStore: store)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil, memoryEnabled: true)
+
+        let answer = await assistant.submit("Remember that my nickname is Mo", settings: settings)
+
+        XCTAssertTrue(answer.contains("Mo"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "Successful memory save must emit .aiSucceeded")
+    }
+
+    func testAutomationDuplicateCreationEmitsAIFailed() async throws {
+        _ = await AmoraAutomationService.shared.clearAll(confirmed: true)
+
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        // First creation succeeds
+        let first = await assistant.submit("Remind me every day at 7 AM.", settings: settings)
+        XCTAssertTrue(first.contains("created your automation"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+
+        // Duplicate creation fails
+        let second = await assistant.submit("Remind me every day at 7 AM.", settings: settings)
+        XCTAssertTrue(second.contains("already have an automation"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed, "Duplicate automation failure must emit .aiFailed")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded, "Duplicate automation failure must never emit .aiSucceeded")
+
+        _ = await AmoraAutomationService.shared.clearAll(confirmed: true)
+    }
+
+    func testAutomationNotFoundEmitsAIFailed() async throws {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        let answer = await assistant.submit("Turn off my DefinitelyNonExistentAutomationXYZ.", settings: settings)
+
+        XCTAssertTrue(answer.contains("couldn't find an automation"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiFailed, "Missing automation must emit .aiFailed")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+    }
+
+    func testAutomationDeleteAllUnconfirmedEmitsAICancelled() async throws {
+        let provider = MockSequentialAIProvider(response: "unused")
+        let assistant = AssistantManager(provider: provider, providerIsInjected: true)
+        let settings = AISettingsSnapshot(enabled: true, provider: .local, model: "mock", apiKey: nil)
+
+        let answer = await assistant.submit("Delete all automations.", settings: settings)
+
+        XCTAssertTrue(answer.contains("Are you sure"))
+        XCTAssertEqual(AMORAContext.shared.currentEvent, .aiCancelled, "Unconfirmed automation deletion must emit .aiCancelled rather than premature success")
+        XCTAssertNotEqual(AMORAContext.shared.currentEvent, .aiSucceeded)
+    }
 }

@@ -133,7 +133,11 @@ final class AssistantManager {
                 state = .responding
                 response = answer
                 AMORAContext.shared.setAIResponse(answer)
-                AMORAEventCenter.shared.emit(.aiSucceeded)
+                if case .success = result {
+                    AMORAEventCenter.shared.emit(.aiSucceeded)
+                } else {
+                    AMORAEventCenter.shared.emit(.aiFailed)
+                }
                 return answer
             case .unhandled:
                 if convContext?.pendingClarification != nil {
@@ -472,16 +476,21 @@ final class AssistantManager {
         AMORAEventCenter.shared.emit(.aiThinking)
 
         let answer: String
+        var isSuccess = true
+        var isConfirmationPrompt = false
+
         switch command {
         case let .remember(key, value):
             guard settings.memoryEnabled else {
                 answer = "Memory is turned off in Settings. Turn on Memory to save memories."
+                isSuccess = false
                 break
             }
             let validation = AmoraMemoryPrivacyValidator.shared.validate(key: key, value: value)
             switch validation {
             case let .rejected(reason):
                 answer = reason
+                isSuccess = false
             case .allowed:
                 do {
                     let saved = try await memoryStore.save(key: key, value: value)
@@ -491,36 +500,44 @@ final class AssistantManager {
                     } else {
                         answer = "I'll remember that \(saved.key): \(saved.value)."
                     }
+                    isSuccess = true
                 } catch {
                     answer = "I couldn't save that memory because local storage failed."
+                    isSuccess = false
                 }
             }
 
         case let .update(target, newValue):
             guard settings.memoryEnabled else {
                 answer = "Memory is turned off in Settings. Turn on Memory to update memories."
+                isSuccess = false
                 break
             }
             let validation = AmoraMemoryPrivacyValidator.shared.validate(key: target, value: newValue)
             switch validation {
             case let .rejected(reason):
                 answer = reason
+                isSuccess = false
             case .allowed:
                 do {
                     if let updated = try await memoryStore.updateMatching(query: target, newValue: newValue, newKey: nil) {
                         await AmoraMemoryService.shared.refresh()
                         answer = "I've updated your \(updated.key) to: \(updated.value)."
+                        isSuccess = true
                     } else {
                         answer = "I couldn't find a saved memory matching '\(target)' to update."
+                        isSuccess = false
                     }
                 } catch {
                     answer = "I couldn't update that memory because local storage failed."
+                    isSuccess = false
                 }
             }
 
         case let .recall(query):
             guard settings.memoryEnabled else {
                 answer = "Memory is turned off in Settings."
+                isSuccess = false
                 break
             }
             let relevant = await memoryStore.relevantMemories(for: query, limit: 5)
@@ -536,10 +553,12 @@ final class AssistantManager {
                 let listStr = relevant.map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
                 answer = "Here is what I remember:\n\(listStr)"
             }
+            isSuccess = true
 
         case .list:
             guard settings.memoryEnabled else {
                 answer = "Memory is turned off in Settings."
+                isSuccess = false
                 break
             }
             let items = await memoryStore.list()
@@ -549,31 +568,38 @@ final class AssistantManager {
                 let listStr = items.map { "• \($0.key): \($0.value)" }.joined(separator: "\n")
                 answer = "Here's what I remember about you:\n\(listStr)"
             }
+            isSuccess = true
 
         case let .forget(query):
             do {
                 let deleted = try await memoryStore.deleteMatching(query: query)
                 if deleted.isEmpty {
                     answer = "I don't have a memory matching that."
+                    isSuccess = false
                 } else {
                     await AmoraMemoryService.shared.refresh()
                     let deletedNames = deleted.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
                     answer = "I've forgotten that: \(deletedNames)."
+                    isSuccess = true
                 }
             } catch {
                 answer = "I couldn't remove that memory because local storage failed."
+                isSuccess = false
             }
 
         case let .clearAll(confirmed):
             if !confirmed {
                 answer = "Are you sure you want me to forget everything? This will permanently delete all stored memories. Reply 'yes, forget everything' to confirm."
+                isConfirmationPrompt = true
             } else {
                 do {
                     try await memoryStore.clearAll()
                     await AmoraMemoryService.shared.refresh()
                     answer = "I've cleared all stored memories."
+                    isSuccess = true
                 } catch {
                     answer = "I couldn't clear your memories because local storage failed."
+                    isSuccess = false
                 }
             }
         }
@@ -585,7 +611,13 @@ final class AssistantManager {
         state = .responding
         response = answer
         AMORAContext.shared.setAIResponse(answer)
-        AMORAEventCenter.shared.emit(.aiSucceeded)
+        if isConfirmationPrompt {
+            AMORAEventCenter.shared.emit(.aiCancelled)
+        } else if isSuccess {
+            AMORAEventCenter.shared.emit(.aiSucceeded)
+        } else {
+            AMORAEventCenter.shared.emit(.aiFailed)
+        }
         return answer
     }
 
@@ -598,16 +630,21 @@ final class AssistantManager {
 
         let answer: String
         let service = AmoraAutomationService.shared
+        var isSuccess = true
+        var isConfirmationPrompt = false
 
         switch command {
         case let .create(name, trigger, action):
             do {
                 let created = try await service.create(name: name, trigger: trigger, action: action)
                 answer = "I've created your automation: \(created.name) (\(created.trigger.displayName))."
+                isSuccess = true
             } catch AmoraAutomationError.duplicateAutomation {
                 answer = "You already have an automation with that name or schedule."
+                isSuccess = false
             } catch {
                 answer = "I couldn't create that automation: \(error.localizedDescription)"
+                isSuccess = false
             }
 
         case .list:
@@ -621,6 +658,7 @@ final class AssistantManager {
                 }.joined(separator: "\n")
                 answer = "Here are your automations:\n\(lines)"
             }
+            isSuccess = true
 
         case let .turnOff(query):
             let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -635,8 +673,10 @@ final class AssistantManager {
                     _ = try? await service.toggleEnabled(id: matched.id)
                     answer = "I've turned off your \(matched.name)."
                 }
+                isSuccess = true
             } else {
                 answer = "I couldn't find an automation matching '\(query)'."
+                isSuccess = false
             }
 
         case let .turnOn(query):
@@ -652,8 +692,10 @@ final class AssistantManager {
                     _ = try? await service.toggleEnabled(id: matched.id)
                     answer = "I've turned on your \(matched.name)."
                 }
+                isSuccess = true
             } else {
                 answer = "I couldn't find an automation matching '\(query)'."
+                isSuccess = false
             }
 
         case let .delete(query):
@@ -665,16 +707,20 @@ final class AssistantManager {
             }) {
                 _ = await service.delete(id: matched.id)
                 answer = "I've deleted your \(matched.name)."
+                isSuccess = true
             } else {
                 answer = "I couldn't find an automation matching '\(query)'."
+                isSuccess = false
             }
 
         case let .clearAll(confirmed):
             if !confirmed {
                 answer = "Are you sure you want to delete all automations? Reply 'yes, delete all automations' to confirm."
+                isConfirmationPrompt = true
             } else {
                 _ = await service.clearAll(confirmed: true)
                 answer = "I've deleted all automations."
+                isSuccess = true
             }
         }
 
@@ -685,7 +731,13 @@ final class AssistantManager {
         state = .responding
         response = answer
         AMORAContext.shared.setAIResponse(answer)
-        AMORAEventCenter.shared.emit(.aiSucceeded)
+        if isConfirmationPrompt {
+            AMORAEventCenter.shared.emit(.aiCancelled)
+        } else if isSuccess {
+            AMORAEventCenter.shared.emit(.aiSucceeded)
+        } else {
+            AMORAEventCenter.shared.emit(.aiFailed)
+        }
         return answer
     }
 
