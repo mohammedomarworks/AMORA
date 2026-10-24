@@ -147,6 +147,32 @@ final class MusicService {
     private(set) var controlError: String?
     private(set) var controlStatus: String?
 
+    /// Script executor used for all background AppleScript executions.
+    var scriptExecutor: any AmoraAppleScriptExecuting = AmoraAppleScriptExecutor.shared
+
+    /// Cached track state for Apple Music, refreshed asynchronously in the background.
+    private(set) var cachedAppleMusicTrack: AppleMusicTrack?
+
+    /// Concurrency management for Apple Music track polling.
+    private var isRefreshingAppleMusicTrack = false
+    private var hasPendingFollowupRefresh = false
+    private var refreshSequence: UInt64 = 0
+    private var latestAppliedRefreshSequence: UInt64 = 0
+
+    /// Observers for Apple Music lifecycle and track change events.
+    private var appleMusicTerminateObserver: NSObjectProtocol?
+    private var appleMusicLaunchObserver: NSObjectProtocol?
+    private var appleMusicPlayerInfoObserver: NSObjectProtocol?
+
+    /// Determines whether Apple Music is running. Injectable for testing without launching Music.app.
+    var isAppleMusicRunning: Bool {
+        if let override = isAppleMusicRunningOverride {
+            return override
+        }
+        return !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+    }
+    var isAppleMusicRunningOverride: Bool?
+
     /// 0…1 fraction of the current track that has played.
     var progress: Double {
         guard duration > 0 else { return 0 }
@@ -199,16 +225,71 @@ final class MusicService {
             Task { @MainActor [weak self] in self?.checkCurrentTrack() }
         }
 
+        registerAppleMusicObservers()
+
         checkCurrentTrack()
+        refreshAppleMusicTrack()
         if NSClassFromString("XCTestCase") == nil {
             startPolling()
         }
+    }
+
+    private func registerAppleMusicObservers() {
+        appleMusicTerminateObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let bundleId = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            if bundleId == "com.apple.Music" {
+                Task { @MainActor [weak self] in
+                    self?.handleAppleMusicTerminated()
+                }
+            }
+        }
+
+        appleMusicLaunchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let bundleId = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            if bundleId == "com.apple.Music" {
+                Task { @MainActor [weak self] in
+                    self?.handleAppleMusicLaunched()
+                }
+            }
+        }
+
+        appleMusicPlayerInfoObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.Music.playerInfo"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshAppleMusicTrack()
+            }
+        }
+    }
+
+    func handleAppleMusicTerminated() {
+        cachedAppleMusicTrack = nil
+        isRefreshingAppleMusicTrack = false
+        hasPendingFollowupRefresh = false
+        (scriptExecutor as? AmoraAppleScriptExecutor)?.recoverStuckWorker(retireCommandQueue: true)
+        checkCurrentTrack()
+    }
+
+    func handleAppleMusicLaunched() {
+        refreshAppleMusicTrack()
+        checkCurrentTrack()
     }
 
     func startPolling() {
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
+                self?.refreshAppleMusicTrack()
                 self?.checkCurrentTrack()
             }
         }
@@ -314,7 +395,7 @@ final class MusicService {
         let browserMedia = BrowserMediaProvider.currentState()
         let isSpotifyRunning = SpotifyProvider.shared.isRunning
         let spotifyTrack = SpotifyProvider.shared.currentTrack
-        let appleMusicTrack = fetchAppleMusicTrackIfRunning()
+        let appleMusicTrack = cachedAppleMusicTrack
 
         let wasPlaying = isPlaying
         let previousTitle = trackTitle
@@ -373,7 +454,7 @@ final class MusicService {
         case .none:
             if SpotifyProvider.shared.isRunning {
                 toggleSpotify()
-            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+            } else if isAppleMusicRunning {
                 toggleAppleMusic()
             } else if SpotifyProvider.shared.isInstalled {
                 playSpotify()
@@ -394,7 +475,7 @@ final class MusicService {
         case .none:
             if SpotifyProvider.shared.isRunning {
                 playSpotify()
-            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+            } else if isAppleMusicRunning {
                 playAppleMusic()
             } else if SpotifyProvider.shared.isInstalled {
                 playSpotify()
@@ -415,7 +496,7 @@ final class MusicService {
         case .none:
             if SpotifyProvider.shared.isRunning {
                 pauseSpotify()
-            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+            } else if isAppleMusicRunning {
                 pauseAppleMusic()
             }
         }
@@ -436,7 +517,7 @@ final class MusicService {
         case .none:
             if SpotifyProvider.shared.isRunning {
                 nextSpotify()
-            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+            } else if isAppleMusicRunning {
                 nextAppleMusic()
             } else {
                 controlStatus = nil
@@ -461,7 +542,7 @@ final class MusicService {
         case .none:
             if SpotifyProvider.shared.isRunning {
                 previousSpotify()
-            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+            } else if isAppleMusicRunning {
                 previousAppleMusic()
             } else {
                 controlStatus = nil
@@ -639,36 +720,57 @@ final class MusicService {
 
     // MARK: - Apple Music Integration
 
-    private func fetchAppleMusicTrackIfRunning() -> AppleMusicTrack? {
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
-            return nil
-        }
+    nonisolated static let appleMusicFetchScript = """
+    if application "Music" is running then
+        tell application "Music"
+            set pState to player state as string
+            if pState is "playing" or pState is "paused" then
+                set trk to name of current track
+                set art to artist of current track
+                set alb to album of current track
+                set dur to (duration of current track)
+                set pos to (player position)
+                return pState & "|||" & trk & "|||" & art & "|||" & alb & "|||" & dur & "|||" & pos
+            else
+                return pState & "|||||||||0|||0"
+            end if
+        end tell
+    else
+        return "stopped|||||||||0|||0"
+    end if
+    """
 
-        let script = """
-        if application "Music" is running then
-            tell application "Music"
-                set pState to player state as string
-                if pState is "playing" or pState is "paused" then
-                    set trk to name of current track
-                    set art to artist of current track
-                    set alb to album of current track
-                    set dur to (duration of current track)
-                    set pos to (player position)
-                    return pState & "|||" & trk & "|||" & art & "|||" & alb & "|||" & dur & "|||" & pos
-                else
-                    return pState & "|||||||||0|||0"
-                end if
-            end tell
-        else
-            return "stopped|||||||||0|||0"
-        end if
-        """
+    nonisolated static let appleMusicPlayScript = """
+    if application "Music" is running then
+        tell application "Music" to play
+    end if
+    """
 
-        var error: NSDictionary?
-        guard let appleScript = NSAppleScript(source: script) else { return nil }
-        let output = appleScript.executeAndReturnError(&error)
-        guard let stringValue = output.stringValue else { return nil }
+    nonisolated static let appleMusicPauseScript = """
+    if application "Music" is running then
+        tell application "Music" to pause
+    end if
+    """
 
+    nonisolated static let appleMusicToggleScript = """
+    if application "Music" is running then
+        tell application "Music" to playpause
+    end if
+    """
+
+    nonisolated static let appleMusicNextScript = """
+    if application "Music" is running then
+        tell application "Music" to next track
+    end if
+    """
+
+    nonisolated static let appleMusicPreviousScript = """
+    if application "Music" is running then
+        tell application "Music" to previous track
+    end if
+    """
+
+    nonisolated static func parseAppleMusicOutput(_ stringValue: String) -> AppleMusicTrack? {
         let parts = stringValue.components(separatedBy: "|||")
         guard parts.count >= 3 else { return nil }
         let state = parts[0]
@@ -690,183 +792,250 @@ final class MusicService {
         )
     }
 
-    private func playAppleMusic() {
-        guard !controlPending else { return }
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+    func refreshAppleMusicTrack() {
+        guard isAppleMusicRunning else {
+            if cachedAppleMusicTrack != nil {
+                cachedAppleMusicTrack = nil
+                checkCurrentTrack()
+            }
+            return
+        }
+
+        if isRefreshingAppleMusicTrack {
+            hasPendingFollowupRefresh = true
+            return
+        }
+
+        isRefreshingAppleMusicTrack = true
+        Task { @MainActor [weak self] in
+            await self?.refreshAppleMusicTrackInternal()
+        }
+    }
+
+    @discardableResult
+    func refreshAppleMusicTrackAsync() async -> AppleMusicTrack? {
+        guard isAppleMusicRunning else {
+            if cachedAppleMusicTrack != nil {
+                cachedAppleMusicTrack = nil
+                checkCurrentTrack()
+            }
+            return nil
+        }
+
+        if isRefreshingAppleMusicTrack {
+            hasPendingFollowupRefresh = true
+            return cachedAppleMusicTrack
+        }
+
+        isRefreshingAppleMusicTrack = true
+        return await refreshAppleMusicTrackInternal()
+    }
+
+    @discardableResult
+    private func refreshAppleMusicTrackInternal() async -> AppleMusicTrack? {
+        refreshSequence += 1
+        let currentSeq = refreshSequence
+        let script = Self.appleMusicFetchScript
+
+        let result = await scriptExecutor.execute(source: script, timeout: 1.5, isMutating: false)
+
+        isRefreshingAppleMusicTrack = false
+
+        defer {
+            if hasPendingFollowupRefresh {
+                hasPendingFollowupRefresh = false
+                refreshAppleMusicTrack()
+            }
+        }
+
+        guard currentSeq > latestAppliedRefreshSequence else {
+            return cachedAppleMusicTrack
+        }
+        latestAppliedRefreshSequence = currentSeq
+
+        switch result {
+        case let .success(output):
+            let parsed = Self.parseAppleMusicOutput(output)
+            if cachedAppleMusicTrack != parsed {
+                cachedAppleMusicTrack = parsed
+                checkCurrentTrack()
+            }
+            return cachedAppleMusicTrack
+
+        case .error, .timedOut, .cancelled, .scriptCreationFailed, .queryQuarantined:
+            if cachedAppleMusicTrack != nil {
+                cachedAppleMusicTrack = nil
+                checkCurrentTrack()
+            }
+            return nil
+        }
+    }
+
+    enum AppleMusicControlAction: Sendable {
+        case play
+        case pause
+        case toggle
+        case next
+        case previous
+
+        var script: String {
+            switch self {
+            case .play: return MusicService.appleMusicPlayScript
+            case .pause: return MusicService.appleMusicPauseScript
+            case .toggle: return MusicService.appleMusicToggleScript
+            case .next: return MusicService.appleMusicNextScript
+            case .previous: return MusicService.appleMusicPreviousScript
+            }
+        }
+
+        var inProgressStatus: String? {
+            switch self {
+            case .play: return "Playing…"
+            case .pause: return "Pausing…"
+            case .toggle: return nil
+            case .next: return "Next…"
+            case .previous: return "Previous…"
+            }
+        }
+
+        var successStatus: String? {
+            switch self {
+            case .play: return "Playing"
+            case .pause: return "Paused"
+            case .toggle: return nil
+            case .next: return nil
+            case .previous: return nil
+            }
+        }
+    }
+
+    @discardableResult
+    func sendAppleMusicCommandAsync(_ action: AppleMusicControlAction) async -> (success: Bool, error: String?) {
+        if Task.isCancelled {
+            controlStatus = nil
+            controlError = "Action cancelled."
+            scheduleErrorClear(message: controlError)
+            return (false, "Action cancelled.")
+        }
+
+        guard isAppleMusicRunning else {
             controlStatus = nil
             controlError = "Apple Music is not currently running."
             scheduleErrorClear(message: controlError)
-            return
+            return (false, "Apple Music is not currently running.")
         }
+
         controlPending = true
         controlError = nil
-        controlStatus = "Playing…"
-        preferredSource = .appleMusic
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let script = """
-            if application "Music" is running then
-                tell application "Music" to play
-            end if
-            """
-            var error: NSDictionary?
-            _ = NSAppleScript(source: script)?.executeAndReturnError(&error)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.controlPending = false
-                if let error = error {
-                    self.controlStatus = nil
-                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
-                    self.controlError = msg
-                    self.scheduleErrorClear(message: msg)
-                } else {
-                    self.controlStatus = "Playing"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
-                }
-                self.checkCurrentTrack()
+        if action == .toggle {
+            controlStatus = isPlaying ? "Pausing…" : "Playing…"
+        } else {
+            controlStatus = action.inProgressStatus
+        }
+        if action == .play {
+            preferredSource = .appleMusic
+        }
+
+        let result = await scriptExecutor.execute(source: action.script, timeout: 2.0)
+
+        controlPending = false
+        switch result {
+        case .success:
+            if action == .toggle {
+                controlStatus = isPlaying ? "Paused" : "Playing"
+            } else {
+                controlStatus = action.successStatus
             }
+            if controlStatus != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
+            }
+            await refreshAppleMusicTrackAsync()
+            checkCurrentTrack()
+            return (true, nil)
+
+        case let .error(_, message):
+            controlStatus = nil
+            let msg = message.isEmpty ? "Apple Music command failed." : message
+            controlError = msg
+            scheduleErrorClear(message: msg)
+            checkCurrentTrack()
+            return (false, msg)
+
+        case .timedOut:
+            controlStatus = nil
+            let msg = "Apple Music did not respond in time."
+            controlError = msg
+            scheduleErrorClear(message: msg)
+            checkCurrentTrack()
+            return (false, msg)
+
+        case .cancelled:
+            controlStatus = nil
+            let msg = "Action cancelled."
+            controlError = msg
+            scheduleErrorClear(message: msg)
+            checkCurrentTrack()
+            return (false, msg)
+
+        case .scriptCreationFailed:
+            controlStatus = nil
+            let msg = "Apple Music script could not be initialized."
+            controlError = msg
+            scheduleErrorClear(message: msg)
+            checkCurrentTrack()
+            return (false, msg)
+
+        case .queryQuarantined:
+            controlStatus = nil
+            let msg = "Apple Music is busy."
+            controlError = msg
+            scheduleErrorClear(message: msg)
+            checkCurrentTrack()
+            return (false, msg)
+        }
+    }
+
+    private func playAppleMusic() {
+        guard !controlPending else { return }
+        Task { @MainActor [weak self] in
+            await self?.sendAppleMusicCommandAsync(.play)
         }
     }
 
     private func pauseAppleMusic() {
         guard !controlPending else { return }
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
-            controlStatus = nil
-            controlError = "Apple Music is not currently running."
-            scheduleErrorClear(message: controlError)
-            return
-        }
-        controlPending = true
-        controlError = nil
-        controlStatus = "Pausing…"
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let script = """
-            if application "Music" is running then
-                tell application "Music" to pause
-            end if
-            """
-            var error: NSDictionary?
-            _ = NSAppleScript(source: script)?.executeAndReturnError(&error)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.controlPending = false
-                if let error = error {
-                    self.controlStatus = nil
-                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
-                    self.controlError = msg
-                    self.scheduleErrorClear(message: msg)
-                } else {
-                    self.controlStatus = "Paused"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
-                }
-                self.checkCurrentTrack()
-            }
+        Task { @MainActor [weak self] in
+            await self?.sendAppleMusicCommandAsync(.pause)
         }
     }
 
     private func toggleAppleMusic() {
         guard !controlPending else { return }
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
-            controlStatus = nil
-            controlError = "Apple Music is not currently running."
-            scheduleErrorClear(message: controlError)
-            return
-        }
-        controlPending = true
-        controlError = nil
-        controlStatus = isPlaying ? "Pausing…" : "Playing…"
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let script = """
-            if application "Music" is running then
-                tell application "Music" to playpause
-            end if
-            """
-            var error: NSDictionary?
-            _ = NSAppleScript(source: script)?.executeAndReturnError(&error)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.controlPending = false
-                if let error = error {
-                    self.controlStatus = nil
-                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
-                    self.controlError = msg
-                    self.scheduleErrorClear(message: msg)
-                } else {
-                    self.controlStatus = self.isPlaying ? "Paused" : "Playing"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlStatus = nil }
-                }
-                self.checkCurrentTrack()
-            }
+        Task { @MainActor [weak self] in
+            await self?.sendAppleMusicCommandAsync(.toggle)
         }
     }
 
     private func nextAppleMusic() {
         guard !controlPending else { return }
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
-            controlStatus = nil
-            controlError = "Apple Music is not currently running."
-            scheduleErrorClear(message: controlError)
-            return
-        }
-        controlPending = true
-        controlError = nil
-        controlStatus = "Next…"
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let script = """
-            if application "Music" is running then
-                tell application "Music" to next track
-            end if
-            """
-            var error: NSDictionary?
-            _ = NSAppleScript(source: script)?.executeAndReturnError(&error)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.controlPending = false
-                if let error = error {
-                    self.controlStatus = nil
-                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
-                    self.controlError = msg
-                    self.scheduleErrorClear(message: msg)
-                } else {
-                    self.controlStatus = nil
-                }
-                self.checkCurrentTrack()
-            }
+        Task { @MainActor [weak self] in
+            await self?.sendAppleMusicCommandAsync(.next)
         }
     }
 
     private func previousAppleMusic() {
         guard !controlPending else { return }
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
-            controlStatus = nil
-            controlError = "Apple Music is not currently running."
-            scheduleErrorClear(message: controlError)
-            return
+        Task { @MainActor [weak self] in
+            await self?.sendAppleMusicCommandAsync(.previous)
         }
-        controlPending = true
-        controlError = nil
-        controlStatus = "Previous…"
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let script = """
-            if application "Music" is running then
-                tell application "Music" to previous track
-            end if
-            """
-            var error: NSDictionary?
-            _ = NSAppleScript(source: script)?.executeAndReturnError(&error)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.controlPending = false
-                if let error = error {
-                    self.controlStatus = nil
-                    let msg = error[NSAppleScript.errorMessage] as? String ?? "Apple Music command failed."
-                    self.controlError = msg
-                    self.scheduleErrorClear(message: msg)
-                } else {
-                    self.controlStatus = nil
-                }
-                self.checkCurrentTrack()
-            }
-        }
+    }
+
+    func setCachedAppleMusicTrackForTesting(_ track: AppleMusicTrack?) {
+        cachedAppleMusicTrack = track
+    }
+
+    func setControlPendingForTesting(_ pending: Bool) {
+        controlPending = pending
     }
 
     private func scheduleErrorClear(message: String?) {
@@ -883,6 +1052,25 @@ final class MusicService {
         controlError = nil
         controlStatus = nil
         preferredSource = nil
+        cachedAppleMusicTrack = nil
+        isRefreshingAppleMusicTrack = false
+        hasPendingFollowupRefresh = false
+        refreshSequence = 0
+        latestAppliedRefreshSequence = 0
+        isAppleMusicRunningOverride = nil
+    }
+
+    func setRefreshSequenceForTesting(sequence: UInt64, latestApplied: UInt64) {
+        refreshSequence = sequence
+        latestAppliedRefreshSequence = latestApplied
+    }
+
+    var isRefreshingAppleMusicTrackForTesting: Bool {
+        isRefreshingAppleMusicTrack
+    }
+
+    var hasPendingFollowupRefreshForTesting: Bool {
+        hasPendingFollowupRefresh
     }
 
     // MARK: - Browser / YouTube Integration
@@ -1030,22 +1218,45 @@ final class MusicService {
             )
 
         case .appleMusic:
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+            guard isAppleMusicRunning else {
                 return .unavailable(
                     actionId: "media.play",
                     message: "Apple Music is not currently running.",
                     data: ["source": "Apple Music"]
                 )
             }
-            playAppleMusic()
-            return .success(
-                actionId: "media.play",
-                message: "Music playback started.",
-                data: [
-                    "source": "Apple Music",
-                    "track": trackTitle
-                ]
-            )
+            let (success, error) = await sendAppleMusicCommandAsync(.play)
+            if success {
+                let currentTrack = cachedAppleMusicTrack?.title ?? trackTitle
+                return .success(
+                    actionId: "media.play",
+                    message: "Music playback started.",
+                    data: [
+                        "source": "Apple Music",
+                        "track": currentTrack
+                    ]
+                )
+            } else {
+                if error == "Action cancelled." {
+                    return .notPermitted(
+                        actionId: "media.play",
+                        message: "Action cancelled by user.",
+                        data: ["source": "Apple Music", "reason": "command_cancelled"]
+                    )
+                } else if error == "Apple Music did not respond in time." {
+                    return .failed(
+                        actionId: "media.play",
+                        message: "Apple Music did not respond in time.",
+                        data: ["source": "Apple Music", "reason": "command_timeout"]
+                    )
+                } else {
+                    return .failed(
+                        actionId: "media.play",
+                        message: error ?? "Apple Music command failed.",
+                        data: ["source": "Apple Music", "reason": "command_failed"]
+                    )
+                }
+            }
 
         case .none:
             if ChromeMessageBridge.shared.status == .connected, ChromeMessageBridge.shared.state != nil {
@@ -1061,16 +1272,39 @@ final class MusicService {
                         "track": trackTitle
                     ]
                 )
-            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
-                playAppleMusic()
-                return .success(
-                    actionId: "media.play",
-                    message: "Music playback started.",
-                    data: [
-                        "source": "Apple Music",
-                        "track": trackTitle
-                    ]
-                )
+            } else if isAppleMusicRunning {
+                let (success, error) = await sendAppleMusicCommandAsync(.play)
+                if success {
+                    let currentTrack = cachedAppleMusicTrack?.title ?? trackTitle
+                    return .success(
+                        actionId: "media.play",
+                        message: "Music playback started.",
+                        data: [
+                            "source": "Apple Music",
+                            "track": currentTrack
+                        ]
+                    )
+                } else {
+                    if error == "Action cancelled." {
+                        return .notPermitted(
+                            actionId: "media.play",
+                            message: "Action cancelled by user.",
+                            data: ["source": "Apple Music", "reason": "command_cancelled"]
+                        )
+                    } else if error == "Apple Music did not respond in time." {
+                        return .failed(
+                            actionId: "media.play",
+                            message: "Apple Music did not respond in time.",
+                            data: ["source": "Apple Music", "reason": "command_timeout"]
+                        )
+                    } else {
+                        return .failed(
+                            actionId: "media.play",
+                            message: error ?? "Apple Music command failed.",
+                            data: ["source": "Apple Music", "reason": "command_failed"]
+                        )
+                    }
+                }
             } else if SpotifyProvider.shared.isInstalled {
                 playSpotify()
                 return .success(
@@ -1143,19 +1377,41 @@ final class MusicService {
             )
 
         case .appleMusic:
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else {
+            guard isAppleMusicRunning else {
                 return .unavailable(
                     actionId: "media.pause",
                     message: "Apple Music is not currently running.",
                     data: ["source": "Apple Music"]
                 )
             }
-            pauseAppleMusic()
-            return .success(
-                actionId: "media.pause",
-                message: "Music playback paused.",
-                data: ["source": "Apple Music"]
-            )
+            let (success, error) = await sendAppleMusicCommandAsync(.pause)
+            if success {
+                return .success(
+                    actionId: "media.pause",
+                    message: "Music playback paused.",
+                    data: ["source": "Apple Music"]
+                )
+            } else {
+                if error == "Action cancelled." {
+                    return .notPermitted(
+                        actionId: "media.pause",
+                        message: "Action cancelled by user.",
+                        data: ["source": "Apple Music", "reason": "command_cancelled"]
+                    )
+                } else if error == "Apple Music did not respond in time." {
+                    return .failed(
+                        actionId: "media.pause",
+                        message: "Apple Music did not respond in time.",
+                        data: ["source": "Apple Music", "reason": "command_timeout"]
+                    )
+                } else {
+                    return .failed(
+                        actionId: "media.pause",
+                        message: error ?? "Apple Music command failed.",
+                        data: ["source": "Apple Music", "reason": "command_failed"]
+                    )
+                }
+            }
 
         case .none:
             if ChromeMessageBridge.shared.status == .connected, ChromeMessageBridge.shared.state != nil {
@@ -1168,13 +1424,35 @@ final class MusicService {
                     message: "Music playback paused.",
                     data: ["source": "Spotify"]
                 )
-            } else if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
-                pauseAppleMusic()
-                return .success(
-                    actionId: "media.pause",
-                    message: "Music playback paused.",
-                    data: ["source": "Apple Music"]
-                )
+            } else if isAppleMusicRunning {
+                let (success, error) = await sendAppleMusicCommandAsync(.pause)
+                if success {
+                    return .success(
+                        actionId: "media.pause",
+                        message: "Music playback paused.",
+                        data: ["source": "Apple Music"]
+                    )
+                } else {
+                    if error == "Action cancelled." {
+                        return .notPermitted(
+                            actionId: "media.pause",
+                            message: "Action cancelled by user.",
+                            data: ["source": "Apple Music", "reason": "command_cancelled"]
+                        )
+                    } else if error == "Apple Music did not respond in time." {
+                        return .failed(
+                            actionId: "media.pause",
+                            message: "Apple Music did not respond in time.",
+                            data: ["source": "Apple Music", "reason": "command_timeout"]
+                        )
+                    } else {
+                        return .failed(
+                            actionId: "media.pause",
+                            message: error ?? "Apple Music command failed.",
+                            data: ["source": "Apple Music", "reason": "command_failed"]
+                        )
+                    }
+                }
             } else {
                 return .unavailable(
                     actionId: "media.pause",
@@ -1393,8 +1671,9 @@ enum BrowserMediaAppleScript {
         return host == "youtu.be" && path.count > 1
     }
 
-    static func run(_ source: String) {
-        var error: NSDictionary?
-        _ = NSAppleScript(source: source)?.executeAndReturnError(&error)
+    static func run(_ source: String, executor: any AmoraAppleScriptExecuting = AmoraAppleScriptExecutor.shared) {
+        Task {
+            _ = await executor.execute(source: source, timeout: 2.0)
+        }
     }
 }
