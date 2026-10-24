@@ -22,6 +22,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         windowManager?.showNotchWindow()
 
+        if NSClassFromString("XCTestCase") == nil {
+            let settings = AppState.shared.settings
+            let isLocalSelected = settings.aiEnabled && settings.aiProvider == AIProviderKind.local.rawValue
+            let isModelReady = AmoraModelManager.shared.checkStatusSync().isReady
+
+            if isLocalSelected && isModelReady {
+                Task.detached(priority: .utility) {
+                    try? await AmoraLlamaCppRuntime.shared.prewarm()
+                }
+            }
+        }
+
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,

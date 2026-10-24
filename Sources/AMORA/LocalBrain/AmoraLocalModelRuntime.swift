@@ -56,7 +56,9 @@ public enum AmoraLocalRuntimeError: Error, Equatable, Sendable {
 public protocol AmoraLocalModelRuntime: Sendable {
     var isLoaded: Bool { get }
     var loadedModelPath: String? { get }
+    var isPrewarmed: Bool { get }
 
+    func prewarm() async throws
     func loadModel(from path: String, configuration: AmoraModelRuntimeConfiguration) async throws
     func unloadModel() async
     func generate(
@@ -66,11 +68,21 @@ public protocol AmoraLocalModelRuntime: Sendable {
     ) async throws -> String
 }
 
+public extension AmoraLocalModelRuntime {
+    var isPrewarmed: Bool { false }
+    func prewarm() async throws {}
+}
+
 /// Mock runtime for deterministic tests and previews. Never requires native model files or I/O.
 public final class MockLocalModelRuntime: AmoraLocalModelRuntime, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.amora.mockruntime")
     private var _isLoaded = false
     private var _loadedModelPath: String?
+    private var _isPrewarmed = false
+    private var _prewarmCallCount = 0
+    public var shouldFailPrewarm = false
+    public var prewarmErrorMessage = "Simulated prewarm error"
+    public var simulatedPrewarmDelayNanoseconds: UInt64 = 0
     public var responseToReturn: String
     public var shouldFailLoad: Bool
     public var loadErrorMessage: String
@@ -86,6 +98,29 @@ public final class MockLocalModelRuntime: AmoraLocalModelRuntime, @unchecked Sen
 
     public var loadedModelPath: String? {
         queue.sync { _loadedModelPath }
+    }
+
+    public var isPrewarmed: Bool {
+        queue.sync { _isPrewarmed }
+    }
+
+    public var prewarmCallCount: Int {
+        queue.sync { _prewarmCallCount }
+    }
+
+    public func prewarm() async throws {
+        try Task.checkCancellation()
+        if simulatedPrewarmDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: simulatedPrewarmDelayNanoseconds)
+        }
+        try Task.checkCancellation()
+        if shouldFailPrewarm {
+            throw AmoraLocalRuntimeError.inferenceFailed(prewarmErrorMessage)
+        }
+        queue.sync {
+            _prewarmCallCount += 1
+            _isPrewarmed = true
+        }
     }
 
     public init(

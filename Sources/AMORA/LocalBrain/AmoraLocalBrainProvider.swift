@@ -46,6 +46,11 @@ final class AmoraLocalBrainProvider: AIProvider, @unchecked Sendable {
         availability == .available
     }
 
+    /// Pre-warms runtime backend resources in the background.
+    func prewarm() async throws {
+        try await runtime.prewarm()
+    }
+
     var availability: AIAvailability {
         let isReady = MainActor.assumeIsolated {
             _ = modelManager.checkStatusSync()

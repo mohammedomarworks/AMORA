@@ -15,29 +15,97 @@ public final class AmoraLlamaCppRuntime: AmoraLocalModelRuntime, @unchecked Send
     private var vocab: OpaquePointer?
     private var currentPath: String?
     private var currentConfig: AmoraModelRuntimeConfiguration?
+    private var isBackendInitialized = false
+    private var prewarmTask: Task<Void, Error>?
 
     public var isLoaded: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return model != nil && context != nil
+        lock.withLock { model != nil && context != nil }
     }
 
     public var loadedModelPath: String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return currentPath
+        lock.withLock { currentPath }
+    }
+
+    public var isPrewarmed: Bool {
+        lock.withLock { isBackendInitialized }
     }
 
     public init() {
-        llama_backend_init()
+        // Backend initialization is intentionally deferred to prewarm() or loadModelSync()
+        // so instantiating this runtime never blocks callers or the main actor.
     }
 
     deinit {
         unloadSync()
-        llama_backend_free()
+        lock.withLock {
+            if isBackendInitialized {
+                llama_backend_free()
+                isBackendInitialized = false
+            }
+        }
+    }
+
+    public func prewarm() async throws {
+        try Task.checkCancellation()
+
+        let task: Task<Void, Error>? = lock.withLock {
+            if isBackendInitialized {
+                return nil
+            }
+            if let existing = prewarmTask {
+                return existing
+            }
+            let newTask = Task.detached(priority: .utility) { [weak self] in
+                try Task.checkCancellation()
+                self?.initBackendSync()
+                try Task.checkCancellation()
+            }
+            self.prewarmTask = newTask
+            return newTask
+        }
+
+        guard let task else { return }
+
+        do {
+            try await task.value
+            lock.withLock {
+                self.prewarmTask = nil
+            }
+        } catch {
+            lock.withLock {
+                self.prewarmTask = nil
+            }
+            throw error
+        }
+    }
+
+    private func initBackendSync() {
+        lock.withLock {
+            guard !isBackendInitialized else { return }
+            llama_backend_init()
+            isBackendInitialized = true
+        }
+    }
+
+    public func cancelPrewarm() {
+        let task: Task<Void, Error>? = lock.withLock {
+            let t = prewarmTask
+            prewarmTask = nil
+            return t
+        }
+        task?.cancel()
     }
 
     public func loadModel(from path: String, configuration: AmoraModelRuntimeConfiguration) async throws {
+        try Task.checkCancellation()
+
+        let existingPrewarm: Task<Void, Error>? = lock.withLock { prewarmTask }
+        if let existingPrewarm {
+            _ = try? await existingPrewarm.value
+        }
+
+        try Task.checkCancellation()
+
         try await Task.detached(priority: .userInitiated) { [self] in
             try self.loadModelSync(from: path, configuration: configuration)
         }.value
@@ -62,6 +130,11 @@ public final class AmoraLlamaCppRuntime: AmoraLocalModelRuntime, @unchecked Send
     private func loadModelSync(from path: String, configuration: AmoraModelRuntimeConfiguration) throws {
         lock.lock()
         defer { lock.unlock() }
+
+        if !isBackendInitialized {
+            llama_backend_init()
+            isBackendInitialized = true
+        }
 
         // If already loaded with the same path and config, reuse it
         if model != nil, context != nil, currentPath == path, currentConfig == configuration {
@@ -107,6 +180,8 @@ public final class AmoraLlamaCppRuntime: AmoraLocalModelRuntime, @unchecked Send
     public func unloadSync() {
         lock.lock()
         defer { lock.unlock() }
+        prewarmTask?.cancel()
+        prewarmTask = nil
         unloadCurrentModelUnsafe()
     }
 
