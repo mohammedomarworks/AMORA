@@ -29,11 +29,15 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+
       - name: Restore Dependencies
-        run: dotnet restore Windows/AMORA.sln
+        run: msbuild Windows/AMORA.sln /p:Configuration=Release /p:Platform=x64 /t:Restore
 
       - name: Build Solution (Release x64)
-        run: dotnet build Windows/AMORA.sln --configuration Release --no-restore /p:Platform=x64
+        run: msbuild Windows/AMORA.sln /p:Configuration=Release /p:Platform=x64 /t:Build /m:4
 
       - name: Run xUnit Tests (Release x64)
-        run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"
+        run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --no-build --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"
