@@ -226,6 +226,20 @@ public class DeterministicCommandRouterTests
     }
 
     [Theory]
+    [InlineData("reset conversation")]
+    [InlineData("clear conversation")]
+    [InlineData("new conversation")]
+    [InlineData("clear chat")]
+    [InlineData("reset chat")]
+    [InlineData("clear history")]
+    [InlineData("reset history")]
+    public void Route_ResetConversation_RecognizesVariants(string input)
+    {
+        var command = _router.Route(input, DefaultContext);
+        Assert.IsType<AssistantCommand.ResetConversation>(command);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("what is the weather today in Tokyo")]

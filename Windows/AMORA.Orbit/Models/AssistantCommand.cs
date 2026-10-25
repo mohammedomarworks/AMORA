@@ -26,6 +26,9 @@ public abstract record AssistantCommand
     public sealed record GetBatteryStatus : AssistantCommand;
     public sealed record GetSystemStatus : AssistantCommand;
 
+    // Conversation management
+    public sealed record ResetConversation : AssistantCommand;
+
     // Consequential action requiring confirmation
     public sealed record ConsequentialAction(
         string ActionId,

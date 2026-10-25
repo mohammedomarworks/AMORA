@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AMORA.Orbit.Models;
@@ -16,6 +17,12 @@ public interface IAIProvider
     bool IsConfigured { get; }
 
     Task<string> GenerateResponseAsync(string prompt, CancellationToken cancellationToken = default);
+
+    Task<string> GenerateResponseAsync(
+        string prompt,
+        IReadOnlyList<ChatMessage>? history,
+        CancellationToken cancellationToken = default) =>
+        GenerateResponseAsync(prompt, cancellationToken);
 
     Task<ConnectionTestResult> TestConnectionAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(ConnectionTestResult.Failure("Connectivity test not implemented for this provider."));

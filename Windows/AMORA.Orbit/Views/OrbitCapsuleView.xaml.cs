@@ -110,6 +110,14 @@ public sealed partial class OrbitCapsuleView : UserControl
         }
     }
 
+    private void OnResetConversationClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm)
+        {
+            vm.Assistant.ResetConversation();
+        }
+    }
+
     private async void OnConfirmCommandClicked(object sender, RoutedEventArgs e)
     {
         if (DataContext is OrbitViewModel vm)

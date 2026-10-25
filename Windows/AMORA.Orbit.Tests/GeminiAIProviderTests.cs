@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AMORA.Orbit.Models;
@@ -361,5 +363,138 @@ public class GeminiAIProviderTests
 
         await provider.GenerateResponseAsync("Test 2");
         Assert.Contains("gemini-1.5-pro", capturedUri);
+    }
+
+    [Fact]
+    public async Task GenerateResponseAsync_WithHistory_SendsAlternatingUserAndModelContents()
+    {
+        string? capturedJson = null;
+
+        var handler = new MockHttpMessageHandler(async (req, ct) =>
+        {
+            if (req.Content != null)
+            {
+                capturedJson = await req.Content.ReadAsStringAsync(ct);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(SuccessfulResponseJson)
+            };
+        });
+
+        using var client = new HttpClient(handler);
+        var provider = new GeminiAIProvider(
+            () => Task.FromResult<string?>(TestApiKey),
+            AISettings.Default,
+            client
+        );
+
+        var history = new List<ChatMessage>
+        {
+            ChatMessage.User("What is the capital of France?"),
+            ChatMessage.Model("Paris is the capital of France.")
+        };
+
+        var result = await provider.GenerateResponseAsync("What is its population?", history);
+
+        Assert.NotNull(capturedJson);
+        using var doc = JsonDocument.Parse(capturedJson!);
+        var contents = doc.RootElement.GetProperty("contents");
+        Assert.Equal(3, contents.GetArrayLength());
+
+        // Turn 1 User
+        Assert.Equal("user", contents[0].GetProperty("role").GetString());
+        Assert.Equal("What is the capital of France?", contents[0].GetProperty("parts")[0].GetProperty("text").GetString());
+
+        // Turn 1 Model
+        Assert.Equal("model", contents[1].GetProperty("role").GetString());
+        Assert.Equal("Paris is the capital of France.", contents[1].GetProperty("parts")[0].GetProperty("text").GetString());
+
+        // Current Turn User
+        Assert.Equal("user", contents[2].GetProperty("role").GetString());
+        Assert.Equal("What is its population?", contents[2].GetProperty("parts")[0].GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateResponseAsync_WithMisalignedHistory_TrimsLeadingModelMessage()
+    {
+        string? capturedJson = null;
+
+        var handler = new MockHttpMessageHandler(async (req, ct) =>
+        {
+            if (req.Content != null)
+            {
+                capturedJson = await req.Content.ReadAsStringAsync(ct);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(SuccessfulResponseJson)
+            };
+        });
+
+        using var client = new HttpClient(handler);
+        var provider = new GeminiAIProvider(
+            () => Task.FromResult<string?>(TestApiKey),
+            AISettings.Default,
+            client
+        );
+
+        // Misaligned: starts with a Model message
+        var history = new List<ChatMessage>
+        {
+            ChatMessage.Model("An orphaned model response."),
+            ChatMessage.User("Hello again"),
+            ChatMessage.Model("Welcome back!")
+        };
+
+        await provider.GenerateResponseAsync("How are you?", history);
+
+        Assert.NotNull(capturedJson);
+        using var doc = JsonDocument.Parse(capturedJson!);
+        var contents = doc.RootElement.GetProperty("contents");
+
+        // The orphaned leading model message must be skipped; first message must be user!
+        Assert.Equal(3, contents.GetArrayLength());
+        Assert.Equal("user", contents[0].GetProperty("role").GetString());
+        Assert.Equal("Hello again", contents[0].GetProperty("parts")[0].GetProperty("text").GetString());
+        Assert.Equal("model", contents[1].GetProperty("role").GetString());
+        Assert.Equal("user", contents[2].GetProperty("role").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateResponseAsync_WithNullHistory_SendsSingleUserContent()
+    {
+        string? capturedJson = null;
+
+        var handler = new MockHttpMessageHandler(async (req, ct) =>
+        {
+            if (req.Content != null)
+            {
+                capturedJson = await req.Content.ReadAsStringAsync(ct);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(SuccessfulResponseJson)
+            };
+        });
+
+        using var client = new HttpClient(handler);
+        var provider = new GeminiAIProvider(
+            () => Task.FromResult<string?>(TestApiKey),
+            AISettings.Default,
+            client
+        );
+
+        await provider.GenerateResponseAsync("Single turn test", history: null);
+
+        Assert.NotNull(capturedJson);
+        using var doc = JsonDocument.Parse(capturedJson!);
+        var contents = doc.RootElement.GetProperty("contents");
+        Assert.Equal(1, contents.GetArrayLength());
+        Assert.Equal("user", contents[0].GetProperty("role").GetString());
+        Assert.Equal("Single turn test", contents[0].GetProperty("parts")[0].GetProperty("text").GetString());
     }
 }

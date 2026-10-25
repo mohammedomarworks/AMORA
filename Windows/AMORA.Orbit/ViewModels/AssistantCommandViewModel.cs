@@ -154,6 +154,12 @@ public class AssistantCommandViewModel : INotifyPropertyChanged
             ApplyResult(result);
             return result;
         }
+        catch (OperationCanceledException)
+        {
+            var cancelResult = AssistantExecutionResult.Information("Request cancelled.", MascotMood.Idle);
+            ApplyResult(cancelResult);
+            return cancelResult;
+        }
         catch (Exception ex)
         {
             var errorResult = AssistantExecutionResult.Failed($"Error: {ex.Message}");
@@ -211,6 +217,14 @@ public class AssistantCommandViewModel : INotifyPropertyChanged
         LastStatus = null;
         HasPendingConfirmation = false;
         ConfirmationPrompt = null;
+    }
+
+    public void ResetConversation()
+    {
+        _engine.ResetConversation();
+        Clear();
+        StatusMessage = "Conversation reset.";
+        LastStatus = AssistantResultStatus.Information;
     }
 
     private void ApplyResult(AssistantExecutionResult result)

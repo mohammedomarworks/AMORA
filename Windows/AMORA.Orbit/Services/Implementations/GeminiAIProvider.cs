@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
@@ -92,7 +93,13 @@ public class GeminiAIProvider : IAIProvider, IDisposable
         }
     }
 
-    public async Task<string> GenerateResponseAsync(string prompt, CancellationToken cancellationToken = default)
+    public Task<string> GenerateResponseAsync(string prompt, CancellationToken cancellationToken = default) =>
+        GenerateResponseAsync(prompt, null, cancellationToken);
+
+    public async Task<string> GenerateResponseAsync(
+        string prompt,
+        IReadOnlyList<ChatMessage>? history,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -109,18 +116,49 @@ public class GeminiAIProvider : IAIProvider, IDisposable
         string model = SanitizeModelName(currentSettings.Model);
         string endpoint = BuildEndpointUrl(model, currentSettings.CustomEndpoint);
 
-        var requestBody = new
+        var contentsList = new List<object>();
+
+        if (history != null && history.Count > 0)
         {
-            contents = new[]
+            // Skip any leading model messages if history was misaligned
+            int startIndex = 0;
+            while (startIndex < history.Count && history[startIndex].Role != ChatRole.User)
             {
-                new
+                startIndex++;
+            }
+
+            for (int i = startIndex; i < history.Count; i++)
+            {
+                var msg = history[i];
+                if (string.IsNullOrWhiteSpace(msg.Content))
                 {
+                    continue;
+                }
+
+                contentsList.Add(new
+                {
+                    role = msg.RoleString,
                     parts = new[]
                     {
-                        new { text = prompt.Trim() }
+                        new { text = msg.Content.Trim() }
                     }
-                }
-            },
+                });
+            }
+        }
+
+        // Current user turn
+        contentsList.Add(new
+        {
+            role = "user",
+            parts = new[]
+            {
+                new { text = prompt.Trim() }
+            }
+        });
+
+        var requestBody = new
+        {
+            contents = contentsList,
             systemInstruction = new
             {
                 parts = new[]

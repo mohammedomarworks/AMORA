@@ -55,6 +55,10 @@ public partial class App : Application
 
         var settingsVm = new SettingsViewModel(aiSettingsService, aiProvider);
 
+        var conversationSession = new ConversationSession(
+            () => aiSettingsService.CurrentSettings.MaxHistoryTurns
+        );
+
         var router = new DeterministicCommandRouter();
         var assistantEngine = new AssistantEngine(
             router,
@@ -62,7 +66,8 @@ public partial class App : Application
             mediaService,
             batteryService,
             telemetryService,
-            aiProvider
+            aiProvider,
+            conversationSession
         );
         var assistantVm = new AssistantCommandViewModel(assistantEngine);
 

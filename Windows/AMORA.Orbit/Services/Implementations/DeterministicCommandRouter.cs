@@ -32,6 +32,12 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
 
         context ??= new CommandContext();
 
+        // 0. Conversation Management
+        if (IsConversationReset(norm))
+        {
+            return new AssistantCommand.ResetConversation();
+        }
+
         // 1. Timer Control Commands
         if (IsTimerCancel(norm))
         {
@@ -322,4 +328,9 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
         actionDesc = string.Empty;
         return false;
     }
+
+    private static bool IsConversationReset(string norm) =>
+        norm is "reset conversation" or "clear conversation" or "reset chat" or "clear chat"
+            or "new conversation" or "start new conversation" or "clear history" or "reset history"
+            or "clear conversation history" or "reset conversation history";
 }

@@ -50,12 +50,14 @@ Windows/
 │   │   ├── AISettings.cs                         # AI provider configuration & test connection results
 │   │   ├── AssistantCommand.cs                   # Strongly-typed discriminated command union
 │   │   ├── AssistantExecutionResult.cs           # Truthful execution outcomes & mood reactions
+│   │   ├── BatterySnapshot.cs                    # Power status with Desktop AC fallback
+│   │   ├── CapsuleBounds.cs                      # Capsule coordinate bounds model
+│   │   ├── ChatMessage.cs                        # Session-only conversational turn (User / Model)
 │   │   ├── MascotExpression.cs                   # Mascot moods and facial expressions
 │   │   ├── MediaTrack.cs                         # Media metadata and playback formatting
-│   │   ├── TimerState.cs                         # Focus timer snapshots and progress
 │   │   ├── ProactiveSuggestion.cs                # Proactive intelligence suggestions
-│   │   ├── BatterySnapshot.cs                    # Power status with Desktop AC fallback
-│   │   └── SystemTelemetrySnapshot.cs            # CPU & RAM hardware metrics
+│   │   ├── SystemTelemetrySnapshot.cs            # CPU & RAM hardware metrics
+│   │   └── TimerState.cs                         # Focus timer snapshots and progress
 │   ├── Services/
 │   │   ├── Contracts/                            # Decoupled service interfaces
 │   │   │   ├── IAIProvider.cs                    # Provider-neutral AI completion contract
@@ -63,6 +65,7 @@ Windows/
 │   │   │   ├── IAssistantCommandRouter.cs        # Contextual command routing interface
 │   │   │   ├── IAssistantEngine.cs               # Assistant execution engine contract
 │   │   │   ├── IBatteryService.cs
+│   │   │   ├── IConversationSession.cs           # Ephemeral multi-turn context contract
 │   │   │   ├── IHotKeyService.cs
 │   │   │   ├── IMediaService.cs
 │   │   │   ├── ISecureCredentialStorage.cs       # Windows DPAPI user-encrypted secret storage
@@ -73,23 +76,24 @@ Windows/
 │   │   │   └── IWindowPositioningService.cs
 │   │   └── Implementations/                      # Windows & Preview implementations
 │   │       ├── AISettingsService.cs              # AI settings persistence & key coordination
-│   │       ├── AssistantEngine.cs                # Unified command execution engine
+│   │       ├── AssistantEngine.cs                # Unified command execution engine with AI tool parsing
+│   │       ├── ConversationSession.cs            # Thread-safe in-memory bounded turn manager
 │   │       ├── DeterministicCommandRouter.cs     # Pattern-based router with contextual disambiguation
 │   │       ├── GeminiAIProvider.cs               # Google Gemini REST API v1beta cloud provider
 │   │       ├── InMemoryCredentialStorage.cs      # In-memory secure storage for tests
 │   │       ├── LocalStubAIProvider.cs            # Safe offline stub provider
-│   │       ├── WindowsCredentialStorage.cs       # Windows DPAPI CurrentUser encrypted storage
-│   │       ├── WindowsWindowPositioningService.cs # Multi-monitor work area & clamp math
-│   │       ├── WindowsBatteryService.cs          # Win32 GetSystemPowerStatus
 │   │       ├── PreviewBatteryService.cs          # Offline / preview battery mock
-│   │       ├── WindowsSystemTelemetryService.cs  # Win32 GetSystemTimes & GlobalMemoryStatusEx
-│   │       ├── PreviewSystemTelemetryService.cs  # Offline / preview telemetry mock
-│   │       ├── WindowsMediaService.cs            # WinRT GlobalSystemMediaTransportControls
 │   │       ├── PreviewMediaService.cs            # Offline / interactive preview media
-│   │       ├── StandardTimerService.cs           # Thread-safe focus countdown timer
+│   │       ├── PreviewSystemTelemetryService.cs  # Offline / preview telemetry mock
 │   │       ├── ProactiveSuggestionService.cs     # Suggestion queue, snooze, and dismiss
+│   │       ├── StandardTimerService.cs           # Thread-safe focus countdown timer
+│   │       ├── TaskbarTrayService.cs             # Win32 Shell_NotifyIcon tray integration
+│   │       ├── WindowsBatteryService.cs          # Win32 GetSystemPowerStatus
+│   │       ├── WindowsCredentialStorage.cs       # Windows DPAPI CurrentUser encrypted storage
 │   │       ├── WindowsHotKeyService.cs           # Win32 RegisterHotKey (Ctrl+Alt+O)
-│   │       └── TaskbarTrayService.cs             # Win32 Shell_NotifyIcon tray integration
+│   │       ├── WindowsMediaService.cs            # WinRT GlobalSystemMediaTransportControls
+│   │       ├── WindowsSystemTelemetryService.cs  # Win32 GetSystemTimes & GlobalMemoryStatusEx
+│   │       └── WindowsWindowPositioningService.cs # Multi-monitor work area & clamp math
 │   ├── ViewModels/                               # MVVM ViewModels
 │   │   ├── AssistantCommandViewModel.cs          # Command input, feedback & confirmation state
 │   │   ├── OrbitViewModel.cs                     # Master capsule state machine
@@ -110,7 +114,9 @@ Windows/
     ├── AMORA.Orbit.Tests.csproj                  # Target: net8.0-windows10.0.19041.0
     ├── AssistantCommandViewModelTests.cs         # Command ViewModel, input tracking & confirmation tests
     ├── AssistantEngineAIToolExecutionTests.cs    # AI natural language interpretation & safe tool execution
+    ├── AssistantEngineConversationTests.cs       # Multi-turn conversation history, follow-up & reset tests
     ├── AssistantEngineTests.cs                   # End-to-end execution, real timers, media & honest failures
+    ├── ConversationSessionTests.cs               # Bounded in-memory turn management & trimming tests
     ├── DeterministicCommandRouterTests.cs        # Command regex parsing, context disambiguation & safety
     ├── GeminiAIProviderTests.cs                  # Mock-HTTP Gemini REST tests (auth, rate limits, timeouts)
     ├── MascotExpressionTests.cs                  # Expression factory state tests
@@ -135,6 +141,7 @@ Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engin
 5. **Real Service Execution (`AssistantEngine`)**: Routes actions directly to registered service instances (`ITimerService`, `IMediaService`, `IBatteryService`, `ISystemTelemetryService`).
 6. **Truthful Outcome Reporting**: Never reports fake success. If an operation cannot be performed (e.g. attempting to resume an already running timer, or pausing when no timer exists), a structured failure status is returned and displayed to the user.
 7. **Allowlisted Consequential Actions**: Consequential or destructive operations (e.g., "reset settings", "clear all memories") require a mandatory two-step confirmation workflow before any mutation is permitted.
+8. **Bounded Session-Only Conversational Context (`ConversationSession`)**: Implements multi-turn conversational follow-up understanding using Gemini's native alternating `user`/`model` content history. Context is held strictly in memory with configurable turn limits (default: 6 turns) and predictable FIFO trimming that guarantees history always starts with a user turn. Never persists conversation content to disk or logs sensitive prompts. Failed requests and cancellations are safely omitted, and conversation can be reset via UI button or deterministic commands.
 
 ---
 

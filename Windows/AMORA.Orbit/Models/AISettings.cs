@@ -10,13 +10,15 @@ public record AISettings(
     string Model = AISettings.DefaultGeminiModel,
     double Temperature = 0.7,
     int MaxOutputTokens = 1024,
-    string? CustomEndpoint = null
+    string? CustomEndpoint = null,
+    int MaxHistoryTurns = AISettings.DefaultMaxHistoryTurns
 )
 {
     public const string ProviderGemini = "gemini";
     public const string ProviderLocalStub = "local_stub";
 
     public const string DefaultGeminiModel = "gemini-2.5-flash";
+    public const int DefaultMaxHistoryTurns = 6;
 
     public static AISettings Default => new();
 }

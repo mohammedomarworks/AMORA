@@ -142,4 +142,16 @@ public class AssistantCommandViewModelTests : IDisposable
         Assert.Empty(_viewModel.StatusMessage);
         Assert.False(_viewModel.HasPendingConfirmation);
     }
+
+    [Fact]
+    public void ResetConversation_ClearsEngineAndUpdatesStatus()
+    {
+        _viewModel.InputText = "some text";
+        _viewModel.ResetConversation();
+
+        Assert.Equal(string.Empty, _viewModel.InputText);
+        Assert.True(_viewModel.HasStatus);
+        Assert.Equal("Conversation reset.", _viewModel.StatusMessage);
+        Assert.Equal(AssistantResultStatus.Information, _viewModel.LastStatus);
+    }
 }

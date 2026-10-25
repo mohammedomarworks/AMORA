@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,8 @@ public class AssistantEngine : IAssistantEngine
     private readonly IBatteryService _batteryService;
     private readonly ISystemTelemetryService _telemetryService;
     private readonly IAIProvider? _aiProvider;
+    private readonly IConversationSession _conversationSession;
+    private readonly SemaphoreSlim _executionLock = new(1, 1);
 
     private Func<Task<AssistantExecutionResult>>? _pendingAction;
     private string? _pendingPrompt;
@@ -29,13 +32,16 @@ public class AssistantEngine : IAssistantEngine
     public bool HasPendingAction => HasPendingConfirmation;
     public string? PendingActionDescription => PendingConfirmationPrompt;
 
+    public IReadOnlyList<ChatMessage> ConversationHistory => _conversationSession.GetHistory();
+
     public AssistantEngine(
         IAssistantCommandRouter router,
         ITimerService timerService,
         IMediaService mediaService,
         IBatteryService batteryService,
         ISystemTelemetryService telemetryService,
-        IAIProvider? aiProvider = null)
+        IAIProvider? aiProvider = null,
+        IConversationSession? conversationSession = null)
     {
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _timerService = timerService ?? throw new ArgumentNullException(nameof(timerService));
@@ -43,6 +49,7 @@ public class AssistantEngine : IAssistantEngine
         _batteryService = batteryService ?? throw new ArgumentNullException(nameof(batteryService));
         _telemetryService = telemetryService ?? throw new ArgumentNullException(nameof(telemetryService));
         _aiProvider = aiProvider;
+        _conversationSession = conversationSession ?? new ConversationSession();
     }
 
     public async Task<AssistantExecutionResult> ExecuteAsync(string input, CancellationToken cancellationToken = default)
@@ -52,41 +59,55 @@ public class AssistantEngine : IAssistantEngine
             return AssistantExecutionResult.Failed("Please enter a command or question.");
         }
 
-        // Cancel any previous pending action if user inputs a new command
-        _pendingAction = null;
-        _pendingPrompt = null;
-
-        var context = BuildCommandContext();
-        var command = _router.Route(input, context);
-
+        await _executionLock.WaitAsync(cancellationToken);
         try
         {
+            // Cancel any previous pending action if user inputs a new command
+            _pendingAction = null;
+            _pendingPrompt = null;
+
+            var context = BuildCommandContext();
+            var command = _router.Route(input, context);
+
             return await DispatchCommandAsync(command, input, context, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             return AssistantExecutionResult.Failed($"Action failed: {ex.Message}");
         }
+        finally
+        {
+            _executionLock.Release();
+        }
     }
 
     public async Task<AssistantExecutionResult> ConfirmPendingActionAsync()
     {
-        if (_pendingAction == null)
-        {
-            return AssistantExecutionResult.Failed("No action is currently pending confirmation.");
-        }
-
-        var action = _pendingAction;
-        _pendingAction = null;
-        _pendingPrompt = null;
-
+        await _executionLock.WaitAsync();
         try
         {
+            if (_pendingAction == null)
+            {
+                return AssistantExecutionResult.Failed("No action is currently pending confirmation.");
+            }
+
+            var action = _pendingAction;
+            _pendingAction = null;
+            _pendingPrompt = null;
+
             return await action();
         }
         catch (Exception ex)
         {
             return AssistantExecutionResult.Failed($"Execution failed: {ex.Message}");
+        }
+        finally
+        {
+            _executionLock.Release();
         }
     }
 
@@ -94,6 +115,11 @@ public class AssistantEngine : IAssistantEngine
     {
         _pendingAction = null;
         _pendingPrompt = null;
+    }
+
+    public void ResetConversation()
+    {
+        _conversationSession.Clear();
     }
 
     private CommandContext BuildCommandContext()
@@ -131,6 +157,8 @@ public class AssistantEngine : IAssistantEngine
 
             AssistantCommand.GetBatteryStatus => HandleGetBatteryStatus(),
             AssistantCommand.GetSystemStatus => HandleGetSystemStatus(),
+
+            AssistantCommand.ResetConversation => HandleResetConversation(),
 
             AssistantCommand.ConsequentialAction consequential => HandleConsequentialAction(consequential),
 
@@ -297,6 +325,12 @@ public class AssistantEngine : IAssistantEngine
         return AssistantExecutionResult.NeedsConfirmation(_pendingPrompt, consequential.ActionId);
     }
 
+    private AssistantExecutionResult HandleResetConversation()
+    {
+        ResetConversation();
+        return AssistantExecutionResult.Success("Conversation history cleared.", MascotMood.Idle);
+    }
+
     private async Task<AssistantExecutionResult> HandleUnknownAsync(
         string rawInput,
         CommandContext context,
@@ -306,7 +340,8 @@ public class AssistantEngine : IAssistantEngine
         {
             try
             {
-                string aiResponse = await _aiProvider.GenerateResponseAsync(rawInput, cancellationToken);
+                var history = _conversationSession.GetHistory();
+                string aiResponse = await _aiProvider.GenerateResponseAsync(rawInput, history, cancellationToken);
 
                 // Check if the AI proposed an allowlisted command
                 var match = CommandTagRegex.Match(aiResponse);
@@ -322,6 +357,9 @@ public class AssistantEngine : IAssistantEngine
                     {
                         var executionResult = await DispatchCommandAsync(parsedCommand, proposedCommand, context, cancellationToken);
 
+                        string recordedModelText = !string.IsNullOrWhiteSpace(cleanText) ? cleanText : aiResponse.Trim();
+                        _conversationSession.AddTurn(rawInput, recordedModelText);
+
                         if (!string.IsNullOrWhiteSpace(cleanText))
                         {
                             return executionResult with
@@ -334,7 +372,12 @@ public class AssistantEngine : IAssistantEngine
                     }
                 }
 
+                _conversationSession.AddTurn(rawInput, aiResponse.Trim());
                 return AssistantExecutionResult.Information(aiResponse.Trim(), MascotMood.Happy);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

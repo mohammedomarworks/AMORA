@@ -99,6 +99,14 @@
 
                     <!-- Header Controls -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <!-- New Conversation Button -->
+                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
+                                Padding="8,4"
+                                ToolTipService.ToolTip="New Conversation (Reset Chat)"
+                                Click="OnResetConversationClicked">
+                            <FontIcon Glyph="&#xE72C;" FontSize="12" />
+                        </Button>
+
                         <!-- Settings Toggle Button -->
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
