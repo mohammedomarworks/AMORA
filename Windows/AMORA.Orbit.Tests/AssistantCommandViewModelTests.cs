@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AMORA.Orbit.Tests;
 
-public class AssistantCommandViewModelTests
+public class AssistantCommandViewModelTests : IDisposable
 {
     private readonly StandardTimerService _timerService;
     private readonly PreviewMediaService _mediaService;
@@ -38,6 +38,11 @@ public class AssistantCommandViewModelTests
             _aiProvider);
 
         _viewModel = new AssistantCommandViewModel(_engine);
+    }
+
+    public void Dispose()
+    {
+        _timerService.Dispose();
     }
 
     [Fact]

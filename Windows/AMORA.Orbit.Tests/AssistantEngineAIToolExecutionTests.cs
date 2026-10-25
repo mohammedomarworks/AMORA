@@ -46,7 +46,6 @@ public class AssistantEngineAIToolExecutionTests : IDisposable
     public void Dispose()
     {
         _timerService.Dispose();
-        _mediaService.Dispose();
     }
 
     [Fact]
