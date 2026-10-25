@@ -203,6 +203,7 @@ final class WindowManager {
                 window.setFrame(collapsedFrame(on: screen), display: true)
             }
             window.orderFrontRegardless()
+            notchManager?.resumeTracking()
             return
         }
 
@@ -686,6 +687,7 @@ final class WindowManager {
                 case .collapsed: target = self.collapsedFrame(on: screen)
                 }
                 window.setFrame(target, display: true)
+                self.notchManager?.updateScreen(screen)
                 self.logGeometry(for: screen)
             }
         }
@@ -701,6 +703,7 @@ final class WindowManager {
         } else {
             islandWindow?.makeKeyAndOrderFront(nil)
         }
+        notchManager?.resumeTracking()
     }
 
     // MARK: - Dashboard / Workspace Bridge + Settings
