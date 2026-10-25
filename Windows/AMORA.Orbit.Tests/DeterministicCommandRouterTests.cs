@@ -174,7 +174,9 @@ public class DeterministicCommandRouterTests
         var command = _router.Route("pause", context);
 
         var unknown = Assert.IsType<AssistantCommand.Unknown>(command);
-        Assert.Contains("timer or music", unknown.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("timer", unknown.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("music", unknown.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("specify", unknown.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
