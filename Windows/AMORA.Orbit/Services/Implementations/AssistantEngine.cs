@@ -21,6 +21,7 @@ public class AssistantEngine : IAssistantEngine
     private readonly ISystemTelemetryService _telemetryService;
     private readonly IAIProvider? _aiProvider;
     private readonly IConversationSession _conversationSession;
+    private readonly Func<AISettings> _settingsProvider;
     private readonly SemaphoreSlim _executionLock = new(1, 1);
 
     private Func<Task<AssistantExecutionResult>>? _pendingAction;
@@ -41,7 +42,8 @@ public class AssistantEngine : IAssistantEngine
         IBatteryService batteryService,
         ISystemTelemetryService telemetryService,
         IAIProvider? aiProvider = null,
-        IConversationSession? conversationSession = null)
+        IConversationSession? conversationSession = null,
+        Func<AISettings>? settingsProvider = null)
     {
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _timerService = timerService ?? throw new ArgumentNullException(nameof(timerService));
@@ -50,6 +52,7 @@ public class AssistantEngine : IAssistantEngine
         _telemetryService = telemetryService ?? throw new ArgumentNullException(nameof(telemetryService));
         _aiProvider = aiProvider;
         _conversationSession = conversationSession ?? new ConversationSession();
+        _settingsProvider = settingsProvider ?? (() => AISettings.Default);
     }
 
     public async Task<AssistantExecutionResult> ExecuteAsync(string input, CancellationToken cancellationToken = default)
@@ -126,12 +129,23 @@ public class AssistantEngine : IAssistantEngine
     {
         var timerSnapshot = _timerService.CurrentTimer;
         var track = _mediaService.CurrentTrack;
+        var battery = _batteryService.GetSnapshot();
+        var telemetry = _telemetryService.GetSnapshot();
+
+        var snapshot = new AmoraContextSnapshot(
+            Timer: timerSnapshot,
+            Media: track,
+            Battery: battery,
+            Telemetry: telemetry,
+            CapturedAt: DateTimeOffset.UtcNow
+        );
 
         return new CommandContext(
             IsTimerActive: timerSnapshot.Status != TimerStatus.None,
             IsTimerRunning: timerSnapshot.Status == TimerStatus.Running,
             IsMediaPlaying: track.IsPlaying,
-            HasTrack: track != MediaTrack.None && !string.IsNullOrWhiteSpace(track.Title)
+            HasTrack: track != MediaTrack.None && !string.IsNullOrWhiteSpace(track.Title),
+            Snapshot: snapshot
         );
     }
 
@@ -157,6 +171,8 @@ public class AssistantEngine : IAssistantEngine
 
             AssistantCommand.GetBatteryStatus => HandleGetBatteryStatus(),
             AssistantCommand.GetSystemStatus => HandleGetSystemStatus(),
+            AssistantCommand.GetTimerStatus => HandleGetTimerStatus(),
+            AssistantCommand.GetMediaStatus => HandleGetMediaStatus(),
 
             AssistantCommand.ResetConversation => HandleResetConversation(),
 
@@ -317,6 +333,38 @@ public class AssistantEngine : IAssistantEngine
         );
     }
 
+    private AssistantExecutionResult HandleGetTimerStatus()
+    {
+        var timer = _timerService.CurrentTimer;
+        if (timer.Status is TimerStatus.None or TimerStatus.Idle)
+        {
+            return AssistantExecutionResult.Information("No active timer running.", MascotMood.Idle);
+        }
+
+        string stateStr = timer.Status == TimerStatus.Paused ? " (paused)" : "";
+        string labelStr = !string.IsNullOrWhiteSpace(timer.Label) ? $" ({timer.Label})" : "";
+        return AssistantExecutionResult.Information(
+            $"{timer.FormattedRemaining} remaining{labelStr}{stateStr}.",
+            timer.Status == TimerStatus.Running ? MascotMood.Focused : MascotMood.Idle
+        );
+    }
+
+    private AssistantExecutionResult HandleGetMediaStatus()
+    {
+        var track = _mediaService.CurrentTrack;
+        if (!_mediaService.IsConnected || track == MediaTrack.None || !track.IsAvailable || string.IsNullOrWhiteSpace(track.Title) || track.Title == "No Media Playing")
+        {
+            return AssistantExecutionResult.Information("No active media playing.", MascotMood.Idle);
+        }
+
+        string stateStr = track.IsPlaying ? "Playing" : "Paused";
+        string artistStr = !string.IsNullOrWhiteSpace(track.Artist) && track.Artist != "None" ? $" by {track.Artist}" : "";
+        return AssistantExecutionResult.Information(
+            $"{stateStr}: {track.Title}{artistStr}.",
+            track.IsPlaying ? MascotMood.Happy : MascotMood.Idle
+        );
+    }
+
     private AssistantExecutionResult HandleConsequentialAction(AssistantCommand.ConsequentialAction consequential)
     {
         _pendingAction = consequential.Execute;
@@ -341,7 +389,20 @@ public class AssistantEngine : IAssistantEngine
             try
             {
                 var history = _conversationSession.GetHistory();
-                string aiResponse = await _aiProvider.GenerateResponseAsync(rawInput, history, cancellationToken);
+                var settings = _settingsProvider();
+                string promptToSend = rawInput;
+
+                // Privacy safeguard: only send status context if user explicitly opt-in enabled it!
+                if (settings.SendStatusContextToAI && context.Snapshot != null)
+                {
+                    string summary = context.Snapshot.ToCompactSummary();
+                    if (!string.IsNullOrWhiteSpace(summary))
+                    {
+                        promptToSend = $"[System Context: {summary}]\n{rawInput}";
+                    }
+                }
+
+                string aiResponse = await _aiProvider.GenerateResponseAsync(promptToSend, history, cancellationToken);
 
                 // Check if the AI proposed an allowlisted command
                 var match = CommandTagRegex.Match(aiResponse);

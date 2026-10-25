@@ -65,12 +65,12 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
         }
 
         // 2. Ambiguous Contextual Pause / Resume
-        if (norm is "pause" or "pause it" or "stop")
+        if (norm is "pause" or "pause it" or "stop" or "stop it" or "hold on")
         {
             if (context.IsTimerRunning && context.IsMediaPlaying)
             {
                 // Both active: ambiguous without explicit target
-                return new AssistantCommand.Unknown(raw, "Both timer or music are active. Please specify 'pause timer' or 'pause music'.");
+                return new AssistantCommand.Unknown(raw, "Both timer and music are active. Please specify 'pause timer' or 'pause music'.");
             }
             if (context.IsTimerRunning)
             {
@@ -88,6 +88,11 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
 
         if (norm is "resume" or "resume it" or "continue")
         {
+            if (context.IsTimerActive && !context.IsTimerRunning && !context.IsMediaPlaying && context.HasTrack)
+            {
+                // Both paused: ambiguous without explicit target
+                return new AssistantCommand.Unknown(raw, "Both timer and music are paused. Please specify 'resume timer' or 'play music'.");
+            }
             if (context.IsTimerActive && !context.IsTimerRunning)
             {
                 return new AssistantCommand.ResumeTimer();
@@ -125,6 +130,16 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
         }
 
         // 4. Status Queries
+        if (IsTimerStatusQuery(norm))
+        {
+            return new AssistantCommand.GetTimerStatus();
+        }
+
+        if (IsMediaQuery(norm))
+        {
+            return new AssistantCommand.GetMediaStatus();
+        }
+
         if (IsBatteryQuery(norm))
         {
             return new AssistantCommand.GetBatteryStatus();
@@ -295,8 +310,24 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
     private static bool IsMediaPrevious(string norm) =>
         norm is "previous" or "previous track" or "previous song" or "back track" or "last track" or "prev track";
 
+    private static bool IsTimerStatusQuery(string norm) =>
+        norm is "how much time is left" or "how much time is left on my timer" or "how much time is left on the timer"
+            or "how much time left" or "time remaining" or "remaining time" or "how long is left"
+            or "how long is left on my timer" or "how long is left on the timer" or "timer status"
+            or "timer remaining" or "check timer" or "time left" or "how much time is on the timer"
+            or "timer state" or "check focus timer";
+
+    private static bool IsMediaQuery(string norm) =>
+        norm is "what is playing" or "what's playing" or "whats playing" or "what song is this"
+            or "what track is this" or "current song" or "current track" or "now playing"
+            or "media status" or "music status" or "what am i listening to" or "song" or "track";
+
     private static bool IsBatteryQuery(string norm) =>
-        norm is "battery" or "battery status" or "power status" or "how much battery" or "battery level" or "power level" or "charge" or "power";
+        norm is "battery" or "battery status" or "power status" or "how much battery" or "battery level"
+            or "power level" or "charge" or "power" or "am i charging" or "is it charging"
+            or "is it plugged in" or "are we charging" or "is the battery charging" or "charging status"
+            or "am i on battery" or "on battery" or "plugged in" or "battery percentage" or "battery percent"
+            or "power state" or "battery state" or "is my laptop charging" or "is my pc charging";
 
     private static bool IsSystemQuery(string norm) =>
         norm is "cpu" or "ram" or "memory" or "system" or "system status" or "hardware" or "specs" or "telemetry" or "cpu usage" or "ram usage" or "memory usage";

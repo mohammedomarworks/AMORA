@@ -77,4 +77,27 @@ public class SettingsViewModelTests
         Assert.Contains("invalid", vm.TestStatusMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("#FF453A", vm.TestStatusColor); // Red
     }
+
+    [Fact]
+    public async Task SettingsViewModel_SendStatusContextToAI_DefaultsFalseAndPersists()
+    {
+        var credStorage = new InMemoryCredentialStorage();
+        var settingsService = new AISettingsService(credStorage);
+        var mockProvider = new MockAIProvider();
+
+        var vm = new SettingsViewModel(settingsService, mockProvider);
+
+        // Privacy check: must default to false!
+        Assert.False(vm.SendStatusContextToAI);
+
+        // Toggle on and save
+        vm.SendStatusContextToAI = true;
+        await vm.SaveAsync();
+
+        Assert.True(settingsService.CurrentSettings.SendStatusContextToAI);
+
+        // Verify newly constructed ViewModel reads persisted setting
+        var vm2 = new SettingsViewModel(settingsService, mockProvider);
+        Assert.True(vm2.SendStatusContextToAI);
+    }
 }

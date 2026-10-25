@@ -16,6 +16,7 @@ public class SettingsViewModel : INotifyPropertyChanged
     private bool _isOpen;
     private string _selectedProvider;
     private string _modelName;
+    private bool _sendStatusContextToAI;
     private string _apiKeyInput = string.Empty;
     private string _maskedApiKey = string.Empty;
     private bool _hasSavedKey;
@@ -32,6 +33,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         var settings = _settingsService.CurrentSettings;
         _selectedProvider = settings.SelectedProvider;
         _modelName = settings.Model;
+        _sendStatusContextToAI = settings.SendStatusContextToAI;
 
         _ = RefreshKeyStatusAsync();
     }
@@ -78,6 +80,19 @@ public class SettingsViewModel : INotifyPropertyChanged
             if (_modelName != value)
             {
                 _modelName = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool SendStatusContextToAI
+    {
+        get => _sendStatusContextToAI;
+        set
+        {
+            if (_sendStatusContextToAI != value)
+            {
+                _sendStatusContextToAI = value;
                 OnPropertyChanged();
             }
         }
@@ -202,7 +217,8 @@ public class SettingsViewModel : INotifyPropertyChanged
         var updated = _settingsService.CurrentSettings with
         {
             SelectedProvider = _selectedProvider,
-            Model = !string.IsNullOrWhiteSpace(_modelName) ? _modelName.Trim() : AISettings.DefaultGeminiModel
+            Model = !string.IsNullOrWhiteSpace(_modelName) ? _modelName.Trim() : AISettings.DefaultGeminiModel,
+            SendStatusContextToAI = _sendStatusContextToAI
         };
 
         await _settingsService.SaveSettingsAsync(updated);

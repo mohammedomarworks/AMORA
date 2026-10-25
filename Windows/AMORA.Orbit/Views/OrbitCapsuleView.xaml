@@ -182,6 +182,13 @@
                                          Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                         </StackPanel>
 
+                        <!-- Context Awareness Privacy Toggle -->
+                        <CheckBox IsChecked="{Binding Settings.SendStatusContextToAI, Mode=TwoWay}"
+                                  Margin="0,2,0,2">
+                            <TextBlock Text="Share system status with AI (active timer, media, power; default: Off)"
+                                       FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" VerticalAlignment="Center" />
+                        </CheckBox>
+
                         <!-- Action Buttons & Status -->
                         <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
                             <Button Grid.Column="0" Style="{StaticResource OrbitPrimaryActionButtonStyle}"

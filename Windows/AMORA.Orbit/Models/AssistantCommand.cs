@@ -25,6 +25,8 @@ public abstract record AssistantCommand
     // Status queries
     public sealed record GetBatteryStatus : AssistantCommand;
     public sealed record GetSystemStatus : AssistantCommand;
+    public sealed record GetTimerStatus : AssistantCommand;
+    public sealed record GetMediaStatus : AssistantCommand;
 
     // Conversation management
     public sealed record ResetConversation : AssistantCommand;

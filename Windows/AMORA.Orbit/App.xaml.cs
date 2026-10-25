@@ -67,7 +67,8 @@ public partial class App : Application
             batteryService,
             telemetryService,
             aiProvider,
-            conversationSession
+            conversationSession,
+            () => aiSettingsService.CurrentSettings
         );
         var assistantVm = new AssistantCommandViewModel(assistantEngine);
 

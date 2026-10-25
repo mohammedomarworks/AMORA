@@ -11,7 +11,8 @@ public record AISettings(
     double Temperature = 0.7,
     int MaxOutputTokens = 1024,
     string? CustomEndpoint = null,
-    int MaxHistoryTurns = AISettings.DefaultMaxHistoryTurns
+    int MaxHistoryTurns = AISettings.DefaultMaxHistoryTurns,
+    bool SendStatusContextToAI = false
 )
 {
     public const string ProviderGemini = "gemini";

@@ -240,6 +240,89 @@ public class DeterministicCommandRouterTests
     }
 
     [Theory]
+    [InlineData("how much time is left")]
+    [InlineData("how much time is left on my timer")]
+    [InlineData("time remaining")]
+    [InlineData("remaining time")]
+    [InlineData("how long is left")]
+    [InlineData("check timer")]
+    [InlineData("timer status")]
+    [InlineData("time left")]
+    public void Route_TimerStatusQueries(string input)
+    {
+        var command = _router.Route(input, DefaultContext);
+        Assert.IsType<AssistantCommand.GetTimerStatus>(command);
+    }
+
+    [Theory]
+    [InlineData("what's playing")]
+    [InlineData("what is playing")]
+    [InlineData("what song is this")]
+    [InlineData("current track")]
+    [InlineData("current song")]
+    [InlineData("now playing")]
+    [InlineData("media status")]
+    public void Route_MediaQueryQueries(string input)
+    {
+        var command = _router.Route(input, DefaultContext);
+        Assert.IsType<AssistantCommand.GetMediaStatus>(command);
+    }
+
+    [Theory]
+    [InlineData("am i charging")]
+    [InlineData("is it charging")]
+    [InlineData("is it plugged in")]
+    [InlineData("charging status")]
+    [InlineData("am i on battery")]
+    [InlineData("on battery")]
+    [InlineData("plugged in")]
+    public void Route_BatteryQueries_ChargingAndStatus(string input)
+    {
+        var command = _router.Route(input, DefaultContext);
+        Assert.IsType<AssistantCommand.GetBatteryStatus>(command);
+    }
+
+    [Fact]
+    public void Route_PauseIt_TimerRunningOnly_RoutesToPauseTimer()
+    {
+        var context = new CommandContext(
+            IsTimerActive: true,
+            IsTimerRunning: true,
+            IsMediaPlaying: false,
+            HasTrack: false);
+
+        var command = _router.Route("pause it", context);
+        Assert.IsType<AssistantCommand.PauseTimer>(command);
+    }
+
+    [Fact]
+    public void Route_PauseIt_MediaPlayingOnly_RoutesToPauseMedia()
+    {
+        var context = new CommandContext(
+            IsTimerActive: false,
+            IsTimerRunning: false,
+            IsMediaPlaying: true,
+            HasTrack: true);
+
+        var command = _router.Route("pause it", context);
+        Assert.IsType<AssistantCommand.PauseMedia>(command);
+    }
+
+    [Fact]
+    public void Route_ResumeIt_WhenBothPaused_RequiresClarification()
+    {
+        var context = new CommandContext(
+            IsTimerActive: true,
+            IsTimerRunning: false, // Timer paused
+            IsMediaPlaying: false,
+            HasTrack: true); // Media has track & paused
+
+        var command = _router.Route("resume it", context);
+        var unknown = Assert.IsType<AssistantCommand.Unknown>(command);
+        Assert.Contains("both timer and music are paused", unknown.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("what is the weather today in Tokyo")]

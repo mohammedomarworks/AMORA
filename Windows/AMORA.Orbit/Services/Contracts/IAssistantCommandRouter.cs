@@ -6,7 +6,8 @@ public record CommandContext(
     bool IsTimerActive = false,
     bool IsTimerRunning = false,
     bool IsMediaPlaying = false,
-    bool HasTrack = false
+    bool HasTrack = false,
+    AmoraContextSnapshot? Snapshot = null
 );
 
 public interface IAssistantCommandRouter
