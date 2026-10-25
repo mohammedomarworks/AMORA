@@ -28,7 +28,8 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         SystemStatusViewModel systemStatus,
         AssistantCommandViewModel assistant,
         IHotKeyService? hotKeyService = null,
-        ITaskbarTrayService? trayService = null)
+        ITaskbarTrayService? trayService = null,
+        SettingsViewModel? settings = null)
     {
         _positioningService = positioningService ?? throw new ArgumentNullException(nameof(positioningService));
         Mascot = mascot ?? throw new ArgumentNullException(nameof(mascot));
@@ -37,6 +38,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         Suggestion = suggestion ?? throw new ArgumentNullException(nameof(suggestion));
         SystemStatus = systemStatus ?? throw new ArgumentNullException(nameof(systemStatus));
         Assistant = assistant ?? throw new ArgumentNullException(nameof(assistant));
+        Settings = settings;
         _hotKeyService = hotKeyService;
         _trayService = trayService;
 
@@ -61,6 +63,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
     public SuggestionViewModel Suggestion { get; }
     public SystemStatusViewModel SystemStatus { get; }
     public AssistantCommandViewModel Assistant { get; }
+    public SettingsViewModel? Settings { get; }
 
     public bool IsExpanded
     {

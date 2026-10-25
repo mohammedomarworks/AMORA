@@ -1,3 +1,7 @@
+using System.Threading;
+using System.Threading.Tasks;
+using AMORA.Orbit.Models;
+
 namespace AMORA.Orbit.Services.Contracts;
 
 /// <summary>
@@ -12,4 +16,7 @@ public interface IAIProvider
     bool IsConfigured { get; }
 
     Task<string> GenerateResponseAsync(string prompt, CancellationToken cancellationToken = default);
+
+    Task<ConnectionTestResult> TestConnectionAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(ConnectionTestResult.Failure("Connectivity test not implemented for this provider."));
 }

@@ -125,4 +125,54 @@ public sealed partial class OrbitCapsuleView : UserControl
             vm.Assistant.CancelConfirmation();
         }
     }
+
+    private void OnSettingsToggleClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Settings != null)
+        {
+            vm.Settings.ToggleOpen();
+        }
+    }
+
+    private void OnCloseSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Settings != null)
+        {
+            vm.Settings.IsOpen = false;
+        }
+    }
+
+    private void OnSettingsApiKeyPasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Settings != null && sender is PasswordBox pb)
+        {
+            vm.Settings.ApiKeyInput = pb.Password;
+        }
+    }
+
+    private async void OnSaveSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Settings != null)
+        {
+            await vm.Settings.SaveAsync();
+            SettingsApiKeyBox.Password = string.Empty;
+        }
+    }
+
+    private async void OnTestConnectionClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Settings != null)
+        {
+            await vm.Settings.TestConnectionAsync();
+        }
+    }
+
+    private async void OnClearKeyClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Settings != null)
+        {
+            await vm.Settings.ClearKeyAsync();
+            SettingsApiKeyBox.Password = string.Empty;
+        }
+    }
 }

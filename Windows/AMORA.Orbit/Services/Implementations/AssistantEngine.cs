@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AMORA.Orbit.Models;
@@ -8,6 +9,10 @@ namespace AMORA.Orbit.Services.Implementations;
 
 public class AssistantEngine : IAssistantEngine
 {
+    private static readonly Regex CommandTagRegex = new(
+        @"\[(?:COMMAND|ACTION):\s*([^\]]+)\]",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly IAssistantCommandRouter _router;
     private readonly ITimerService _timerService;
     private readonly IMediaService _mediaService;
@@ -51,43 +56,12 @@ public class AssistantEngine : IAssistantEngine
         _pendingAction = null;
         _pendingPrompt = null;
 
-        var timerSnapshot = _timerService.CurrentTimer;
-        var track = _mediaService.CurrentTrack;
-
-        var context = new CommandContext(
-            IsTimerActive: timerSnapshot.Status != TimerStatus.None,
-            IsTimerRunning: timerSnapshot.Status == TimerStatus.Running,
-            IsMediaPlaying: track.IsPlaying,
-            HasTrack: track != MediaTrack.None && !string.IsNullOrWhiteSpace(track.Title)
-        );
-
+        var context = BuildCommandContext();
         var command = _router.Route(input, context);
 
         try
         {
-            return command switch
-            {
-                AssistantCommand.StartTimer start => HandleStartTimer(start),
-                AssistantCommand.PauseTimer => HandlePauseTimer(),
-                AssistantCommand.ResumeTimer => HandleResumeTimer(),
-                AssistantCommand.CancelTimer => HandleCancelTimer(),
-                AssistantCommand.AddTimerTime add => HandleAddTimerTime(add),
-
-                AssistantCommand.PlayMedia => await HandlePlayMediaAsync(),
-                AssistantCommand.PauseMedia => await HandlePauseMediaAsync(),
-                AssistantCommand.TogglePlayPauseMedia => await HandleTogglePlayPauseMediaAsync(),
-                AssistantCommand.NextTrack => await HandleNextTrackAsync(),
-                AssistantCommand.PreviousTrack => await HandlePreviousTrackAsync(),
-
-                AssistantCommand.GetBatteryStatus => HandleGetBatteryStatus(),
-                AssistantCommand.GetSystemStatus => HandleGetSystemStatus(),
-
-                AssistantCommand.ConsequentialAction consequential => HandleConsequentialAction(consequential),
-
-                AssistantCommand.Unknown unknown => await HandleUnknownAsync(unknown.RawInput, cancellationToken),
-
-                _ => AssistantExecutionResult.Unsupported($"Unsupported command: {input}")
-            };
+            return await DispatchCommandAsync(command, input, context, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -120,6 +94,50 @@ public class AssistantEngine : IAssistantEngine
     {
         _pendingAction = null;
         _pendingPrompt = null;
+    }
+
+    private CommandContext BuildCommandContext()
+    {
+        var timerSnapshot = _timerService.CurrentTimer;
+        var track = _mediaService.CurrentTrack;
+
+        return new CommandContext(
+            IsTimerActive: timerSnapshot.Status != TimerStatus.None,
+            IsTimerRunning: timerSnapshot.Status == TimerStatus.Running,
+            IsMediaPlaying: track.IsPlaying,
+            HasTrack: track != MediaTrack.None && !string.IsNullOrWhiteSpace(track.Title)
+        );
+    }
+
+    private async Task<AssistantExecutionResult> DispatchCommandAsync(
+        AssistantCommand command,
+        string rawInput,
+        CommandContext context,
+        CancellationToken cancellationToken)
+    {
+        return command switch
+        {
+            AssistantCommand.StartTimer start => HandleStartTimer(start),
+            AssistantCommand.PauseTimer => HandlePauseTimer(),
+            AssistantCommand.ResumeTimer => HandleResumeTimer(),
+            AssistantCommand.CancelTimer => HandleCancelTimer(),
+            AssistantCommand.AddTimerTime add => HandleAddTimerTime(add),
+
+            AssistantCommand.PlayMedia => await HandlePlayMediaAsync(),
+            AssistantCommand.PauseMedia => await HandlePauseMediaAsync(),
+            AssistantCommand.TogglePlayPauseMedia => await HandleTogglePlayPauseMediaAsync(),
+            AssistantCommand.NextTrack => await HandleNextTrackAsync(),
+            AssistantCommand.PreviousTrack => await HandlePreviousTrackAsync(),
+
+            AssistantCommand.GetBatteryStatus => HandleGetBatteryStatus(),
+            AssistantCommand.GetSystemStatus => HandleGetSystemStatus(),
+
+            AssistantCommand.ConsequentialAction consequential => HandleConsequentialAction(consequential),
+
+            AssistantCommand.Unknown => await HandleUnknownAsync(rawInput, context, cancellationToken),
+
+            _ => AssistantExecutionResult.Unsupported($"Unsupported command: {rawInput}")
+        };
     }
 
     private AssistantExecutionResult HandleStartTimer(AssistantCommand.StartTimer start)
@@ -279,14 +297,44 @@ public class AssistantEngine : IAssistantEngine
         return AssistantExecutionResult.NeedsConfirmation(_pendingPrompt, consequential.ActionId);
     }
 
-    private async Task<AssistantExecutionResult> HandleUnknownAsync(string rawInput, CancellationToken cancellationToken)
+    private async Task<AssistantExecutionResult> HandleUnknownAsync(
+        string rawInput,
+        CommandContext context,
+        CancellationToken cancellationToken)
     {
         if (_aiProvider != null && _aiProvider.IsConfigured)
         {
             try
             {
-                string response = await _aiProvider.GenerateResponseAsync(rawInput, cancellationToken);
-                return AssistantExecutionResult.Information(response, MascotMood.Happy);
+                string aiResponse = await _aiProvider.GenerateResponseAsync(rawInput, cancellationToken);
+
+                // Check if the AI proposed an allowlisted command
+                var match = CommandTagRegex.Match(aiResponse);
+                if (match.Success)
+                {
+                    string proposedCommand = match.Groups[1].Value.Trim();
+                    string cleanText = CommandTagRegex.Replace(aiResponse, "").Trim();
+
+                    // Strictly validate and route the proposed action through the deterministic engine
+                    var parsedCommand = _router.Route(proposedCommand, context);
+
+                    if (parsedCommand is not AssistantCommand.Unknown)
+                    {
+                        var executionResult = await DispatchCommandAsync(parsedCommand, proposedCommand, context, cancellationToken);
+
+                        if (!string.IsNullOrWhiteSpace(cleanText))
+                        {
+                            return executionResult with
+                            {
+                                Message = $"{cleanText}\n{executionResult.Message}"
+                            };
+                        }
+
+                        return executionResult;
+                    }
+                }
+
+                return AssistantExecutionResult.Information(aiResponse.Trim(), MascotMood.Happy);
             }
             catch (Exception ex)
             {

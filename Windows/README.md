@@ -47,6 +47,7 @@ Windows/
 │   │   ├── NativeMethods.cs                      # Win32 user32/kernel32/dwmapi/shell32 P/Invoke
 │   │   └── DpiHelper.cs                          # Per-monitor DPI scale factor conversions
 │   ├── Models/
+│   │   ├── AISettings.cs                         # AI provider configuration & test connection results
 │   │   ├── AssistantCommand.cs                   # Strongly-typed discriminated command union
 │   │   ├── AssistantExecutionResult.cs           # Truthful execution outcomes & mood reactions
 │   │   ├── MascotExpression.cs                   # Mascot moods and facial expressions
@@ -58,20 +59,26 @@ Windows/
 │   ├── Services/
 │   │   ├── Contracts/                            # Decoupled service interfaces
 │   │   │   ├── IAIProvider.cs                    # Provider-neutral AI completion contract
+│   │   │   ├── IAISettingsService.cs             # AI settings and secure credential management
 │   │   │   ├── IAssistantCommandRouter.cs        # Contextual command routing interface
 │   │   │   ├── IAssistantEngine.cs               # Assistant execution engine contract
 │   │   │   ├── IBatteryService.cs
 │   │   │   ├── IHotKeyService.cs
 │   │   │   ├── IMediaService.cs
+│   │   │   ├── ISecureCredentialStorage.cs       # Windows DPAPI user-encrypted secret storage
 │   │   │   ├── ISuggestionService.cs
 │   │   │   ├── ISystemTelemetryService.cs
 │   │   │   ├── ITaskbarTrayService.cs
 │   │   │   ├── ITimerService.cs
 │   │   │   └── IWindowPositioningService.cs
 │   │   └── Implementations/                      # Windows & Preview implementations
+│   │       ├── AISettingsService.cs              # AI settings persistence & key coordination
 │   │       ├── AssistantEngine.cs                # Unified command execution engine
 │   │       ├── DeterministicCommandRouter.cs     # Pattern-based router with contextual disambiguation
+│   │       ├── GeminiAIProvider.cs               # Google Gemini REST API v1beta cloud provider
+│   │       ├── InMemoryCredentialStorage.cs      # In-memory secure storage for tests
 │   │       ├── LocalStubAIProvider.cs            # Safe offline stub provider
+│   │       ├── WindowsCredentialStorage.cs       # Windows DPAPI CurrentUser encrypted storage
 │   │       ├── WindowsWindowPositioningService.cs # Multi-monitor work area & clamp math
 │   │       ├── WindowsBatteryService.cs          # Win32 GetSystemPowerStatus
 │   │       ├── PreviewBatteryService.cs          # Offline / preview battery mock
@@ -88,6 +95,7 @@ Windows/
 │   │   ├── OrbitViewModel.cs                     # Master capsule state machine
 │   │   ├── RobotMascotViewModel.cs               # Mascot expressions and interactive reactions
 │   │   ├── MediaControlViewModel.cs              # Media playback controls
+│   │   ├── SettingsViewModel.cs                  # AI provider, DPAPI key management & connection test
 │   │   ├── TimerControlViewModel.cs              # Focus timer controls & presets
 │   │   ├── SuggestionViewModel.cs                # Actionable suggestions
 │   │   └── SystemStatusViewModel.cs              # Battery & telemetry polling loop
@@ -101,15 +109,18 @@ Windows/
 └── AMORA.Orbit.Tests/                            # Unit Test Project
     ├── AMORA.Orbit.Tests.csproj                  # Target: net8.0-windows10.0.19041.0
     ├── AssistantCommandViewModelTests.cs         # Command ViewModel, input tracking & confirmation tests
+    ├── AssistantEngineAIToolExecutionTests.cs    # AI natural language interpretation & safe tool execution
     ├── AssistantEngineTests.cs                   # End-to-end execution, real timers, media & honest failures
     ├── DeterministicCommandRouterTests.cs        # Command regex parsing, context disambiguation & safety
-    ├── PositioningServiceTests.cs                # Work area centering, DPI & clamping tests
-    ├── TimerServiceTests.cs                      # Countdown, pause, resume, and add minute tests
-    ├── BatteryServiceTests.cs                    # Desktop AC vs laptop battery parsing tests
-    ├── TelemetryServiceTests.cs                  # CPU & RAM metric calculations tests
-    ├── SuggestionServiceTests.cs                 # Action execution, snooze, and dismiss tests
+    ├── GeminiAIProviderTests.cs                  # Mock-HTTP Gemini REST tests (auth, rate limits, timeouts)
     ├── MascotExpressionTests.cs                  # Expression factory state tests
-    └── MediaTrackTests.cs                        # Duration formatting & progress percent tests
+    ├── MediaTrackTests.cs                        # Duration formatting & progress percent tests
+    ├── PositioningServiceTests.cs                # Work area centering, DPI & clamping tests
+    ├── SecureCredentialStorageTests.cs           # DPAPI / in-memory credential storage & masking tests
+    ├── SettingsViewModelTests.cs                 # Settings lifecycle, key save/clear & connection testing
+    ├── SuggestionServiceTests.cs                 # Action execution, snooze, and dismiss tests
+    ├── TelemetryServiceTests.cs                  # CPU & RAM metric calculations tests
+    └── TimerServiceTests.cs                      # Countdown, pause, resume, and add minute tests
 ```
 
 ---
@@ -118,10 +129,12 @@ Windows/
 
 Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engine:
 1. **Deterministic Local Router (`DeterministicCommandRouter`)**: Parses user natural language inputs for timer, media, power, and system commands using pattern matching and contextual awareness. If a command like "pause" is ambiguous because both timer and media are active, it prompts the user for clarification rather than making assumptions.
-2. **Real Service Execution (`AssistantEngine`)**: Routes actions directly to registered service instances (`ITimerService`, `IMediaService`, `IBatteryService`, `ISystemTelemetryService`).
-3. **Truthful Outcome Reporting**: Never reports fake success. If an operation cannot be performed (e.g. attempting to resume an already running timer, or pausing when no timer exists), a structured failure status is returned and displayed to the user.
-4. **Allowlisted Consequential Actions**: Consequential or destructive operations (e.g., "reset settings", "clear all memories") require a mandatory two-step confirmation workflow before any mutation is permitted.
-5. **AI Provider Seam (`IAIProvider`)**: Defines an asynchronous completion interface for local or cloud AI models. Credentials and API tokens must be stored in the Windows Credential Manager or protected via Windows DPAPI (`ProtectedData.Protect`), never stored as plaintext in settings files or registry keys. Offline/stub provider reports truthful status when unconfigured.
+2. **Real Cloud AI Provider (`GeminiAIProvider`)**: Implements official Google Gemini v1beta REST API (`gemini-2.5-flash`), providing natural language understanding with zero external SDK bloat. Uses `x-goog-api-key` headers to prevent URL key leakage, handles rate limits (HTTP 429), timeouts, and authentication failures cleanly.
+3. **User-Encrypted Credential Storage (`WindowsCredentialStorage`)**: API keys are encrypted at rest using Windows DPAPI (`DataProtectionScope.CurrentUser`). Keys are never written to plaintext configuration files, logs, or exception messages. Masks keys in the UI and redacts them from diagnostics.
+4. **AI-Connected Safe Tool Execution**: When the cloud AI interprets a user request and proposes an action (e.g. `[COMMAND: start 15m timer]`), the action is routed through the deterministic allowlist engine and executed against the real service. Consequential actions strictly enforce two-step user confirmation.
+5. **Real Service Execution (`AssistantEngine`)**: Routes actions directly to registered service instances (`ITimerService`, `IMediaService`, `IBatteryService`, `ISystemTelemetryService`).
+6. **Truthful Outcome Reporting**: Never reports fake success. If an operation cannot be performed (e.g. attempting to resume an already running timer, or pausing when no timer exists), a structured failure status is returned and displayed to the user.
+7. **Allowlisted Consequential Actions**: Consequential or destructive operations (e.g., "reset settings", "clear all memories") require a mandatory two-step confirmation workflow before any mutation is permitted.
 
 ---
 

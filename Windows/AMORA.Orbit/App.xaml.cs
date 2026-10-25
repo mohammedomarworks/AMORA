@@ -43,9 +43,18 @@ public partial class App : Application
             }
         ));
 
-        // 2. Instantiate ViewModels & Assistant Engine
+        // 2. Instantiate Secure Storage, AI Provider & ViewModels
+        ISecureCredentialStorage credentialStorage = new WindowsCredentialStorage();
+        IAISettingsService aiSettingsService = new AISettingsService(credentialStorage);
+
+        IAIProvider aiProvider = new GeminiAIProvider(
+            () => aiSettingsService.GetApiKeyAsync(AISettings.ProviderGemini),
+            () => aiSettingsService.CurrentSettings
+        );
+
+        var settingsVm = new SettingsViewModel(aiSettingsService, aiProvider);
+
         var router = new DeterministicCommandRouter();
-        var aiProvider = new LocalStubAIProvider();
         var assistantEngine = new AssistantEngine(
             router,
             timerService,
@@ -71,7 +80,8 @@ public partial class App : Application
             systemStatusVm,
             assistantVm,
             hotKeyService,
-            trayService
+            trayService,
+            settingsVm
         );
 
         // 3. Create and activate Window

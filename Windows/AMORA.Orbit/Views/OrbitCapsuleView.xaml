@@ -83,7 +83,7 @@
                 BorderBrush="{StaticResource OrbitBorderBrush}"
                 BorderThickness="1.5"
                 Padding="18,14">
-            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="12">
                 <!-- Header Toolbar -->
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
                     <!-- Branding & Status -->
@@ -99,6 +99,14 @@
 
                     <!-- Header Controls -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <!-- Settings Toggle Button -->
+                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
+                                Padding="8,4"
+                                ToolTipService.ToolTip="AI &amp; Secure Settings"
+                                Click="OnSettingsToggleClicked">
+                            <FontIcon Glyph="&#xE713;" FontSize="13" />
+                        </Button>
+
                         <!-- Pin Toggle Button -->
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
@@ -117,8 +125,89 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Assistant Command Input Bar -->
+                <!-- Settings Panel Drawer (Collapsible) -->
                 <Border Grid.Row="1"
+                        Background="#161822"
+                        BorderBrush="{StaticResource OrbitBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="16"
+                        Padding="14,12"
+                        Visibility="{Binding Settings.IsOpen, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE713;" FontSize="12" Foreground="{StaticResource OrbitCyanAccentBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="AI Provider &amp; Secure Credentials" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource OrbitTextPrimaryBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,2" Click="OnCloseSettingsClicked">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Provider & Model Selection -->
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Text="Provider" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
+                                <TextBox Text="{Binding Settings.SelectedProvider, Mode=TwoWay}"
+                                         FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
+                                         Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Text="Model" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
+                                <TextBox Text="{Binding Settings.ModelName, Mode=TwoWay}"
+                                         FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
+                                         Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- API Key Input & Masked Display -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Google Gemini API Key" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding Settings.MaskedApiKey}" FontSize="10" Foreground="{StaticResource OrbitCyanAccentBrush}"
+                                           Visibility="{Binding Settings.HasSavedKey, Converter={StaticResource BoolToVis}}" />
+                            </Grid>
+                            <PasswordBox x:Name="SettingsApiKeyBox"
+                                         PlaceholderText="Paste Gemini API key (encrypted with Windows DPAPI)..."
+                                         PasswordChanged="OnSettingsApiKeyPasswordChanged"
+                                         FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
+                                         Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                        </StackPanel>
+
+                        <!-- Action Buttons & Status -->
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
+                            <Button Grid.Column="0" Style="{StaticResource OrbitPrimaryActionButtonStyle}"
+                                    Padding="10,4" FontSize="11" Click="OnSaveSettingsClicked">
+                                <TextBlock Text="Save" FontSize="11" />
+                            </Button>
+                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}"
+                                    Padding="10,4" FontSize="11" Click="OnTestConnectionClicked"
+                                    IsEnabled="{Binding Settings.CanTest}">
+                                <TextBlock Text="Test Connection" FontSize="11" />
+                            </Button>
+                            <Button Grid.Column="2" Style="{StaticResource OrbitGhostButtonStyle}"
+                                    Padding="10,4" FontSize="11" Click="OnClearKeyClicked"
+                                    Visibility="{Binding Settings.HasSavedKey, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="Clear Key" FontSize="11" Foreground="#FF453A" />
+                            </Button>
+
+                            <!-- Test / Save Status Indicator -->
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        Visibility="{Binding Settings.HasTestStatus, Converter={StaticResource BoolToVis}}">
+                                <FontIcon Glyph="{Binding Settings.TestStatusGlyph}" FontSize="11" Foreground="{Binding Settings.TestStatusColor}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Settings.TestStatusMessage}" FontSize="10" Foreground="{Binding Settings.TestStatusColor}"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Security Notice -->
+                        <TextBlock Text="&#xE72E; Credentials are encrypted via Windows DPAPI for your user account. Keys are never written to disk in plaintext."
+                                   FontSize="9" Foreground="#6C7280" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Assistant Command Input Bar -->
+                <Border Grid.Row="2"
                         Background="{StaticResource OrbitCardBrush}"
                         BorderBrush="{StaticResource OrbitBorderBrush}"
                         BorderThickness="1"
@@ -212,7 +301,7 @@
                 </Border>
 
                 <!-- Main Content (2 Columns) -->
-                <Grid Grid.Row="2" ColumnDefinitions="210,*" ColumnSpacing="16">
+                <Grid Grid.Row="3" ColumnDefinitions="210,*" ColumnSpacing="16">
                     <!-- LEFT COLUMN: Robot Mascot & Proactive Recommendation -->
                     <Border Grid.Column="0"
                             Background="{StaticResource OrbitCardBrush}"
