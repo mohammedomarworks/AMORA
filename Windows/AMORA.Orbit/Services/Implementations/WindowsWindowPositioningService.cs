@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using AMORA.Orbit.Interop;
+using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 
 namespace AMORA.Orbit.Services.Implementations;
@@ -38,49 +39,81 @@ public class WindowsWindowPositioningService : IWindowPositioningService
         return new DisplayWorkArea(0, 0, 1920, 1080, 96, 1.0);
     }
 
-    public (int X, int Y, int Width, int Height) CalculateCapsuleBounds(
+    public CapsuleBounds CalculateCapsuleBounds(
         IntPtr windowHandle,
         bool isExpanded,
-        int requestedExpandedWidth = 560,
-        int requestedExpandedHeight = 440,
-        int collapsedWidth = 190,
-        int collapsedHeight = 36)
+        int collapsedWidth = 240,
+        int collapsedHeight = 38,
+        int expandedWidth = 660,
+        int expandedHeight = 500
+    )
     {
         var workArea = GetCurrentWorkArea(windowHandle);
-        var scale = workArea.DpiScaleFactor;
 
-        int targetWidthDip = isExpanded ? requestedExpandedWidth : collapsedWidth;
-        int targetHeightDip = isExpanded ? requestedExpandedHeight : collapsedHeight;
+        return CalculateCapsuleBoundsFromWorkArea(
+            workArea.X,
+            workArea.Y,
+            workArea.Width,
+            workArea.Height,
+            workArea.DpiScaleFactor,
+            isExpanded,
+            collapsedWidth,
+            collapsedHeight,
+            expandedWidth,
+            expandedHeight
+        );
+    }
 
-        // Scale to physical pixels
-        int physicalWidth = DpiHelper.LogicalToPhysicalPixels(targetWidthDip, scale);
-        int physicalHeight = DpiHelper.LogicalToPhysicalPixels(targetHeightDip, scale);
+    /// <summary>
+    /// Pure geometry helper: computes top-center capsule bounds from explicit work-area
+    /// coordinates (in physical pixels) and a DPI scale factor. The width/height parameters
+    /// are in DIPs (device-independent pixels).
+    /// </summary>
+    public static CapsuleBounds CalculateCapsuleBoundsFromWorkArea(
+        int workAreaX,
+        int workAreaY,
+        int workAreaWidth,
+        int workAreaHeight,
+        double dpiScale,
+        bool isExpanded,
+        int collapsedWidthDip = 240,
+        int collapsedHeightDip = 38,
+        int expandedWidthDip = 660,
+        int expandedHeightDip = 500
+    )
+    {
+        int targetWidthDip = isExpanded ? expandedWidthDip : collapsedWidthDip;
+        int targetHeightDip = isExpanded ? expandedHeightDip : collapsedHeightDip;
+
+        // Scale DIPs to physical pixels
+        int physicalWidth = DpiHelper.DipToPhysical(targetWidthDip, dpiScale);
+        int physicalHeight = DpiHelper.DipToPhysical(targetHeightDip, dpiScale);
 
         // Max bound safety: never let the expanded panel exceed 95% of work area width or 90% of height
-        int maxWidth = (int)(workArea.Width * 0.95);
-        int maxHeight = (int)(workArea.Height * 0.90);
+        int maxWidth = (int)(workAreaWidth * 0.95);
+        int maxHeight = (int)(workAreaHeight * 0.90);
 
         physicalWidth = Math.Min(physicalWidth, maxWidth);
         physicalHeight = Math.Min(physicalHeight, maxHeight);
 
-        // Center horizontally on active work area
-        int x = workArea.X + (workArea.Width - physicalWidth) / 2;
+        // Center horizontally on active work area (in physical pixels)
+        int x = workAreaX + (workAreaWidth - physicalWidth) / 2;
 
-        // Position at the very top of the active display's work area with an elegant 6px margin
-        int topMarginPhysical = DpiHelper.LogicalToPhysicalPixels(6, scale);
-        int y = workArea.Y + topMarginPhysical;
+        // Position at the very top of the active display's work area with a 6px margin (scaled)
+        int topMarginPhysical = DpiHelper.DipToPhysical(6, dpiScale);
+        int y = workAreaY + topMarginPhysical;
 
         // Bounds clamp
-        if (x < workArea.X) x = workArea.X;
-        if (x + physicalWidth > workArea.X + workArea.Width)
+        if (x < workAreaX) x = workAreaX;
+        if (x + physicalWidth > workAreaX + workAreaWidth)
         {
-            x = workArea.X + workArea.Width - physicalWidth;
+            x = workAreaX + workAreaWidth - physicalWidth;
         }
 
-        return (x, y, physicalWidth, physicalHeight);
+        return new CapsuleBounds(x, y, physicalWidth, physicalHeight);
     }
 
-    public bool IsFullscreenAppActive(IntPtr windowHandle)
+    public bool IsForegroundAppFullscreen(IntPtr windowHandle)
     {
         var fgHwnd = NativeMethods.GetForegroundWindow();
         if (fgHwnd == IntPtr.Zero || fgHwnd == windowHandle) return false;

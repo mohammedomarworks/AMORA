@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
 using AMORA.Orbit.Interop;
+using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 using AMORA.Orbit.Services.Implementations;
 using AMORA.Orbit.ViewModels;

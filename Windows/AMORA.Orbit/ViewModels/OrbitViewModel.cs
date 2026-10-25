@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 
 namespace AMORA.Orbit.ViewModels;
@@ -37,7 +38,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         _hotKeyService = hotKeyService;
         _trayService = trayService;
 
-        _currentBounds = _positioningService.CalculateBounds(IntPtr.Zero, isExpanded: false);
+        _currentBounds = _positioningService.CalculateCapsuleBounds(IntPtr.Zero, isExpanded: false);
 
         if (_hotKeyService != null)
         {
@@ -127,7 +128,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
 
     public bool ExpandedVisibility => _isExpanded;
     public bool CollapsedIndicatorVisibility => !_isExpanded;
-    public string PinIconGlyph => _isPinned ? "\uE718" : "\uE77A"; // Pin / Unpin
+    public string PinIconGlyph => _isPinned ? "" : ""; // Pin / Unpin
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler<CapsuleBounds>? BoundsChanged;
@@ -211,7 +212,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         }
 
         IsVisible = true;
-        var newBounds = _positioningService.CalculateBounds(windowHandle, _isExpanded);
+        var newBounds = _positioningService.CalculateCapsuleBounds(windowHandle, _isExpanded);
         CurrentBounds = newBounds;
         BoundsChanged?.Invoke(this, newBounds);
     }

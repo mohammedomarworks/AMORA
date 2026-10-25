@@ -9,7 +9,7 @@ public class BatteryServiceTests
     [Fact]
     public void DesktopAC_ReportsAccurately()
     {
-        var snapshot = BatterySnapshot.DesktopAC();
+        var snapshot = BatterySnapshot.DesktopAC;
 
         Assert.True(snapshot.IsDesktopAC);
         Assert.True(snapshot.IsPluggedIn);
@@ -21,12 +21,12 @@ public class BatteryServiceTests
     [Fact]
     public void LaptopBattery_Charging_ReportsAccurately()
     {
-        var snapshot = new BatterySnapshot(
-            Percentage: 85,
-            IsCharging: true,
-            IsPluggedIn: true,
-            IsDesktopAC: false,
-            EstimatedTimeRemaining: null);
+        var snapshot = BatterySnapshot.FromBatteryState(
+            percentage: 85,
+            isCharging: true,
+            isPluggedIn: true,
+            isDesktopAC: false,
+            estimatedTimeRemaining: null);
 
         Assert.False(snapshot.IsDesktopAC);
         Assert.True(snapshot.IsCharging);
@@ -36,12 +36,12 @@ public class BatteryServiceTests
     [Fact]
     public void LaptopBattery_Discharging_WithEstimate_ReportsAccurately()
     {
-        var snapshot = new BatterySnapshot(
-            Percentage: 62,
-            IsCharging: false,
-            IsPluggedIn: false,
-            IsDesktopAC: false,
-            EstimatedTimeRemaining: TimeSpan.FromHours(3.5));
+        var snapshot = BatterySnapshot.FromBatteryState(
+            percentage: 62,
+            isCharging: false,
+            isPluggedIn: false,
+            isDesktopAC: false,
+            estimatedTimeRemaining: TimeSpan.FromHours(3.5));
 
         Assert.Equal("62% (~3h 30m remaining)", snapshot.Description);
     }

@@ -19,24 +19,23 @@ public record BatterySnapshot(
         EstimatedRemaining: null
     );
 
-    public static BatterySnapshot DesktopAC() => DesktopAC;
-
-    // Alternative constructor matching named parameters in tests
-    public BatterySnapshot(
-        int Percentage,
-        bool IsCharging,
-        bool IsPluggedIn,
-        bool IsDesktopAC,
-        TimeSpan? EstimatedTimeRemaining
-    ) : this(
-        Percentage,
-        IsCharging,
-        IsPluggedIn,
-        HasBattery: !IsDesktopAC,
-        EstimatedRemaining: EstimatedTimeRemaining
-    )
-    {
-    }
+    /// <summary>
+    /// Convenience factory where <paramref name="isDesktopAC"/> determines whether a physical
+    /// battery is present. Pass <c>true</c> for a desktop PC on direct AC power, or <c>false</c>
+    /// for a laptop with a real battery at <paramref name="percentage"/>.
+    /// </summary>
+    public static BatterySnapshot FromBatteryState(
+        int percentage,
+        bool isCharging,
+        bool isPluggedIn,
+        bool isDesktopAC,
+        TimeSpan? estimatedTimeRemaining = null) => new(
+            Percentage: percentage,
+            IsCharging: isCharging,
+            IsPluggedIn: isPluggedIn,
+            HasBattery: !isDesktopAC,
+            EstimatedRemaining: estimatedTimeRemaining
+        );
 
     public string Description
     {

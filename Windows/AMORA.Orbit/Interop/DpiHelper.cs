@@ -18,13 +18,28 @@ public static class DpiHelper
         }
     }
 
+    public static double GetScaleFactor(uint dpi)
+    {
+        return dpi > 0 ? (double)dpi / StandardDpi : 1.0;
+    }
+
+    public static int DipToPhysical(double dip, double scaleFactor)
+    {
+        return (int)Math.Round(dip * scaleFactor);
+    }
+
     public static int LogicalToPhysicalPixels(double logicalPixels, double scaleFactor)
     {
-        return (int)Math.Round(logicalPixels * scaleFactor);
+        return DipToPhysical(logicalPixels, scaleFactor);
+    }
+
+    public static double PhysicalToDip(int physicalPixels, double scaleFactor)
+    {
+        return scaleFactor > 0 ? physicalPixels / scaleFactor : physicalPixels;
     }
 
     public static double PhysicalToLogicalPixels(int physicalPixels, double scaleFactor)
     {
-        return scaleFactor > 0 ? physicalPixels / scaleFactor : physicalPixels;
+        return PhysicalToDip(physicalPixels, scaleFactor);
     }
 }
