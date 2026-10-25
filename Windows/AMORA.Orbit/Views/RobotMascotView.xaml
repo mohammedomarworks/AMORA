@@ -1,0 +1,92 @@
+<UserControl
+    x:Class="AMORA.Orbit.Views.RobotMascotView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:AMORA.Orbit.ViewModels"
+    mc:Ignorable="d"
+    d:DataContext="{d:DesignInstance Type=vm:RobotMascotViewModel}">
+
+    <Grid Width="96" Height="96" HorizontalAlignment="Center" VerticalAlignment="Center" Tapped="OnTapped">
+        <!-- Ambient Visor Glow -->
+        <Ellipse Width="82" Height="74" Margin="0,16,0,0">
+            <Ellipse.Fill>
+                <RadialGradientBrush Center="0.5,0.5" RadiusX="0.5" RadiusY="0.5">
+                    <GradientStop Color="#3352CCFF" Offset="0" />
+                    <GradientStop Color="#000D0F17" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <!-- Antenna -->
+        <Canvas Width="96" Height="96" IsHitTestVisible="False">
+            <!-- Antenna Stem -->
+            <Path Data="M 48,22 C 48,16 54,12 56,8"
+                  Stroke="#475269"
+                  StrokeThickness="2.5"
+                  StrokeStartLineCap="Round"
+                  StrokeEndLineCap="Round" />
+            <!-- Antenna Bulb -->
+            <Ellipse Canvas.Left="53" Canvas.Top="4" Width="8" Height="8" Fill="#52CCFF" />
+            <!-- Antenna Glow -->
+            <Ellipse Canvas.Left="51" Canvas.Top="2" Width="12" Height="12" Fill="#448CE8FF" />
+        </Canvas>
+
+        <!-- Robot Head Capsule -->
+        <Border Margin="0,18,0,0" Width="80" Height="68"
+                CornerRadius="24"
+                Background="#161822"
+                BorderBrush="#2A2E3D"
+                BorderThickness="1.5">
+            <Grid>
+                <!-- Visor Screen -->
+                <Border Margin="6,6,6,6"
+                        CornerRadius="18"
+                        Background="#08090E"
+                        BorderBrush="#1F2433"
+                        BorderThickness="1">
+                    <Grid>
+                        <!-- Visor Top Glare Highlight -->
+                        <Path Data="M 12,6 Q 34,2 56,6"
+                              Stroke="#22FFFFFF"
+                              StrokeThickness="1.5"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              VerticalAlignment="Top"
+                              HorizontalAlignment="Center" />
+
+                        <!-- Eyes Container -->
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="16"
+                                    Margin="0,0,0,4">
+                            <!-- Left Eye -->
+                            <Grid Width="14" Height="14">
+                                <Ellipse Fill="#52CCFF" Width="12" Height="12" />
+                                <Ellipse Fill="#8CE8FF" Width="5" Height="5" Margin="0,0,3,3" />
+                            </Grid>
+
+                            <!-- Right Eye -->
+                            <Grid Width="14" Height="14">
+                                <Ellipse Fill="#52CCFF" Width="12" Height="12" />
+                                <Ellipse Fill="#8CE8FF" Width="5" Height="5" Margin="0,0,3,3" />
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Gentle Smile Arc -->
+                        <Path Data="M 0,0 Q 6,6 12,0"
+                              Stroke="#52CCFF"
+                              StrokeThickness="2"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Bottom"
+                              Margin="0,0,0,9" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

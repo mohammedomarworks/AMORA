@@ -1,0 +1,39 @@
+name: Windows AMORA Orbit CI
+
+on:
+  push:
+    paths:
+      - 'Windows/**'
+      - '.github/workflows/windows-orbit.yml'
+  pull_request:
+    paths:
+      - 'Windows/**'
+      - '.github/workflows/windows-orbit.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & Test (x64 Release)
+    runs-on: windows-latest
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: 'true'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore Windows/AMORA.sln --runtime win-x64
+
+      - name: Build Solution (Release x64)
+        run: dotnet build Windows/AMORA.sln --configuration Release --runtime win-x64 --no-restore /p:Platform=x64
+
+      - name: Run xUnit Tests (Release x64)
+        run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --runtime win-x64 --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"

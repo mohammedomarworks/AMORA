@@ -1,0 +1,67 @@
+<Application
+    x:Class="AMORA.Orbit.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:converters="using:AMORA.Orbit.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Converters -->
+            <converters:BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+            <!-- AMORA Orbit Theme Colors -->
+            <Color x:Key="OrbitSurfaceColor">#0D0F17</Color>
+            <Color x:Key="OrbitCardColor">#161822</Color>
+            <Color x:Key="OrbitCardSubtleColor">#1C202E</Color>
+            <Color x:Key="OrbitBorderColor">#2A2E3D</Color>
+            <Color x:Key="OrbitCyanAccentColor">#52CCFF</Color>
+            <Color x:Key="OrbitCyanGlowColor">#8CE8FF</Color>
+            <Color x:Key="OrbitTextPrimaryColor">#F0F3F8</Color>
+            <Color x:Key="OrbitTextSecondaryColor">#9AA2B2</Color>
+            <Color x:Key="OrbitTextMutedColor">#646C7E</Color>
+
+            <!-- Brushes -->
+            <SolidColorBrush x:Key="OrbitSurfaceBrush" Color="{StaticResource OrbitSurfaceColor}" />
+            <SolidColorBrush x:Key="OrbitCardBrush" Color="{StaticResource OrbitCardColor}" />
+            <SolidColorBrush x:Key="OrbitCardSubtleBrush" Color="{StaticResource OrbitCardSubtleColor}" />
+            <SolidColorBrush x:Key="OrbitBorderBrush" Color="{StaticResource OrbitBorderColor}" />
+            <SolidColorBrush x:Key="OrbitCyanAccentBrush" Color="{StaticResource OrbitCyanAccentColor}" />
+            <SolidColorBrush x:Key="OrbitCyanGlowBrush" Color="{StaticResource OrbitCyanGlowColor}" />
+            <SolidColorBrush x:Key="OrbitTextPrimaryBrush" Color="{StaticResource OrbitTextPrimaryColor}" />
+            <SolidColorBrush x:Key="OrbitTextSecondaryBrush" Color="{StaticResource OrbitTextSecondaryColor}" />
+            <SolidColorBrush x:Key="OrbitTextMutedBrush" Color="{StaticResource OrbitTextMutedColor}" />
+
+            <!-- Standard Capsule Button Style -->
+            <Style x:Key="OrbitActionButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="#1F2433" />
+                <Setter Property="Foreground" Value="{StaticResource OrbitTextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource OrbitBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <Style x:Key="OrbitPrimaryActionButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource OrbitCyanAccentBrush}" />
+                <Setter Property="Foreground" Value="#090B10" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="14,7" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <Style x:Key="OrbitGhostButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{StaticResource OrbitTextSecondaryBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
