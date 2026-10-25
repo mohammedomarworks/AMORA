@@ -12,6 +12,20 @@ namespace AMORA.Orbit.Tests;
 public class GeminiAIProviderTests
 {
     private const string TestApiKey = "AIzaSy_SuperSecretTestKey_12345";
+    private const string SuccessfulResponseJson = @"
+        {
+            ""candidates"": [
+                {
+                    ""content"": {
+                        ""parts"": [
+                            { ""text"": ""Hello! AMORA is standing by to help you on Windows."" }
+                        ],
+                        ""role"": ""model""
+                    },
+                    ""finishReason"": ""STOP""
+                }
+            ]
+        }";
 
     private class MockHttpMessageHandler : HttpMessageHandler
     {
@@ -45,23 +59,9 @@ public class GeminiAIProviderTests
                 capturedKeyHeader = string.Join(",", values);
             }
 
-            string responseJson = @"{
-                ""candidates"": [
-                    {
-                        ""content"": {
-                            ""parts"": [
-                                { ""text"": ""Hello! AMORA is standing by to help you on Windows."" }
-                            ],
-                            ""role"": ""model""
-                        },
-                        ""finishReason"": ""STOP""
-                    }
-                ]
-            }";
-
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(responseJson)
+                Content = new StringContent(SuccessfulResponseJson)
             };
         });
 
@@ -322,6 +322,8 @@ public class GeminiAIProviderTests
     [InlineData("models/gemini-2.5-flash", "gemini-2.5-flash")]
     [InlineData("MODELS/gemini-1.5-pro", "gemini-1.5-pro")]
     [InlineData("../../etc/passwd", "etcpasswd")]
+    [InlineData("models/../gemini-2.5-flash", "gemini-2.5-flash")]
+    [InlineData("foo\\..\\gemini-custom_model.v1", "foogemini-custom_model.v1")]
     [InlineData("gemini-custom_model.v1", "gemini-custom_model.v1")]
     public void SanitizeModelName_StripsPrefixAndPathTraversal(string? input, string expected)
     {
@@ -340,7 +342,7 @@ public class GeminiAIProviderTests
             capturedUri = req.RequestUri?.ToString();
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(@"{""candidates"":[{""content"":{""parts"":[{""text"":""ok""}]}}}]")
+                Content = new StringContent(SuccessfulResponseJson)
             };
         });
 

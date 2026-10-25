@@ -242,8 +242,19 @@ public class GeminiAIProvider : IAIProvider, IDisposable
             model = model.Substring("models/".Length);
         }
 
-        model = Regex.Replace(model, @"[^a-zA-Z0-9_\-\.]", "");
-        return string.IsNullOrWhiteSpace(model) ? AISettings.DefaultGeminiModel : model;
+        var sanitizedModel = new StringBuilder();
+        foreach (string segment in model.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment is "." or "..")
+            {
+                continue;
+            }
+
+            sanitizedModel.Append(Regex.Replace(segment, @"[^a-zA-Z0-9_\-\.]", ""));
+        }
+
+        string result = sanitizedModel.ToString();
+        return string.IsNullOrWhiteSpace(result) ? AISettings.DefaultGeminiModel : result;
     }
 
     private static string BuildEndpointUrl(string model, string? customEndpoint)
