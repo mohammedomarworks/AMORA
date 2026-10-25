@@ -50,7 +50,7 @@ public class WindowsMediaService : IMediaService
                 var timeline = currentSession.GetTimelineProperties();
                 var playbackInfo = currentSession.GetPlaybackInfo();
 
-                string sourceAppId = currentSession.SourceAppId?.ToLowerInvariant() ?? string.Empty;
+                string sourceAppId = currentSession.SourceAppUserModelId?.ToLowerInvariant() ?? string.Empty;
                 MediaSourceType source = sourceAppId switch
                 {
                     var id when id.Contains("spotify") => MediaSourceType.Spotify,
