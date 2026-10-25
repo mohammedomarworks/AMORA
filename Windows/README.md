@@ -25,6 +25,7 @@ AMORA Orbit is the native Windows companion application for AMORA. Designed spec
 
 ### 2. Right Panel (Controls & Telemetry)
 - **Top Chip Banner**: Notification chip indicating active workspace insights and priority.
+- **Assistant Command Bar**: Quick command input bar with Ask and Clear buttons, real-time status feedback, and two-step confirmation prompts for consequential actions.
 - **Media Player**: Global System Media Transport Controls (GSMTC) integration with Spotify/Apple Music badge, track details, scrub bar, and controls.
 - **Focus Timer**: Quick-start 5m, 15m, and 25m Pomodoro presets, active countdown (`25:00`), pause/resume, and +1m adjustments.
 - **System Telemetry Bar**: Battery / AC power status, live CPU load percentage, and RAM usage gauges.
@@ -46,6 +47,8 @@ Windows/
 │   │   ├── NativeMethods.cs                      # Win32 user32/kernel32/dwmapi/shell32 P/Invoke
 │   │   └── DpiHelper.cs                          # Per-monitor DPI scale factor conversions
 │   ├── Models/
+│   │   ├── AssistantCommand.cs                   # Strongly-typed discriminated command union
+│   │   ├── AssistantExecutionResult.cs           # Truthful execution outcomes & mood reactions
 │   │   ├── MascotExpression.cs                   # Mascot moods and facial expressions
 │   │   ├── MediaTrack.cs                         # Media metadata and playback formatting
 │   │   ├── TimerState.cs                         # Focus timer snapshots and progress
@@ -54,6 +57,9 @@ Windows/
 │   │   └── SystemTelemetrySnapshot.cs            # CPU & RAM hardware metrics
 │   ├── Services/
 │   │   ├── Contracts/                            # Decoupled service interfaces
+│   │   │   ├── IAIProvider.cs                    # Provider-neutral AI completion contract
+│   │   │   ├── IAssistantCommandRouter.cs        # Contextual command routing interface
+│   │   │   ├── IAssistantEngine.cs               # Assistant execution engine contract
 │   │   │   ├── IBatteryService.cs
 │   │   │   ├── IHotKeyService.cs
 │   │   │   ├── IMediaService.cs
@@ -63,6 +69,9 @@ Windows/
 │   │   │   ├── ITimerService.cs
 │   │   │   └── IWindowPositioningService.cs
 │   │   └── Implementations/                      # Windows & Preview implementations
+│   │       ├── AssistantEngine.cs                # Unified command execution engine
+│   │       ├── DeterministicCommandRouter.cs     # Pattern-based router with contextual disambiguation
+│   │       ├── LocalStubAIProvider.cs            # Safe offline stub provider
 │   │       ├── WindowsWindowPositioningService.cs # Multi-monitor work area & clamp math
 │   │       ├── WindowsBatteryService.cs          # Win32 GetSystemPowerStatus
 │   │       ├── PreviewBatteryService.cs          # Offline / preview battery mock
@@ -75,6 +84,7 @@ Windows/
 │   │       ├── WindowsHotKeyService.cs           # Win32 RegisterHotKey (Ctrl+Alt+O)
 │   │       └── TaskbarTrayService.cs             # Win32 Shell_NotifyIcon tray integration
 │   ├── ViewModels/                               # MVVM ViewModels
+│   │   ├── AssistantCommandViewModel.cs          # Command input, feedback & confirmation state
 │   │   ├── OrbitViewModel.cs                     # Master capsule state machine
 │   │   ├── RobotMascotViewModel.cs               # Mascot expressions and interactive reactions
 │   │   ├── MediaControlViewModel.cs              # Media playback controls
@@ -90,6 +100,9 @@ Windows/
 │       └── SystemStatusView.xaml                 # Battery & hardware gauges
 └── AMORA.Orbit.Tests/                            # Unit Test Project
     ├── AMORA.Orbit.Tests.csproj                  # Target: net8.0-windows10.0.19041.0
+    ├── AssistantCommandViewModelTests.cs         # Command ViewModel, input tracking & confirmation tests
+    ├── AssistantEngineTests.cs                   # End-to-end execution, real timers, media & honest failures
+    ├── DeterministicCommandRouterTests.cs        # Command regex parsing, context disambiguation & safety
     ├── PositioningServiceTests.cs                # Work area centering, DPI & clamping tests
     ├── TimerServiceTests.cs                      # Countdown, pause, resume, and add minute tests
     ├── BatteryServiceTests.cs                    # Desktop AC vs laptop battery parsing tests
@@ -98,6 +111,17 @@ Windows/
     ├── MascotExpressionTests.cs                  # Expression factory state tests
     └── MediaTrackTests.cs                        # Duration formatting & progress percent tests
 ```
+
+---
+
+## Assistant Integration & Security Architecture
+
+Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engine:
+1. **Deterministic Local Router (`DeterministicCommandRouter`)**: Parses user natural language inputs for timer, media, power, and system commands using pattern matching and contextual awareness. If a command like "pause" is ambiguous because both timer and media are active, it prompts the user for clarification rather than making assumptions.
+2. **Real Service Execution (`AssistantEngine`)**: Routes actions directly to registered service instances (`ITimerService`, `IMediaService`, `IBatteryService`, `ISystemTelemetryService`).
+3. **Truthful Outcome Reporting**: Never reports fake success. If an operation cannot be performed (e.g. attempting to resume an already running timer, or pausing when no timer exists), a structured failure status is returned and displayed to the user.
+4. **Allowlisted Consequential Actions**: Consequential or destructive operations (e.g., "reset settings", "clear all memories") require a mandatory two-step confirmation workflow before any mutation is permitted.
+5. **AI Provider Seam (`IAIProvider`)**: Defines an asynchronous completion interface for local or cloud AI models. Credentials and API tokens must be stored in the Windows Credential Manager or protected via Windows DPAPI (`ProtectedData.Protect`), never stored as plaintext in settings files or registry keys. Offline/stub provider reports truthful status when unconfigured.
 
 ---
 
@@ -117,7 +141,7 @@ Windows/
 3. Set `AMORA.Orbit` as the Startup Project.
 4. Press `F5` to build and launch AMORA Orbit.
 
-### Build and Test via Command Line (Windows Machine)
+### Build and Test via Command Line (Windows Machine / CI)
 ```cmd
 cd Windows
 dotnet build AMORA.sln -c Release
@@ -125,7 +149,7 @@ dotnet test AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj -c Release
 ```
 
 > [!NOTE]
-> The 7 xUnit test files in `AMORA.Orbit.Tests` were authored and verified for API/model correctness, but Windows App SDK tests require a Windows environment with the Windows App SDK runtime. They cannot be executed on macOS hosts.
+> Unit tests run automatically in GitHub Actions on `windows-latest` via `.github/workflows/windows-orbit.yml`. They test pure C# view models, service contracts, command routing, and execution logic.
 
 ---
 
@@ -135,12 +159,3 @@ The macOS host environment runs Swift/AppKit builds and macOS unit tests. The Wi
 - No shared Swift files or AppKit dependencies are touched by the Windows solution.
 - The 567 macOS unit tests continue to build and pass with zero regressions (`swift test`).
 - The Windows C# code uses standard .NET 8 / WinUI 3 syntax ready for Windows CI/CD pipelines.
-
----
-
-## Phase 6E Roadmap (Shared-Core Integration)
-
-In Phase 6E, AMORA Orbit will connect directly to the shared AMORA application engine:
-1. **Event Bridge**: Hook `AMORA.Orbit` into the shared event sink (`AmoraEventSink`) established in Phase 6C.
-2. **Deterministic Agent Routing**: Connect Orbit suggestion actions to the portable agent loop.
-3. **Local AI / LLM Streaming**: Route local model inference into the Orbit mascot speech bubbles and proactive cards.

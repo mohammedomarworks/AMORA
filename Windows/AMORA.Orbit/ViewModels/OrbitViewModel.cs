@@ -26,6 +26,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         TimerControlViewModel timer,
         SuggestionViewModel suggestion,
         SystemStatusViewModel systemStatus,
+        AssistantCommandViewModel assistant,
         IHotKeyService? hotKeyService = null,
         ITaskbarTrayService? trayService = null)
     {
@@ -35,8 +36,11 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         Timer = timer ?? throw new ArgumentNullException(nameof(timer));
         Suggestion = suggestion ?? throw new ArgumentNullException(nameof(suggestion));
         SystemStatus = systemStatus ?? throw new ArgumentNullException(nameof(systemStatus));
+        Assistant = assistant ?? throw new ArgumentNullException(nameof(assistant));
         _hotKeyService = hotKeyService;
         _trayService = trayService;
+
+        Assistant.ResultReceived += OnAssistantResultReceived;
 
         _currentBounds = _positioningService.CalculateCapsuleBounds(IntPtr.Zero, isExpanded: false);
 
@@ -56,6 +60,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
     public TimerControlViewModel Timer { get; }
     public SuggestionViewModel Suggestion { get; }
     public SystemStatusViewModel SystemStatus { get; }
+    public AssistantCommandViewModel Assistant { get; }
 
     public bool IsExpanded
     {
@@ -232,8 +237,15 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
+    private void OnAssistantResultReceived(object? sender, AssistantExecutionResult result)
+    {
+        Mascot.SetMood(result.Mood, result.Message);
+    }
+
     public void Dispose()
     {
+        Assistant.ResultReceived -= OnAssistantResultReceived;
+
         if (_hotKeyService != null)
         {
             _hotKeyService.HotKeyPressed -= OnHotKeyPressed;

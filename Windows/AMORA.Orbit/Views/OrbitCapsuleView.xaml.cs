@@ -81,4 +81,48 @@ public sealed partial class OrbitCapsuleView : UserControl
             vm.Suggestion.Dismiss();
         }
     }
+
+    private async void OnCommandInputKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Enter)
+        {
+            if (DataContext is OrbitViewModel vm && vm.Assistant.CanSubmit)
+            {
+                e.Handled = true;
+                await vm.Assistant.SubmitAsync();
+            }
+        }
+    }
+
+    private async void OnSubmitCommandClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Assistant.CanSubmit)
+        {
+            await vm.Assistant.SubmitAsync();
+        }
+    }
+
+    private void OnClearCommandClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm)
+        {
+            vm.Assistant.Clear();
+        }
+    }
+
+    private async void OnConfirmCommandClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm)
+        {
+            await vm.Assistant.ConfirmAsync();
+        }
+    }
+
+    private void OnCancelConfirmationClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm)
+        {
+            vm.Assistant.CancelConfirmation();
+        }
+    }
 }

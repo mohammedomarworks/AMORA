@@ -83,7 +83,7 @@
                 BorderBrush="{StaticResource OrbitBorderBrush}"
                 BorderThickness="1.5"
                 Padding="18,14">
-            <Grid RowDefinitions="Auto,*" RowSpacing="14">
+            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
                 <!-- Header Toolbar -->
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
                     <!-- Branding & Status -->
@@ -117,8 +117,102 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- Assistant Command Input Bar -->
+                <Border Grid.Row="1"
+                        Background="{StaticResource OrbitCardBrush}"
+                        BorderBrush="{StaticResource OrbitBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="16"
+                        Padding="12,8">
+                    <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+                        <!-- Input Row -->
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                            <Border Grid.Column="0"
+                                    Width="24" Height="24"
+                                    CornerRadius="12"
+                                    Background="#1C2130"
+                                    VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE756;" FontSize="11" Foreground="{StaticResource OrbitCyanAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+
+                            <TextBox Grid.Column="1"
+                                     x:Name="AssistantInputBox"
+                                     Text="{Binding Assistant.InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="Ask AMORA or command (e.g. 'start 15m timer', 'pause music')..."
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Foreground="{StaticResource OrbitTextPrimaryBrush}"
+                                     FontSize="12"
+                                     VerticalAlignment="Center"
+                                     KeyDown="OnCommandInputKeyDown" />
+
+                            <Button Grid.Column="2"
+                                    Style="{StaticResource OrbitPrimaryActionButtonStyle}"
+                                    Padding="10,4"
+                                    FontSize="11"
+                                    IsEnabled="{Binding Assistant.CanSubmit}"
+                                    Click="OnSubmitCommandClicked"
+                                    ToolTipService.ToolTip="Execute Command (Enter)">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="Ask" FontSize="11" />
+                                    <FontIcon Glyph="&#xE724;" FontSize="10" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button Grid.Column="3"
+                                    Style="{StaticResource OrbitGhostButtonStyle}"
+                                    Padding="6,4"
+                                    Visibility="{Binding Assistant.HasText, Converter={StaticResource BoolToVis}}"
+                                    Click="OnClearCommandClicked"
+                                    ToolTipService.ToolTip="Clear">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Feedback & Confirmation Banner -->
+                        <Grid Grid.Row="1"
+                              Visibility="{Binding Assistant.HasStatus, Converter={StaticResource BoolToVis}}"
+                              ColumnDefinitions="Auto,*,Auto"
+                              ColumnSpacing="8"
+                              Margin="2,0,0,0">
+                            <FontIcon Grid.Column="0"
+                                      Glyph="{Binding Assistant.StatusGlyph}"
+                                      FontSize="12"
+                                      Foreground="{Binding Assistant.StatusColor}"
+                                      VerticalAlignment="Center" />
+
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Assistant.StatusMessage}"
+                                       FontSize="11"
+                                       Foreground="{Binding Assistant.StatusColor}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+
+                            <!-- Confirmation Action Controls -->
+                            <StackPanel Grid.Column="2"
+                                        Orientation="Horizontal"
+                                        Spacing="6"
+                                        Visibility="{Binding Assistant.HasPendingConfirmation, Converter={StaticResource BoolToVis}}">
+                                <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
+                                        Padding="8,3"
+                                        FontSize="10"
+                                        Background="#FF9F0A"
+                                        Click="OnConfirmCommandClicked">
+                                    <TextBlock Text="Confirm" FontSize="10" Foreground="#090B10" FontWeight="SemiBold" />
+                                </Button>
+                                <Button Style="{StaticResource OrbitGhostButtonStyle}"
+                                        Padding="8,3"
+                                        FontSize="10"
+                                        Click="OnCancelConfirmationClicked">
+                                    <TextBlock Text="Cancel" FontSize="10" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+
                 <!-- Main Content (2 Columns) -->
-                <Grid Grid.Row="1" ColumnDefinitions="210,*" ColumnSpacing="16">
+                <Grid Grid.Row="2" ColumnDefinitions="210,*" ColumnSpacing="16">
                     <!-- LEFT COLUMN: Robot Mascot & Proactive Recommendation -->
                     <Border Grid.Column="0"
                             Background="{StaticResource OrbitCardBrush}"

@@ -43,7 +43,19 @@ public partial class App : Application
             }
         ));
 
-        // 2. Instantiate ViewModels
+        // 2. Instantiate ViewModels & Assistant Engine
+        var router = new DeterministicCommandRouter();
+        var aiProvider = new LocalStubAIProvider();
+        var assistantEngine = new AssistantEngine(
+            router,
+            timerService,
+            mediaService,
+            batteryService,
+            telemetryService,
+            aiProvider
+        );
+        var assistantVm = new AssistantCommandViewModel(assistantEngine);
+
         var mascotVm = new RobotMascotViewModel();
         var mediaVm = new MediaControlViewModel(mediaService);
         var timerVm = new TimerControlViewModel(timerService);
@@ -57,6 +69,7 @@ public partial class App : Application
             timerVm,
             suggestionVm,
             systemStatusVm,
+            assistantVm,
             hotKeyService,
             trayService
         );
