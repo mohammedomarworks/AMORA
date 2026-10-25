@@ -30,10 +30,10 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore Dependencies
-        run: dotnet restore Windows/AMORA.sln --runtime win-x64
+        run: dotnet restore Windows/AMORA.sln
 
       - name: Build Solution (Release x64)
-        run: dotnet build Windows/AMORA.sln --configuration Release --runtime win-x64 --no-restore /p:Platform=x64
+        run: dotnet build Windows/AMORA.sln --configuration Release --no-restore /p:Platform=x64
 
       - name: Run xUnit Tests (Release x64)
-        run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --runtime win-x64 --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"
+        run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"
