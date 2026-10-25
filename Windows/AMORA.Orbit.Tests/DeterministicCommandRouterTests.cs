@@ -20,7 +20,9 @@ public class DeterministicCommandRouterTests
     [InlineData("start 10m timer", 10, "Timer")]
     [InlineData("timer 25m Focus Session", 25, "Focus Session")]
     [InlineData("pomodoro", 25, "Pomodoro")]
+    [InlineData("POMODORO", 25, "Pomodoro")]
     [InlineData("start a 1 hour timer for Deep Work", 60, "Deep Work")]
+    [InlineData("start a 1 hour timer for Deep   Work", 60, "Deep   Work")]
     [InlineData("set 45 min timer", 45, "Timer")]
     public void Route_StartTimer_Minutes(string input, double expectedMinutes, string expectedLabel)
     {

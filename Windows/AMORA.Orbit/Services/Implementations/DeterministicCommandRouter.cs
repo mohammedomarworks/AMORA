@@ -53,7 +53,7 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
             return new AssistantCommand.AddTimerTime(addDuration);
         }
 
-        if (TryParseTimerStart(norm, out var startDuration, out var timerLabel))
+        if (TryParseTimerStart(norm, raw, out var startDuration, out var timerLabel))
         {
             return new AssistantCommand.StartTimer(startDuration, timerLabel);
         }
@@ -189,7 +189,7 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
         return false;
     }
 
-    private static bool TryParseTimerStart(string norm, out TimeSpan duration, out string label)
+    private static bool TryParseTimerStart(string norm, string raw, out TimeSpan duration, out string label)
     {
         duration = TimeSpan.Zero;
         label = "Timer";
@@ -201,14 +201,15 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
             return true;
         }
 
-        var match = TimerStartRegex.Match(norm);
+        string rawForMatch = raw.TrimEnd('.', '!', '?', ',');
+        var match = TimerStartRegex.Match(rawForMatch);
         if (!match.Success)
         {
-            var cdMatch = CountdownPrefixRegex.Match(norm);
+            var cdMatch = CountdownPrefixRegex.Match(rawForMatch);
             if (cdMatch.Success && int.TryParse(cdMatch.Groups[1].Value, out int cdVal))
             {
                 string cdUnit = cdMatch.Groups[2].Value;
-                int secs = cdUnit.StartsWith("m") ? cdVal * 60 : cdVal;
+                int secs = cdUnit.StartsWith("m", StringComparison.OrdinalIgnoreCase) ? cdVal * 60 : cdVal;
                 duration = TimeSpan.FromSeconds(secs);
                 label = cdMatch.Groups[3].Success && !string.IsNullOrWhiteSpace(cdMatch.Groups[3].Value)
                     ? cdMatch.Groups[3].Value.Trim()
@@ -232,9 +233,9 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
         foreach (var (v, u) in new[] { (val1, unit1), (val2, unit2) })
         {
             if (string.IsNullOrEmpty(u)) continue;
-            if (u.StartsWith("h")) totalSeconds += v * 3600;
-            else if (u.StartsWith("m")) totalSeconds += v * 60;
-            else if (u.StartsWith("s")) totalSeconds += v;
+            if (u.StartsWith("h", StringComparison.OrdinalIgnoreCase)) totalSeconds += v * 3600;
+            else if (u.StartsWith("m", StringComparison.OrdinalIgnoreCase)) totalSeconds += v * 60;
+            else if (u.StartsWith("s", StringComparison.OrdinalIgnoreCase)) totalSeconds += v;
         }
 
         if (totalSeconds <= 0)
@@ -244,25 +245,26 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
 
         duration = TimeSpan.FromSeconds(totalSeconds);
 
-        if (norm.Contains("countdown"))
+        string normalizedLabel = Normalize(rawLabel);
+        if ((string.IsNullOrWhiteSpace(rawLabel) && norm.Contains("countdown")) || normalizedLabel == "countdown")
         {
             label = "Countdown";
         }
-        else if (norm.Contains("pomodoro"))
+        else if (normalizedLabel == "pomodoro")
         {
             label = "Pomodoro";
         }
-        else if (norm.Contains("break"))
+        else if (normalizedLabel == "break")
         {
             label = "Break";
         }
-        else if (norm.Contains("sprint"))
+        else if (normalizedLabel == "sprint")
         {
             label = "Sprint";
         }
         else if (!string.IsNullOrWhiteSpace(rawLabel))
         {
-            string clean = Regex.Replace(rawLabel, @"\btimer\b", "", RegexOptions.IgnoreCase).Trim();
+            string clean = rawLabel.Trim();
             if (!string.IsNullOrWhiteSpace(clean))
             {
                 label = clean;
