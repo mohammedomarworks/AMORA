@@ -5,14 +5,17 @@ import Foundation
 public final class AmoraActionEngine: Sendable {
     public let registry: AmoraActionRegistry
     public let decider: any AmoraActionDeciding
+    public let eventSink: any AmoraEventSinking
     public static let shared = AmoraActionEngine.makeDefault()
 
     public init(
         registry: AmoraActionRegistry,
-        decider: any AmoraActionDeciding = AmoraActionDecisionEngine()
+        decider: any AmoraActionDeciding = AmoraActionDecisionEngine(),
+        eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) {
         self.registry = registry
         self.decider = decider
+        self.eventSink = eventSink
     }
 
     /// Factory configuring the action engine with production dependencies.
@@ -24,7 +27,8 @@ public final class AmoraActionEngine: Sendable {
         timerController: any AmoraTimerControlling = DefaultAmoraTimerController(),
         memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared,
         memoryService: AmoraMemoryService = .shared,
-        decider: any AmoraActionDeciding = AmoraActionDecisionEngine()
+        decider: any AmoraActionDeciding = AmoraActionDecisionEngine(),
+        eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
         registerDefaultActions(
@@ -37,7 +41,7 @@ public final class AmoraActionEngine: Sendable {
             memoryStore: memoryStore,
             memoryService: memoryService
         )
-        return AmoraActionEngine(registry: registry, decider: decider)
+        return AmoraActionEngine(registry: registry, decider: decider, eventSink: eventSink)
     }
 
     /// Factory configuring the action engine with controlled evaluation adapters
@@ -46,7 +50,8 @@ public final class AmoraActionEngine: Sendable {
         onAppOpen: (@Sendable (URL) -> Void)? = nil,
         onFolderOpen: (@Sendable (URL) -> Void)? = nil,
         memoryStore: any AmoraMemoryStoring = AmoraMemoryStore(storage: AmoraInMemoryStorage()),
-        memoryService: AmoraMemoryService = .shared
+        memoryService: AmoraMemoryService = .shared,
+        eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
         registerDefaultActions(
@@ -59,19 +64,19 @@ public final class AmoraActionEngine: Sendable {
             memoryStore: memoryStore,
             memoryService: memoryService
         )
-        return AmoraActionEngine(registry: registry, decider: AmoraActionDecisionEngine())
+        return AmoraActionEngine(registry: registry, decider: AmoraActionDecisionEngine(), eventSink: eventSink)
     }
 
     /// Executes a strongly typed `AmoraAction`.
     public func execute(_ action: AmoraAction, context: AmoraActionContext = .init()) async -> AmoraActionResult {
-        AMORAEventCenter.shared.emit(.commandProcessing)
+        eventSink.emit(.commandProcessing)
 
         guard let definition = registry.definition(for: action.identifier) else {
             let result = AmoraActionResult.unavailable(
                 actionId: action.identifier,
                 message: "Action '\(action.identifier)' is not registered in the Action Engine."
             )
-            AMORAEventCenter.shared.emit(.commandFailed)
+            eventSink.emit(.commandFailed)
             return result
         }
 
@@ -80,11 +85,11 @@ public final class AmoraActionEngine: Sendable {
         switch validation {
         case .invalid(let reason):
             let result = AmoraActionResult.invalidInput(actionId: action.identifier, message: reason)
-            AMORAEventCenter.shared.emit(.commandFailed)
+            eventSink.emit(.commandFailed)
             return result
         case .requiresConfirmation(let prompt) where !context.isConfirmed:
             let result = AmoraActionResult.needsConfirmation(actionId: action.identifier, prompt: prompt)
-            AMORAEventCenter.shared.emit(.commandFailed)
+            eventSink.emit(.commandFailed)
             return result
         case .valid, .requiresConfirmation:
             break
@@ -96,7 +101,7 @@ public final class AmoraActionEngine: Sendable {
             let decision = decider.decide(action: action, context: context)
             if case let .alreadyInState(actionId, message, data) = decision {
                 let result = AmoraActionResult.alreadyInState(actionId: actionId, message: message, data: data)
-                AMORAEventCenter.shared.emit(.commandSucceeded)
+                eventSink.emit(.commandSucceeded)
                 return result
             }
         }
@@ -107,7 +112,7 @@ public final class AmoraActionEngine: Sendable {
             switch confirmation {
             case .required(let prompt):
                 let result = AmoraActionResult.needsConfirmation(actionId: action.identifier, prompt: prompt)
-                AMORAEventCenter.shared.emit(.commandFailed)
+                eventSink.emit(.commandFailed)
                 return result
             case .notRequired:
                 break
@@ -118,15 +123,15 @@ public final class AmoraActionEngine: Sendable {
         let result = await definition.handler(action, context)
         switch result.status {
         case .success:
-            AMORAEventCenter.shared.emit(.commandSucceeded)
+            eventSink.emit(.commandSucceeded)
         case .failed, .invalidInput, .unavailable, .needsConfirmation:
-            AMORAEventCenter.shared.emit(.commandFailed)
+            eventSink.emit(.commandFailed)
         case .notPermitted:
             let isCancelled = AmoraActionExecutionCoordinator.shared.isCancelled
                 || result.data["reason"] == "command_cancelled"
                 || result.message.localizedCaseInsensitiveContains("cancelled")
             if !isCancelled {
-                AMORAEventCenter.shared.emit(.commandFailed)
+                eventSink.emit(.commandFailed)
             }
         }
         return result
@@ -143,7 +148,7 @@ public final class AmoraActionEngine: Sendable {
             return []
         }
 
-        AMORAEventCenter.shared.emit(.commandProcessing)
+        eventSink.emit(.commandProcessing)
         if !coordinator.isCancelled {
             coordinator.beginSequence(actions)
         }
@@ -265,9 +270,9 @@ public final class AmoraActionEngine: Sendable {
         coordinator.finishSequence(results: results)
         let allSucceeded = results.allSatisfy { $0.status == .success }
         if allSucceeded {
-            AMORAEventCenter.shared.emit(.commandSucceeded)
+            eventSink.emit(.commandSucceeded)
         } else {
-            AMORAEventCenter.shared.emit(.commandFailed)
+            eventSink.emit(.commandFailed)
         }
 
         return results

@@ -142,6 +142,7 @@ final class MusicService {
     var browserMediaState: BrowserMediaState?
     var unavailableMessage: String?
     var preferredSource: MediaSource?
+    var eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
 
     private(set) var controlPending = false
     private(set) var controlError: String?
@@ -430,11 +431,11 @@ final class MusicService {
         // Emit personality events
         if hasPolledOnce {
             if isPlaying && !wasPlaying {
-                AMORAEventCenter.shared.emit(.musicStarted)
+                eventSink.emit(.musicStarted)
             } else if !isPlaying && wasPlaying {
-                AMORAEventCenter.shared.emit(isAvailable ? .musicPaused : .musicStopped)
+                eventSink.emit(isAvailable ? .musicPaused : .musicStopped)
             } else if (source != previousSource || trackTitle != previousTitle) && isAvailable {
-                AMORAEventCenter.shared.emit(.musicChanged)
+                eventSink.emit(.musicChanged)
             }
         }
         hasPolledOnce = true

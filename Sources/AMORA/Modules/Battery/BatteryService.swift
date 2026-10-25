@@ -20,6 +20,7 @@ final class BatteryService {
     }
 
     private(set) var estimateState: EstimateState = .powerConnected
+    var eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
 
     var timeRemainingDescription: String {
         switch estimateState {
@@ -119,7 +120,7 @@ final class BatteryService {
     /// reacts once when something changes rather than nagging on every poll.
     private func detectBatteryEvents(oldLevel: Int, oldCharging: Bool, hadBaseline: Bool) {
         guard hadBaseline, hasBattery else { return }
-        let events = AMORAEventCenter.shared
+        let events = eventSink
 
         if isCharging && !oldCharging {
             events.emit(.charging)

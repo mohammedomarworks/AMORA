@@ -18,6 +18,7 @@ final class NotesService {
     static let shared = NotesService()
 
     var notes: [NoteItem] = []
+    var eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     private var defaults: UserDefaults
     private var userDefaultsKey: String
 
@@ -48,7 +49,7 @@ final class NotesService {
         let note = NoteItem(text: trimmed, date: date)
         notes.insert(note, at: 0)
         saveNotes()
-        AMORAEventCenter.shared.emit(.noteCreated)
+        eventSink.emit(.noteCreated)
     }
 
     func deleteNote(at index: Int) {

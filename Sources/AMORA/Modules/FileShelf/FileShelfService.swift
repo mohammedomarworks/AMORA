@@ -57,6 +57,7 @@ public final class FileShelfService {
 
     public var items: [ShelfItem] = []
     public var lastErrorMessage: String? = nil
+    public var eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
 
     private let fileManager = FileManager.default
     private let storageURL: URL
@@ -91,7 +92,7 @@ public final class FileShelfService {
         print("[FILESHELF] actual storage path = \(storageURL.path)")
         let writeSucceeded = saveItems()
         print("[FILESHELF] saveItems result = \(writeSucceeded)")
-        AMORAEventCenter.shared.emit(.fileReceived)
+        eventSink.emit(.fileReceived)
     }
 
     public func removeItem(id: UUID) {

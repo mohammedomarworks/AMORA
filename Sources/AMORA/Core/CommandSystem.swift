@@ -323,6 +323,7 @@ final class AMORACommandHistory {
 final class AMORACommandRouter {
     static let shared = AMORACommandRouter()
     private(set) var context = AMORACommandContext()
+    var eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
 
     private init() {}
 
@@ -334,7 +335,7 @@ final class AMORACommandRouter {
     }
 
     func execute(_ command: AMORACommand) -> AMORACommandResult {
-        AMORAEventCenter.shared.emit(.commandProcessing)
+        eventSink.emit(.commandProcessing)
         let result: AMORACommandResult
         switch command {
         case let .startTimer(duration):
@@ -504,10 +505,10 @@ final class AMORACommandRouter {
 
         switch result {
         case .success:
-            AMORAEventCenter.shared.emit(.commandSucceeded)
+            eventSink.emit(.commandSucceeded)
             AmoraConversationContextManager.shared.recordCommand(command, date: Date())
         case .failure, .unsupported, .needsInformation, .needsConfirmation:
-            AMORAEventCenter.shared.emit(.commandFailed)
+            eventSink.emit(.commandFailed)
         }
         context.lastCommand = command
         return result

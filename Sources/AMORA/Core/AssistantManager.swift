@@ -20,17 +20,20 @@ final class AssistantManager {
     private(set) var conversation = AIConversation()
     private var requestTask: Task<String, Never>?
     private let actionEngine: AmoraActionEngine
+    public var eventSink: any AmoraEventSinking
     private(set) var lastLoopResult: AmoraAgentLoop.LoopResult?
 
     init(
         provider: any AIProvider,
         providerIsInjected: Bool = true,
         memoryStore: (any AmoraMemoryStoring)? = nil,
-        actionEngine: AmoraActionEngine = .shared
+        actionEngine: AmoraActionEngine = .shared,
+        eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) {
         self.provider = provider
         self.providerIsInjected = providerIsInjected
         self.actionEngine = actionEngine
+        self.eventSink = eventSink
         if let memoryStore {
             self.memoryStore = memoryStore
             self.memoryStoreIsInjected = true
@@ -123,7 +126,7 @@ final class AssistantManager {
                     self.state = .cancelled
                     self.response = answer
                     AMORAContext.shared.setAIResponse(answer)
-                    AMORAEventCenter.shared.emit(.aiCancelled)
+                    eventSink.emit(.aiCancelled)
                     return answer
                 }
 
@@ -132,9 +135,9 @@ final class AssistantManager {
                 AMORAContext.shared.setAIResponse(answer)
                 let allSucceeded = results.allSatisfy { $0.status == .success }
                 if allSucceeded {
-                    AMORAEventCenter.shared.emit(.aiSucceeded)
+                    eventSink.emit(.aiSucceeded)
                 } else {
-                    AMORAEventCenter.shared.emit(.aiFailed)
+                    eventSink.emit(.aiFailed)
                 }
                 return answer
             case .resolvedCommand(let cmd):
@@ -148,9 +151,9 @@ final class AssistantManager {
                 response = answer
                 AMORAContext.shared.setAIResponse(answer)
                 if case .success = result {
-                    AMORAEventCenter.shared.emit(.aiSucceeded)
+                    eventSink.emit(.aiSucceeded)
                 } else {
-                    AMORAEventCenter.shared.emit(.aiFailed)
+                    eventSink.emit(.aiFailed)
                 }
                 return answer
             case .unhandled:
@@ -168,7 +171,7 @@ final class AssistantManager {
             let fallback = "AI Assistant is turned off in Settings."
             response = fallback
             AMORAContext.shared.setAIResponse(fallback)
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
             return fallback
         }
 
@@ -200,7 +203,7 @@ final class AssistantManager {
                     self.state = .cancelled
                     self.response = answer
                     AMORAContext.shared.setAIResponse(answer)
-                    AMORAEventCenter.shared.emit(.aiCancelled)
+                    eventSink.emit(.aiCancelled)
                     return answer
                 }
 
@@ -209,9 +212,9 @@ final class AssistantManager {
                 AMORAContext.shared.setAIResponse(answer)
                 let allSucceeded = results.allSatisfy { $0.status == .success }
                 if allSucceeded {
-                    AMORAEventCenter.shared.emit(.aiSucceeded)
+                    eventSink.emit(.aiSucceeded)
                 } else {
-                    AMORAEventCenter.shared.emit(.aiFailed)
+                    eventSink.emit(.aiFailed)
                 }
                 return answer
             }
@@ -221,7 +224,7 @@ final class AssistantManager {
             let fallback = message(for: lastError!)
             response = fallback
             AMORAContext.shared.setAIResponse(fallback)
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
             return fallback
         }
 
@@ -229,7 +232,7 @@ final class AssistantManager {
         response = nil
         lastError = nil
         AMORAContext.shared.setAIResponse(nil)
-        AMORAEventCenter.shared.emit(.aiThinking)
+        eventSink.emit(.aiThinking)
         AmoraActionExecutionCoordinator.shared.beginThinking()
 
         // Deterministic-first routing: clear, supported single requests and compound
@@ -273,7 +276,7 @@ final class AssistantManager {
                 self.state = .cancelled
                 self.response = answer
                 AMORAContext.shared.setAIResponse(answer)
-                AMORAEventCenter.shared.emit(.aiCancelled)
+                eventSink.emit(.aiCancelled)
                 return answer
             }
 
@@ -281,20 +284,20 @@ final class AssistantManager {
             response = answer
             AMORAContext.shared.setAIResponse(answer)
             if loopResult.completedSuccessfully {
-                AMORAEventCenter.shared.emit(.aiSucceeded)
+                eventSink.emit(.aiSucceeded)
             } else {
-                AMORAEventCenter.shared.emit(.aiFailed)
+                eventSink.emit(.aiFailed)
             }
             return answer
         } catch is CancellationError {
             state = .cancelled
             lastError = .cancelled
-            AMORAEventCenter.shared.emit(.aiCancelled)
+            eventSink.emit(.aiCancelled)
             return "Okay — stopped."
         } catch let error as AIProviderError {
             state = .failed
             lastError = error
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
             let message = self.message(for: error)
             response = message
             AMORAContext.shared.setAIResponse(message)
@@ -302,7 +305,7 @@ final class AssistantManager {
         } catch {
             state = .failed
             lastError = .networkFailure
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
             response = "I can't reach that AI service right now."
             AMORAContext.shared.setAIResponse(response)
             return response!
@@ -338,7 +341,7 @@ final class AssistantManager {
             state = .cancelled
             response = answer
             AMORAContext.shared.setAIResponse(answer)
-            AMORAEventCenter.shared.emit(.aiCancelled)
+            eventSink.emit(.aiCancelled)
             return answer
         }
 
@@ -346,9 +349,9 @@ final class AssistantManager {
         response = answer
         AMORAContext.shared.setAIResponse(answer)
         if result.completedSuccessfully {
-            AMORAEventCenter.shared.emit(.aiSucceeded)
+            eventSink.emit(.aiSucceeded)
         } else {
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
         }
         return answer
     }
@@ -422,7 +425,7 @@ final class AssistantManager {
             state = .cancelled
             response = answer
             AMORAContext.shared.setAIResponse(answer)
-            AMORAEventCenter.shared.emit(.aiCancelled)
+            eventSink.emit(.aiCancelled)
             return answer
         }
 
@@ -431,9 +434,9 @@ final class AssistantManager {
         AMORAContext.shared.setAIResponse(answer)
 
         if allSucceeded {
-            AMORAEventCenter.shared.emit(.aiSucceeded)
+            eventSink.emit(.aiSucceeded)
         } else {
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
         }
 
         return answer
@@ -542,7 +545,7 @@ final class AssistantManager {
         response = nil
         lastError = nil
         AMORAContext.shared.setAIResponse(nil)
-        AMORAEventCenter.shared.emit(.aiThinking)
+        eventSink.emit(.aiThinking)
 
         let answer: String
         var isSuccess = true
@@ -681,11 +684,11 @@ final class AssistantManager {
         response = answer
         AMORAContext.shared.setAIResponse(answer)
         if isConfirmationPrompt {
-            AMORAEventCenter.shared.emit(.aiCancelled)
+            eventSink.emit(.aiCancelled)
         } else if isSuccess {
-            AMORAEventCenter.shared.emit(.aiSucceeded)
+            eventSink.emit(.aiSucceeded)
         } else {
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
         }
         return MemoryCommandOutcome(message: answer, isSuccess: isSuccess, isConfirmationPrompt: isConfirmationPrompt)
     }
@@ -695,7 +698,7 @@ final class AssistantManager {
         response = nil
         lastError = nil
         AMORAContext.shared.setAIResponse(nil)
-        AMORAEventCenter.shared.emit(.aiThinking)
+        eventSink.emit(.aiThinking)
 
         let answer: String
         let service = AmoraAutomationService.shared
@@ -801,11 +804,11 @@ final class AssistantManager {
         response = answer
         AMORAContext.shared.setAIResponse(answer)
         if isConfirmationPrompt {
-            AMORAEventCenter.shared.emit(.aiCancelled)
+            eventSink.emit(.aiCancelled)
         } else if isSuccess {
-            AMORAEventCenter.shared.emit(.aiSucceeded)
+            eventSink.emit(.aiSucceeded)
         } else {
-            AMORAEventCenter.shared.emit(.aiFailed)
+            eventSink.emit(.aiFailed)
         }
         return answer
     }
@@ -816,7 +819,7 @@ final class AssistantManager {
         AmoraActionExecutionCoordinator.shared.cancelExecution()
         if state == .thinking {
             state = .cancelled
-            AMORAEventCenter.shared.emit(.aiCancelled)
+            eventSink.emit(.aiCancelled)
         }
     }
 

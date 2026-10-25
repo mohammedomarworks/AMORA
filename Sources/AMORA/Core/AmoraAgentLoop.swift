@@ -13,19 +13,22 @@ final class AmoraAgentLoop {
     private let actionEngine: AmoraActionEngine
     private let coordinator: AmoraActionExecutionCoordinator
     private let memoryStore: any AmoraMemoryStoring
+    private let eventSink: any AmoraEventSinking
 
     init(
         provider: any AIProvider,
         toolRegistry: AMORAToolRegistry = .shared,
         actionEngine: AmoraActionEngine = .shared,
         coordinator: AmoraActionExecutionCoordinator = .shared,
-        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared
+        memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared,
+        eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) {
         self.provider = provider
         self.toolRegistry = toolRegistry
         self.actionEngine = actionEngine
         self.coordinator = coordinator
         self.memoryStore = memoryStore
+        self.eventSink = eventSink
     }
 
     /// Result of running the bounded agent loop.

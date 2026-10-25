@@ -95,6 +95,7 @@ final class ClipboardService {
     static let shared = ClipboardService()
 
     var history: [ClipboardItem] = []
+    var eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     private(set) var pasteboard: any ClipboardPasteboard
     private var lastChangeCount: Int = 0
     private var pollTimer: Timer?
@@ -154,7 +155,7 @@ final class ClipboardService {
             if history.count > 15 {
                 history.removeLast()
             }
-            AMORAEventCenter.shared.emit(.clipboardUpdated)
+            eventSink.emit(.clipboardUpdated)
         }
     }
 
@@ -163,7 +164,7 @@ final class ClipboardService {
         pasteboard.setString(item.text, forType: .string)
         lastChangeCount = pasteboard.changeCount
         // Only a user-initiated restore reacts — never passive clipboard changes.
-        AMORAEventCenter.shared.emit(.clipboardRestored)
+        eventSink.emit(.clipboardRestored)
     }
 
     func clearHistory() {

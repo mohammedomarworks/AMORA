@@ -122,23 +122,8 @@ final class AMORAContext {
 
 }
 
-/// Events are the only cross-service path into AMORA's personality layer.
-/// Producers stay unaware of expressions, sounds, and island presentation.
-enum AMORAEvent: Equatable {
-    case launched, opened, closed
-    case timerStarted, timerPaused, timerResumed, timerNearlyFinished, timerCompleted
-    case charging, chargedFull, lowBattery, criticalBattery
-    case musicStarted, musicPaused, musicChanged, musicStopped
-    case clipboardUpdated, clipboardRestored, noteCreated, fileReceived
-    case commandProcessing, commandSucceeded, commandFailed
-    case aiThinking, aiSucceeded, aiFailed, aiCancelled
-    case proactiveSuggestionPresented, proactiveSuggestionDismissed
-    case automationNotificationPresented, automationNotificationDismissed
-    case systemIdle, systemActive
-}
-
 @MainActor
-final class AMORAEventCenter {
+final class AMORAEventCenter: AmoraEventSinking {
     static let shared = AMORAEventCenter()
 
     private init() {}

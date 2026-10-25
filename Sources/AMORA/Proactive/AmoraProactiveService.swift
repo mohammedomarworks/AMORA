@@ -17,6 +17,7 @@ public final class AmoraProactiveService: Sendable {
     public let memoryStore: any AmoraMemoryStoring
     public let settingsProvider: @MainActor () -> AmoraProactiveSettings
     public let clock: () -> Date
+    public var eventSink: any AmoraEventSinking
     public var onSuggestionPresented: (@MainActor (AmoraProactiveSuggestion) -> Void)?
 
     public init(
@@ -26,6 +27,7 @@ public final class AmoraProactiveService: Sendable {
         memoryStore: (any AmoraMemoryStoring)? = nil,
         settingsProvider: (@MainActor () -> AmoraProactiveSettings)? = nil,
         clock: (@Sendable () -> Date)? = nil,
+        eventSink: any AmoraEventSinking = MacOSAmoraEventSink(),
         onSuggestionPresented: (@MainActor (AmoraProactiveSuggestion) -> Void)? = nil
     ) {
         self.cooldownTracker = cooldownTracker ?? AmoraProactiveCooldownTracker()
@@ -34,10 +36,11 @@ public final class AmoraProactiveService: Sendable {
         self.memoryStore = memoryStore ?? AmoraMemoryStore()
         self.settingsProvider = settingsProvider ?? { AppState.shared.settings.proactiveSettingsSnapshot }
         self.clock = clock ?? { Date() }
+        self.eventSink = eventSink
         self.currentSuggestion = nil
         self.lastInteractionDate = nil
         self.onSuggestionPresented = onSuggestionPresented ?? { _ in
-            AMORAEventCenter.shared.emit(.proactiveSuggestionPresented)
+            eventSink.emit(.proactiveSuggestionPresented)
             if IslandModel.shared.displayState == .collapsed {
                 WindowManager.shared.expandIsland()
             }
@@ -153,7 +156,7 @@ public final class AmoraProactiveService: Sendable {
         guard let current = currentSuggestion else { return }
         cooldownTracker.recordTrigger(key: current.trigger.rawValue, duration: current.cooldownDuration, now: clock())
         self.currentSuggestion = nil
-        AMORAEventCenter.shared.emit(.proactiveSuggestionDismissed)
+        eventSink.emit(.proactiveSuggestionDismissed)
     }
 
     /// Snoozes the current proactive suggestion, temporarily suppressing its trigger for the snooze duration.
@@ -162,7 +165,7 @@ public final class AmoraProactiveService: Sendable {
         let snoozeDuration = duration ?? settingsProvider().defaultSnoozeSeconds
         cooldownTracker.recordTrigger(key: current.trigger.rawValue, duration: snoozeDuration, now: clock())
         self.currentSuggestion = nil
-        AMORAEventCenter.shared.emit(.proactiveSuggestionDismissed)
+        eventSink.emit(.proactiveSuggestionDismissed)
     }
 
     /// Returns whether the specified trigger is currently in cooldown or snoozed.

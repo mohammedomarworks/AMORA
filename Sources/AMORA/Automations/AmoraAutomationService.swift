@@ -14,6 +14,7 @@ public final class AmoraAutomationService: Sendable {
     public let contextProvider: AmoraContextProvider
     public let clock: @Sendable () -> Date
     public let calendar: Calendar
+    public var eventSink: any AmoraEventSinking
 
     private var activeTimer: Timer?
     private var inFlightAutomationIds: Set<UUID> = []
@@ -29,7 +30,8 @@ public final class AmoraAutomationService: Sendable {
         actionEngine: AmoraActionEngine? = nil,
         contextProvider: AmoraContextProvider? = nil,
         clock: (@Sendable () -> Date)? = nil,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) {
         let chosenStore = store ?? AmoraAutomationStore()
         let chosenEngine = actionEngine ?? AmoraActionEngine.shared
@@ -38,6 +40,7 @@ public final class AmoraAutomationService: Sendable {
         self.contextProvider = contextProvider ?? .shared
         self.clock = clock ?? { Date() }
         self.calendar = calendar
+        self.eventSink = eventSink
 
         // Register notification action in the action engine registry only if not already registered
         if chosenEngine.registry.definition(for: "amora.notification") == nil {
@@ -186,7 +189,7 @@ public final class AmoraAutomationService: Sendable {
         }
 
         self.currentNotification = notification
-        AMORAEventCenter.shared.emit(.automationNotificationPresented)
+        eventSink.emit(.automationNotificationPresented)
         if IslandModel.shared.displayState == .collapsed {
             WindowManager.shared.expandIsland()
         }
@@ -195,7 +198,7 @@ public final class AmoraAutomationService: Sendable {
     /// Dismisses the active automation notification.
     public func dismissNotification() {
         self.currentNotification = nil
-        AMORAEventCenter.shared.emit(.automationNotificationDismissed)
+        eventSink.emit(.automationNotificationDismissed)
     }
 
     /// Executes the optional action attached to the active automation notification.

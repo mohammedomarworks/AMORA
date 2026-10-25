@@ -10,6 +10,7 @@ final class TimerService {
     var isRunning: Bool = false
     var isPaused: Bool = false
     var isSimulationMode: Bool = false
+    var eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
 
     private var timer: Timer?
 
@@ -45,7 +46,7 @@ final class TimerService {
             }
         }
 
-        AMORAEventCenter.shared.emit(.timerStarted)
+        eventSink.emit(.timerStarted)
     }
 
     func pauseTimer() {
@@ -53,7 +54,7 @@ final class TimerService {
             isPaused = true
             timer?.invalidate()
             timer = nil
-            AMORAEventCenter.shared.emit(.timerPaused)
+            eventSink.emit(.timerPaused)
         }
     }
 
@@ -65,7 +66,7 @@ final class TimerService {
                     self?.tick()
                 }
             }
-            AMORAEventCenter.shared.emit(.timerResumed)
+            eventSink.emit(.timerResumed)
         }
     }
 
@@ -89,7 +90,7 @@ final class TimerService {
         if remainingSeconds > 0 {
             remainingSeconds -= 1
             if remainingSeconds == 60 {
-                AMORAEventCenter.shared.emit(.timerNearlyFinished)
+                eventSink.emit(.timerNearlyFinished)
             }
             AMORAContext.shared.refreshFromServices()
         } else {
@@ -101,7 +102,7 @@ final class TimerService {
         stopTimer()
         // Route the completion through the personality engine so the message,
         // sound, expression, and celebration bounce all stay in one place.
-        AMORAEventCenter.shared.emit(.timerCompleted)
+        eventSink.emit(.timerCompleted)
         AMORARobot.shared.playBounce()
     }
 }
