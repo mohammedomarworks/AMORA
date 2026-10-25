@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 
 /// Decoupled protocol for controlling media playback through existing services.

@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 enum AMORATool: String, CaseIterable, Sendable { case battery, timer, music, browserMedia, notes, clipboard, file, fileShelf, system, application, folder, view, memory }
@@ -22,6 +21,8 @@ struct AMORAToolResult: Equatable, Sendable {
 @MainActor final class AMORAToolRegistry {
     static let shared = AMORAToolRegistry(); let maximumCallsPerRequest = 4
     static var isControlledEvaluationMode = false
+    public var appLauncher: any AmoraApplicationLaunching = NativeAmoraApplicationLauncher()
+    public var folderOpener: any AmoraFolderOpening = NativeAmoraFolderOpener()
     private init() {}
     func execute(_ request: AMORAToolRequest, confirmed: Bool = false) async -> AMORAToolResult {
         switch validate(request) {
@@ -35,7 +36,7 @@ struct AMORAToolResult: Equatable, Sendable {
         case .readBattery, .readMedia, .readSystem, .listNotes, .searchNotes, .recallMemory, .listMemories, .forgetMemory: return .allowed
         case let .startTimer(seconds), let .addTimerTime(seconds): return (1...86_400).contains(seconds) ? .allowed : .rejected(reason: "Timer duration is outside the supported range.")
         case .pauseTimer, .resumeTimer, .stopTimer, .playMedia, .pauseMedia, .nextTrack, .previousTrack, .createNote, .openApplication, .showView: return .allowed
-        case let .openFolder(name): return Self.folderURL(name) == nil ? .rejected(reason: "That folder is not available through AMORA.") : .needsConfirmation(prompt: "Would you like me to open \(name.capitalized)?")
+        case let .openFolder(name): return folderOpener.resolveFolderURL(for: name) == nil ? .rejected(reason: "That folder is not available through AMORA.") : .needsConfirmation(prompt: "Would you like me to open \(name.capitalized)?")
         case let .saveMemory(key, value):
             let result = AmoraMemoryPrivacyValidator.shared.validate(key: key, value: value)
             switch result {
@@ -84,8 +85,19 @@ struct AMORAToolResult: Equatable, Sendable {
             let countMsg = results.count == 1 ? "1 matching note" : "\(results.count) matching notes"
             return .init(tool: .notes, status: .success, message: "Found \(countMsg):\n\(list)", data: ["count": "\(results.count)", "query": query])
         case let .openApplication(name):
-            let ids = ["safari": "com.apple.Safari", "finder": "com.apple.finder", "terminal": "com.apple.Terminal", "vs code": "com.microsoft.VSCode"]; guard let id = ids[AMORACommandParser.normalize(name)], let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return .init(tool: .application, status: .failure, message: "I couldn't find that app.") }; if !Self.isControlledEvaluationMode { _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) }; return .init(tool: .application, status: .success, message: "Opening \(name.capitalized).")
-        case let .openFolder(name): guard let url = Self.folderURL(name) else { return .init(tool: .folder, status: .failure, message: "I couldn't open that folder.") }; if !Self.isControlledEvaluationMode { guard NSWorkspace.shared.open(url) else { return .init(tool: .folder, status: .failure, message: "I couldn't open that folder.") } }; return .init(tool: .folder, status: .success, message: "Opening \(name.capitalized).")
+            guard let url = appLauncher.resolveApplicationURL(named: name) else { return .init(tool: .application, status: .failure, message: "I couldn't find that app.") }
+            if !Self.isControlledEvaluationMode { _ = try? await appLauncher.openApplication(at: url) }
+            return .init(tool: .application, status: .success, message: "Opening \(name.capitalized).")
+        case let .openFolder(name):
+            guard let url = folderOpener.resolveFolderURL(for: name) else { return .init(tool: .folder, status: .failure, message: "I couldn't open that folder.") }
+            if !Self.isControlledEvaluationMode {
+                do {
+                    try await folderOpener.openFolder(at: url)
+                } catch {
+                    return .init(tool: .folder, status: .failure, message: "I couldn't open that folder.")
+                }
+            }
+            return .init(tool: .folder, status: .success, message: "Opening \(name.capitalized).")
         case .readSystem: SystemMonitorService.shared.refresh(); let s = SystemMonitorService.shared; return .init(tool: .system, status: .success, message: String(format: "CPU is %.0f%%, with %.1f GB of memory in use.", s.cpuUsagePercent, s.memoryUsedGB), data: ["cpu": "\(s.cpuUsagePercent)", "memoryGB": "\(s.memoryUsedGB)"])
         case let .showView(name):
             switch AMORACommandParser.normalize(name) { case "dashboard", "controls": WindowManager.shared.showDashboard(); case "notes": WindowManager.shared.showDashboard(section: .notes); case "clipboard": WindowManager.shared.showDashboard(section: .clipboard); case "files", "fileshelf", "file shelf", "shelf": WindowManager.shared.showDashboard(section: .fileShelf); case "settings": WindowManager.shared.showSettings(); default: return .init(tool: .view, status: .failure, message: "That AMORA view is not available.") }; return .init(tool: .view, status: .success, message: "Showing \(name).")
@@ -159,7 +171,6 @@ struct AMORAToolResult: Equatable, Sendable {
     private func mediaControl(playing: Bool) -> AMORAToolResult {
         MusicService.shared.checkCurrentTrack(); guard MusicService.shared.isAvailable else { return .init(tool: .music, status: .unsupported, message: "No supported media is available.") }; guard MusicService.shared.isPlaying != playing else { return .init(tool: .music, status: .success, message: playing ? "Media is already playing." : "Media is already paused.") }; if playing { MusicService.shared.play() } else { MusicService.shared.pause() }; return .init(tool: MusicService.shared.source == .youtube ? .browserMedia : .music, status: .success, message: playing ? "Media is playing." : "Media is paused.")
     }
-    private static func folderURL(_ name: String) -> URL? { let folders: [String: FileManager.SearchPathDirectory] = ["downloads": .downloadsDirectory, "documents": .documentDirectory, "desktop": .desktopDirectory]; guard let directory = folders[AMORACommandParser.normalize(name)] else { return nil }; return FileManager.default.urls(for: directory, in: .userDomainMask).first }
     private static func durationText(_ seconds: Int) -> String { if seconds % 3600 == 0 { return "\(seconds / 3600) hour\(seconds == 3600 ? "" : "s")" }; if seconds % 60 == 0 { return "\(seconds / 60) minute\(seconds == 60 ? "" : "s")" }; return "\(seconds) seconds" }
 }
 

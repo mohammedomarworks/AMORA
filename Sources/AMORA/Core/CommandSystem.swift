@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Observation
 
@@ -526,9 +525,9 @@ final class AMORACommandRouter {
             coordinator.finishSequence(results: [res])
             return .failure(message: "I couldn't find that app.")
         }
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        Task {
+            try? await launcher.openApplication(at: url)
+        }
         let successRes = AmoraActionResult.success(actionId: "app.open", message: "Opening \(name.capitalized).")
         coordinator.didCompleteItem(at: 0, result: successRes)
         coordinator.finishSequence(results: [successRes])
@@ -541,11 +540,14 @@ final class AMORACommandRouter {
         coordinator.willExecuteItem(at: 0)
 
         let opener = NativeAmoraFolderOpener()
-        guard let url = opener.resolveFolderURL(for: name), NSWorkspace.shared.open(url) else {
+        guard let url = opener.resolveFolderURL(for: name) else {
             let res = AmoraActionResult.unavailable(actionId: "folder.open", message: "I couldn't open that folder.")
             coordinator.didFailItem(at: 0, result: res)
             coordinator.finishSequence(results: [res])
             return .failure(message: "I couldn't open that folder.")
+        }
+        Task {
+            try? await opener.openFolder(at: url)
         }
         let successRes = AmoraActionResult.success(actionId: "folder.open", message: "Opening \(name.capitalized).")
         coordinator.didCompleteItem(at: 0, result: successRes)

@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import AppKit
 
 @Observable @MainActor
 final class TimerService {
