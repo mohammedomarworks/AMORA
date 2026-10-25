@@ -87,7 +87,20 @@ public partial class App : Application
 
         // 3. Create and activate Window
         _mainWindow = new MainWindow(_orbitViewModel, hotKeyService, trayService);
-        _mainWindow.Closed += (_, _) => aiProvider.Dispose();
+        var aiProviderDisposed = false;
+        _mainWindow.Closed += (_, _) =>
+        {
+            if (aiProviderDisposed)
+            {
+                return;
+            }
+
+            aiProviderDisposed = true;
+            if (aiProvider is IDisposable disposableProvider)
+            {
+                disposableProvider.Dispose();
+            }
+        };
         _mainWindow.Activate();
     }
 }
