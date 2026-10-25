@@ -8,6 +8,7 @@ public class WindowsBatteryService : IBatteryService
 {
     private BatterySnapshot _current = BatterySnapshot.DesktopAC;
     public BatterySnapshot CurrentSnapshot => _current;
+    public BatterySnapshot GetSnapshot() => CurrentSnapshot;
 
     public event EventHandler<BatterySnapshot>? BatteryUpdated;
 

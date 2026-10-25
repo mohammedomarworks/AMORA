@@ -9,6 +9,7 @@ public class WindowsSystemTelemetryService : ISystemTelemetryService
 {
     private SystemTelemetrySnapshot _current = SystemTelemetrySnapshot.Empty;
     public SystemTelemetrySnapshot CurrentSnapshot => _current;
+    public SystemTelemetrySnapshot GetSnapshot() => CurrentSnapshot;
 
     public event EventHandler<SystemTelemetrySnapshot>? TelemetryUpdated;
 

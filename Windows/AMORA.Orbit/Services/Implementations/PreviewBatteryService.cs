@@ -11,6 +11,7 @@ public class PreviewBatteryService : IBatteryService
 {
     private BatterySnapshot _current;
     public BatterySnapshot CurrentSnapshot => _current;
+    public BatterySnapshot GetSnapshot() => CurrentSnapshot;
 
     public event EventHandler<BatterySnapshot>? BatteryUpdated;
 

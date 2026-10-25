@@ -10,6 +10,7 @@ public class PreviewSystemTelemetryService : ISystemTelemetryService
 {
     private SystemTelemetrySnapshot _current;
     public SystemTelemetrySnapshot CurrentSnapshot => _current;
+    public SystemTelemetrySnapshot GetSnapshot() => CurrentSnapshot;
 
     public event EventHandler<SystemTelemetrySnapshot>? TelemetryUpdated;
 
