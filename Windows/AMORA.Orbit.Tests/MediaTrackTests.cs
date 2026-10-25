@@ -20,6 +20,19 @@ public class MediaTrackTests
     }
 
     [Fact]
+    public void FormattedTimes_PreservesTotalMinutesBeyondAnHour()
+    {
+        var track = new MediaTrack(
+            Title: "Long Track",
+            Artist: "Artist",
+            Elapsed: TimeSpan.FromMinutes(65).Add(TimeSpan.FromSeconds(7)),
+            Duration: TimeSpan.FromMinutes(65).Add(TimeSpan.FromSeconds(7)));
+
+        Assert.Equal("65:07", track.FormattedElapsed);
+        Assert.Equal("65:07", track.FormattedDuration);
+    }
+
+    [Fact]
     public void ProgressPercent_CalculatesRatio_ClampedBetweenZeroAndOne()
     {
         var track = new MediaTrack(

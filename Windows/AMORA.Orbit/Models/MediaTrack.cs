@@ -46,8 +46,8 @@ public record MediaTrack(
     private static string FormatTime(TimeSpan ts)
     {
         if (ts <= TimeSpan.Zero) return "0:00";
-        return ts.TotalHours >= 1
-            ? ts.ToString(@"h\:mm\:ss")
-            : ts.ToString(@"m\:ss");
+
+        var totalMinutes = (int)ts.TotalMinutes;
+        return $"{totalMinutes:00}:{ts.Seconds:00}";
     }
 }
