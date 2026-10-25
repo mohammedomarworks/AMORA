@@ -17,7 +17,7 @@ namespace AMORA.Orbit.Services.Implementations;
 /// Keys and settings are resolved dynamically on each request (never hardcoded or cached stale).
 /// Secrets are automatically redacted from error and diagnostic messages.
 /// </summary>
-public class GeminiAIProvider : IAIProvider
+public class GeminiAIProvider : IAIProvider, IDisposable
 {
     private const string DefaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta/";
     private const string ApiKeyHeader = "x-goog-api-key";
@@ -82,6 +82,14 @@ public class GeminiAIProvider : IAIProvider
         HttpClient? httpClient = null)
         : this(apiKeyProvider, () => settings ?? AISettings.Default, httpClient)
     {
+    }
+
+    public void Dispose()
+    {
+        if (_ownsHttpClient)
+        {
+            _httpClient.Dispose();
+        }
     }
 
     public async Task<string> GenerateResponseAsync(string prompt, CancellationToken cancellationToken = default)

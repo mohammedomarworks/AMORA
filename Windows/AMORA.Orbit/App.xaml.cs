@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 using AMORA.Orbit.Services.Implementations;
 using AMORA.Orbit.ViewModels;
@@ -86,6 +87,7 @@ public partial class App : Application
 
         // 3. Create and activate Window
         _mainWindow = new MainWindow(_orbitViewModel, hotKeyService, trayService);
+        _mainWindow.Closed += (_, _) => aiProvider.Dispose();
         _mainWindow.Activate();
     }
 }
