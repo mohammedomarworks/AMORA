@@ -41,7 +41,7 @@ public class PublicBetaReadinessTests : IDisposable
             $"Network connection failed while authenticating with key {rawSecretKey} and bearer token: secret_token_xyz"
         );
 
-        CrashLogger.LogException(simulatedException, logDir);
+        CrashLogger.LogException(simulatedException, logDir, "window-activation");
 
         string logFile = Path.Combine(logDir, "crash.log");
         Assert.True(File.Exists(logFile));
@@ -50,11 +50,23 @@ public class PublicBetaReadinessTests : IDisposable
         Assert.Contains("v0.6.0-beta", content);
         Assert.Contains("InvalidOperationException", content);
         Assert.Contains("Timestamp:", content);
+        Assert.Contains("StartupStage: window-activation", content);
 
         // Ensure real API key is redacted
         Assert.DoesNotContain(rawSecretKey, content);
         Assert.Contains("AIzaSy*********************************", content);
         Assert.DoesNotContain("secret_token_xyz", content);
+    }
+
+    [Fact]
+    public void CrashLogger_SanitizeMessage_RedactsAuthorizationHeaders()
+    {
+        string input = "Request Authorization: Bearer eyJhbGciOiJIUzI1NiJ9; password=SensitiveValue123";
+        string sanitized = CrashLogger.SanitizeMessage(input);
+
+        Assert.DoesNotContain("eyJhbGciOiJIUzI1NiJ9", sanitized);
+        Assert.DoesNotContain("SensitiveValue123", sanitized);
+        Assert.Contains("Authorization: [REDACTED]", sanitized);
     }
 
     [Fact]

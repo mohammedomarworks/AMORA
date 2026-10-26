@@ -31,11 +31,10 @@ AMORA.Orbit/
 ├── AMORA.Orbit.exe                  # Primary application entry point & launcher
 ├── AMORA.Orbit.dll                  # Managed application logic
 ├── resources.pri                    # Compiled WinUI 3 XAML resources & styles
-├── app.manifest                     # DPI awareness (PerMonitorV2) & OS compatibility manifest
-├── Microsoft.WindowsAppRuntime.dll  # Windows App SDK bootstrapper & runtime
+├── Microsoft.WindowsAppRuntime*.dll # Windows App SDK self-contained runtime components
 ├── Microsoft.ui.xaml.dll            # WinUI 3 desktop visual engine
-├── coreclr.dll                      # Self-contained .NET 8 runtime engine
-├── System.*.dll                     # .NET runtime and cryptographic libraries
+├── coreclr.dll, System.*.dll         # Self-contained .NET 8 runtime and framework libraries
+├── AMORA.Orbit.exe                  # Embeds DPI awareness and OS compatibility manifest
 └── RELEASE_MANIFEST.md              # This release manifest and deployment guide
 ```
 
@@ -71,6 +70,8 @@ The Actions artifact uploaded for CI debugging expires after 30 days. It is not 
 - Press `Ctrl + Alt + O` or click the pill to expand the workspace downward.
 - Upon expansion, the command input box automatically receives keyboard focus.
 - **Offline & Local Features**: All local features (focus timers, media transport controls, battery/power metrics, hardware gauges, and local scheduled automations) operate immediately with **zero configuration**.
+
+If startup fails after Windows allows the executable to run, AMORA displays a startup error when its managed startup handler is available and attempts to write a sanitized report to `%LOCALAPPDATA%\AMORA\Logs\crash.log`. Failures before managed logging starts may only appear in Windows Event Viewer. Include the matching Event Viewer entry (Application log, AMORA.Orbit.exe or a related Windows App Runtime module, with timestamp and exception/faulting-module details) when reporting a failure. Selecting **Run anyway** only bypasses the unsigned-app warning; it does not guarantee successful startup.
 
 ### Google Gemini Setup (Optional Cloud AI)
 1. Open the expanded Orbit workspace and click the **Settings** (Gear) button in the header toolbar.
@@ -115,4 +116,4 @@ The Actions artifact uploaded for CI debugging expires after 30 days. It is not 
   1. Exit Orbit.
   2. Delete `%LocalAppData%\AMORA`.
   3. Relaunch `AMORA.Orbit.exe`.
-- In the event of an unhandled application error, sanitized incident diagnostics are recorded to `%LocalAppData%\AMORA\Logs\crash.log` with all credentials automatically redacted.
+- For managed startup failures, sanitized diagnostic details are written when possible to `%LocalAppData%\AMORA\Logs\crash.log`. Very early native or runtime failures can occur before this file can be created; use the matching Windows Event Viewer Application log entry in that case.

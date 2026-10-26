@@ -171,10 +171,10 @@ Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engin
     - **Reduced-Motion Preference**: Queries Windows `UISettings.AnimationsEnabled` to respect user accessibility choices, disabling infinite breathing glow storyboards in favor of steady illumination.
     - **Resource Disposal**: Complete `IDisposable` lifecycle chaining across ViewModels, services, and cancellation tokens preventing memory leaks on repeated app interactions or shutdown.
 13. **Public Beta Readiness & Packaging (Phase 6J)**: Prepares Orbit for a controlled public beta:
-    - **Standalone Unpackaged Distribution**: Published as a self-contained `win-x64` WinUI 3 distribution (`AMORA.Orbit-v0.6.0-beta-win-x64.zip`) with bundled .NET 8 runtime and self-contained Windows App SDK binaries (`Microsoft.ui.xaml.dll`, `resources.pri`, `app.manifest`). Users do not need separate .NET or Windows App Runtime MSIX installations.
+    - **Standalone Unpackaged Distribution**: Configured for a self-contained `win-x64` WinUI 3 distribution (`AMORA.Orbit-v0.6.0-beta-win-x64.zip`) with .NET 8 and Windows App SDK runtime components. The Windows release workflow verifies those runtime files in the actual published output; the app manifest is embedded in the executable.
     - **Resilient Path Resolution & Failure Recovery**: Settings (`ai_settings.json`), credentials (`Credentials/`), and automations (`automations.json`) resolve against `%LocalAppData%\AMORA` with safe fallback to `AppContext.BaseDirectory`. Corrupted or malformed configuration files recover to safe defaults automatically.
-    - **Diagnostic Crash Logging (`CrashLogger`)**: Captures unhandled UI and background thread exceptions to `%LocalAppData%\AMORA\Logs\crash.log` with automated redaction of Gemini API keys, passwords, bearer tokens, and credentials.
-    - **Automated CI Validation & Secret Scanning**: GitHub Actions builds Release x64, runs the current 266-test suite, creates and extracts the ZIP to verify archive integrity, checks required files, and scans the package for credential-like files before any release can publish.
+    - **Early Startup Diagnostics (`CrashLogger`)**: Registers process, task, and WinUI exception diagnostics before app XAML initialization and records startup stage, exception type, sanitized message, and stack trace in `%LocalAppData%\AMORA\Logs\crash.log` when possible. Native failures before managed startup can still require Windows Event Viewer.
+    - **Automated CI Validation & Secret Scanning**: GitHub Actions builds Release x64, runs the Windows test suite, verifies required self-contained .NET and WinUI runtime files and x64 PE architecture, compares every ZIP path and file hash with the publish output, and scans for credential-like files before any release can publish.
 
 ---
 
@@ -204,7 +204,7 @@ powershell Compress-Archive -Path ./publish/win-x64/* -DestinationPath ./AMORA.O
 ```
 
 > [!NOTE]
-> The automated Windows CI workflow (`.github/workflows/windows-orbit.yml`) builds Release x64, runs all 266 unit tests, publishes the self-contained package, validates the ZIP by extracting it and checking required files, and scans the archive for secrets. For CI debugging, it also uploads the ZIP as a temporary GitHub Actions artifact retained for 30 days. That artifact is not the permanent download; only pushing the tag that exactly matches project metadata (currently `v0.6.0-beta`) publishes the validated ZIP to a GitHub pre-release. Ordinary pushes, pull requests, and manual workflow runs do not publish releases.
+> The automated Windows CI workflow (`.github/workflows/windows-orbit.yml`) builds Release x64, runs the Windows unit tests, publishes the self-contained package, validates key runtime files and ZIP parity, and scans the archive for secrets. It does not prove interactive startup on a separate clean Windows machine. For CI debugging, it uploads the ZIP as a temporary GitHub Actions artifact retained for 30 days. That artifact is not the permanent download; only pushing the tag that exactly matches project metadata (currently `v0.6.0-beta`) publishes the validated ZIP to a GitHub pre-release. Ordinary pushes, pull requests, and manual workflow runs do not publish releases.
 
 ---
 
@@ -249,7 +249,8 @@ See the [release manifest](RELEASE_MANIFEST.md) for package contents and verifie
 - [ ] **macOS Host Tests**: 567 macOS unit tests pass with zero regressions (`swift test`).
 - [ ] **Version Consistency**: Version `0.6.0-beta` declared in `AMORA.Orbit.csproj` and `AMORA.Orbit.Tests.csproj`.
 - [ ] **Manifest Staged**: `RELEASE_MANIFEST.md` includes accurate prerequisites, binary manifest, and SmartScreen guidance.
-- [ ] **Self-Contained Publish**: `dotnet publish` produces standalone `win-x64` folder containing `AMORA.Orbit.exe`, `resources.pri`, and Windows App SDK binaries.
+- [ ] **Self-Contained Publish**: Windows CI verifies `win-x64` output contains the app, .NET runtime, WinUI/Windows App SDK runtime files and matching x64 executable, then checks the ZIP against that output.
+- [ ] **Clean Windows Launch**: Extract the versioned ZIP to a writable user directory and confirm Orbit visibly opens on a clean x64 Windows machine. This manual check is required before claiming launch readiness.
 - [ ] **Secret Scan**: Published output verified free of `.key`, `.apikey`, `.token`, or developer files.
 - [ ] **Archive Verification**: Archive size > 1 MB and decompresses cleanly with required runtime components.
 - [ ] **CI Run**: GitHub Actions `Windows AMORA Orbit CI` run finishes green on `windows-latest`.

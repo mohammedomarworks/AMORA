@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -20,7 +21,28 @@ public static class CrashLogger
         @"(?i)(password|secret|bearer|key|token)\s*[:=]\s*['""]?([^'"";\s]{4,})",
         RegexOptions.Compiled);
 
-    public static void LogException(Exception? ex, string? customLogDirectory = null)
+    private static readonly Regex AuthorizationHeaderRegex = new(
+        @"(?i)\b(authorization)\s*[:=]\s*['""]?(?:bearer\s+)?[^'""\s,;}]+",
+        RegexOptions.Compiled);
+
+    private static string _startupStage = "process-startup";
+
+    public static string LogFilePath
+    {
+        get
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(localAppData)) localAppData = Path.GetTempPath();
+            return Path.Combine(localAppData, "AMORA", "Logs", "crash.log");
+        }
+    }
+
+    public static void SetStartupStage(string stage)
+    {
+        if (!string.IsNullOrWhiteSpace(stage)) _startupStage = SanitizeMessage(stage);
+    }
+
+    public static void LogException(Exception? ex, string? customLogDirectory = null, string? startupStage = null)
     {
         if (ex == null) return;
 
@@ -33,12 +55,7 @@ public static class CrashLogger
             }
             else
             {
-                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                if (string.IsNullOrWhiteSpace(localAppData))
-                {
-                    localAppData = AppContext.BaseDirectory;
-                }
-                logDir = Path.Combine(localAppData, "AMORA", "Logs");
+                logDir = Path.GetDirectoryName(LogFilePath)!;
             }
 
             Directory.CreateDirectory(logDir);
@@ -47,8 +64,13 @@ public static class CrashLogger
             var sb = new StringBuilder();
             sb.AppendLine("================================================================================");
             sb.AppendLine($"Timestamp: {DateTimeOffset.UtcNow:O}");
-            sb.AppendLine("Application: AMORA Orbit (v0.6.0-beta win-x64)");
+            var assembly = typeof(CrashLogger).Assembly;
+            var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                ?? assembly.GetName().Version?.ToString()
+                ?? "unknown";
+            sb.AppendLine($"Application: AMORA Orbit (v{SanitizeMessage(version)}, {(Environment.Is64BitProcess ? "x64" : "x86")})");
             sb.AppendLine($"OperatingSystem: {Environment.OSVersion}");
+            sb.AppendLine($"StartupStage: {SanitizeMessage(startupStage ?? _startupStage)}");
             sb.AppendLine($"ExceptionType: {ex.GetType().FullName}");
             sb.AppendLine($"Message: {SanitizeMessage(ex.Message)}");
             sb.AppendLine("StackTrace:");
@@ -76,6 +98,9 @@ public static class CrashLogger
 
         // 1. Redact Gemini API keys (AIzaSy...)
         string sanitized = ApiKeyRegex.Replace(message, "AIzaSy*********************************");
+
+        // HTTP exception messages can include an authorization header value.
+        sanitized = AuthorizationHeaderRegex.Replace(sanitized, "$1: [REDACTED]");
 
         // 2. Redact common credential patterns (password, secret, bearer, key, token)
         sanitized = SensitiveTokenRegex.Replace(sanitized, "$1: [REDACTED]");

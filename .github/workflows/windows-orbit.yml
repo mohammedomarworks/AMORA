@@ -86,7 +86,7 @@ jobs:
         run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --no-build --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"
 
       - name: Publish Release Package (win-x64)
-        run: dotnet publish Windows/AMORA.Orbit/AMORA.Orbit.csproj --configuration Release --runtime win-x64 --self-contained true /p:Platform=x64 --output ./publish/win-x64
+        run: dotnet publish Windows/AMORA.Orbit/AMORA.Orbit.csproj --configuration Release --runtime win-x64 --self-contained true /p:Platform=x64 /p:WindowsAppSDKSelfContained=true --output ./publish/win-x64
 
       - name: Stage Release Manifest
         shell: pwsh
@@ -100,6 +100,28 @@ jobs:
         run: |
           $archivePath = Join-Path '.' $env:ARCHIVE_NAME
           Compress-Archive -Path ./publish/win-x64/* -DestinationPath $archivePath -Force
+
+      - name: Validate Published Application Output
+        shell: pwsh
+        run: |
+          $publishDirectory = (Resolve-Path './publish/win-x64').Path
+          $requiredFiles = @('AMORA.Orbit.exe', 'AMORA.Orbit.dll', 'AMORA.Orbit.deps.json', 'AMORA.Orbit.runtimeconfig.json', 'resources.pri', 'RELEASE_MANIFEST.md', 'coreclr.dll', 'hostfxr.dll', 'hostpolicy.dll', 'clrjit.dll')
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath (Join-Path $publishDirectory $file) -PathType Leaf)) {
+              throw "Required self-contained publish file $file is missing."
+            }
+          }
+          $xamlRuntime = Get-ChildItem -LiteralPath $publishDirectory -Recurse -File | Where-Object { $_.Name -ieq 'Microsoft.ui.xaml.dll' -or $_.Name -ieq 'Microsoft.UI.Xaml.dll' } | Select-Object -First 1
+          if (-not $xamlRuntime) { throw 'The WinUI XAML runtime DLL is missing from the self-contained publish output.' }
+          $winAppRuntime = Get-ChildItem -LiteralPath $publishDirectory -Recurse -File | Where-Object { $_.Name -like 'Microsoft.WindowsAppRuntime*.dll' } | Select-Object -First 1
+          if (-not $winAppRuntime) { throw 'Windows App SDK runtime components are missing from the self-contained publish output.' }
+
+          $exePath = Join-Path $publishDirectory 'AMORA.Orbit.exe'
+          $bytes = [System.IO.File]::ReadAllBytes($exePath)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+          if ($bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset + 1] -ne 0x45) { throw 'AMORA.Orbit.exe has no valid PE signature.' }
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne 0x8664) { throw ('Expected an x64 executable (PE machine 0x8664); found 0x{0:X4}.' -f $machine) }
 
       - name: Validate Release Package
         id: validate
@@ -121,6 +143,20 @@ jobs:
           $validationDirectory = Join-Path $env:RUNNER_TEMP 'amora-orbit-zip-validation'
           Remove-Item -LiteralPath $validationDirectory -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -LiteralPath $archivePath -DestinationPath $validationDirectory -Force
+
+          $publishDirectory = (Resolve-Path './publish/win-x64').Path
+          $publishedFiles = @(Get-ChildItem -LiteralPath $publishDirectory -Recurse -File | ForEach-Object { $_.FullName.Substring($publishDirectory.Length + 1).Replace('\', '/') } | Sort-Object)
+          $archivedFiles = @(Get-ChildItem -LiteralPath $validationDirectory -Recurse -File | ForEach-Object { $_.FullName.Substring($validationDirectory.Length + 1).Replace('\', '/') } | Sort-Object)
+          if (Compare-Object -ReferenceObject $publishedFiles -DifferenceObject $archivedFiles) {
+            throw 'The ZIP file list differs from the validated publish directory.'
+          }
+          foreach ($relativePath in $publishedFiles) {
+            $publishedPath = Join-Path $publishDirectory $relativePath.Replace('/', '\')
+            $archivedPath = Join-Path $validationDirectory $relativePath.Replace('/', '\')
+            if ((Get-FileHash -LiteralPath $publishedPath -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $archivedPath -Algorithm SHA256).Hash) {
+              throw "The ZIP contents differ from the validated publish output: $relativePath"
+            }
+          }
 
           $requiredFiles = @('AMORA.Orbit.exe', 'AMORA.Orbit.dll', 'resources.pri', 'RELEASE_MANIFEST.md')
           foreach ($file in $requiredFiles) {

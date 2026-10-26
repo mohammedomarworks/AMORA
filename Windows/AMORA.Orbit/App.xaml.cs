@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using System.Runtime.InteropServices;
 using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 using AMORA.Orbit.Services.Implementations;
@@ -14,8 +15,22 @@ public partial class App : Application
 
     public App()
     {
-        InitializeComponent();
+        // Install process-level diagnostics before XAML/resource initialization.
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        CrashLogger.SetStartupStage("app-constructor-before-xaml");
         UnhandledException += OnUnhandledException;
+        try
+        {
+            InitializeComponent();
+            CrashLogger.SetStartupStage("app-xaml-initialized");
+        }
+        catch (Exception ex)
+        {
+            CrashLogger.LogException(ex, startupStage: "app-xaml-initialization");
+            ShowStartupFailure();
+            throw;
+        }
     }
 
     private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
@@ -23,8 +38,6 @@ public partial class App : Application
         try
         {
             CrashLogger.LogException(e.Exception);
-            // Mark handled if possible so desktop companion doesn't vanish silently on non-fatal errors
-            e.Handled = true;
         }
         catch
         {
@@ -32,8 +45,41 @@ public partial class App : Application
         }
     }
 
+    private void OnDomainUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            CrashLogger.LogException(e.ExceptionObject as Exception, startupStage: "app-domain-unhandled");
+        }
+        catch { }
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        try
+        {
+            CrashLogger.LogException(e.Exception, startupStage: "unobserved-task");
+        }
+        catch { }
+    }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        try
+        {
+            LaunchCore();
+        }
+        catch (Exception ex)
+        {
+            CrashLogger.LogException(ex);
+            ShowStartupFailure();
+            throw;
+        }
+    }
+
+    private void LaunchCore()
+    {
+        CrashLogger.SetStartupStage("service-construction");
         // 1. Instantiate Core & Secure Settings Services
         ISecureCredentialStorage credentialStorage = new WindowsCredentialStorage();
         IAISettingsService aiSettingsService = new AISettingsService(credentialStorage);
@@ -54,7 +100,7 @@ public partial class App : Application
             mediaService,
             suggestionService
         );
-        _ = automationService.LoadAutomationsAsync();
+        _ = LoadAutomationsSafelyAsync(automationService);
 
         var hotKeyService = new WindowsHotKeyService();
         var trayService = new TaskbarTrayService();
@@ -107,6 +153,7 @@ public partial class App : Application
         );
 
         // 3. Create and activate Window
+        CrashLogger.SetStartupStage("window-and-xaml-construction");
         _mainWindow = new MainWindow(_orbitViewModel, hotKeyService, trayService);
         var servicesDisposed = false;
         _mainWindow.Closed += (_, _) =>
@@ -130,6 +177,34 @@ public partial class App : Application
                 disposableAutomation.Dispose();
             }
         };
+        CrashLogger.SetStartupStage("window-activation");
         _mainWindow.Activate();
+        CrashLogger.SetStartupStage("running");
     }
+
+    private static async Task LoadAutomationsSafelyAsync(IAutomationService service)
+    {
+        try
+        {
+            await service.LoadAutomationsAsync();
+        }
+        catch (Exception ex)
+        {
+            CrashLogger.LogException(ex, startupStage: "automation-load");
+        }
+    }
+
+    private static void ShowStartupFailure()
+    {
+        try
+        {
+            MessageBoxW(IntPtr.Zero,
+                "AMORA Orbit could not finish starting. A sanitized diagnostic report was saved, when possible, to %LOCALAPPDATA%\\AMORA\\Logs\\crash.log. Please include that file when reporting this startup problem.",
+                "AMORA Orbit startup error", 0x10);
+        }
+        catch { }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "MessageBoxW")]
+    private static extern int MessageBoxW(IntPtr hwnd, string text, string caption, uint type);
 }
