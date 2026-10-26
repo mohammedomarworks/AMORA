@@ -128,7 +128,7 @@ public class TimerDeadlineTests
         Assert.Equal(60, snapshot.RemainingSeconds);
     }
 
-    private sealed class ManualTimeProvider : TimeProvider
+    internal sealed class ManualTimeProvider : TimeProvider
     {
         private DateTimeOffset _utc = DateTimeOffset.UnixEpoch;
         private long _timestamp;

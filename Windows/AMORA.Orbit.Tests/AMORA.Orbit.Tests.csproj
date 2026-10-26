@@ -16,7 +16,7 @@
     <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.6.0-beta.2</Version>
+    <Version>0.6.0-beta.3</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -47,7 +47,9 @@ public class PublicBetaReadinessTests : IDisposable
         Assert.True(File.Exists(logFile));
 
         string content = File.ReadAllText(logFile);
-        Assert.Contains("v0.6.0-beta.2", content);
+        var version = typeof(CrashLogger).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion;
+        Assert.Contains($"Application: AMORA Orbit (v{version},", content);
         Assert.Contains("InvalidOperationException", content);
         Assert.Contains("Timestamp:", content);
         Assert.Contains("StartupStage: window-activation", content);

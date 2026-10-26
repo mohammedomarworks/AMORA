@@ -243,10 +243,12 @@ jobs:
           {
             printf '%s\n' 'AMORA Orbit controlled Windows beta.' ''
             printf '%s\n' "Version: $RELEASE_TAG" 'Architecture: Windows x64 (win-x64)' ''
+            printf '%s\n' 'Intermediate Mac parity checkpoint: native top-center island, expressive vector mascot, local utilities, and optional offline Local Brain using llama.cpp CPU x64 and Qwen2.5 GGUF models.' ''
+            printf '%s\n' 'Local Brain requires an explicit initial runtime/model download. No model is bundled. Full Mac parity, GPU/ARM64 support, and clean-machine acceptance remain incomplete. Chrome/Edge extension pairing remains unverified; native Windows system-media controls are separate.' ''
             printf '%s\n' 'This executable is unsigned. Windows SmartScreen may show an Unknown Publisher warning.' ''
             printf 'Package: `%s`\n' "$ASSET_NAME"
             printf 'SHA-256: `%s`\n\n' "$ASSET_SHA256"
-            printf '%s\n' '[Installation instructions](https://github.com/mohammedomarworks/AMORA/blob/main/Windows/README.md#controlled-public-beta-guide) · [Release manifest](https://github.com/mohammedomarworks/AMORA/blob/main/Windows/RELEASE_MANIFEST.md)'
+            printf '%s\n' "[Installation instructions](https://github.com/mohammedomarworks/AMORA/blob/$RELEASE_TAG/Windows/README.md#controlled-public-beta-guide) · [Release manifest](https://github.com/mohammedomarworks/AMORA/blob/$RELEASE_TAG/Windows/RELEASE_MANIFEST.md) · [Parity roadmap](https://github.com/mohammedomarworks/AMORA/blob/$RELEASE_TAG/Windows/PARITY_ROADMAP.md)"
           } > release-notes.md
 
           # gh release create fails when this tag already has a release; never clobber assets.

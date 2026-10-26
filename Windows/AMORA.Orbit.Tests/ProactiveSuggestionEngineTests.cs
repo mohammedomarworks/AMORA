@@ -18,7 +18,8 @@ public class ProactiveSuggestionEngineTests
     [Fact]
     public void ProactiveEngine_DisabledByDefault_GeneratesNoSuggestionsOnTimerFinished()
     {
-        var timerService = new StandardTimerService();
+        var clock = new TimerDeadlineTests.ManualTimeProvider();
+        using var timerService = new StandardTimerService(clock);
         var batteryService = new PreviewBatteryService();
         using var service = new ProactiveSuggestionService(
             timerService,
@@ -70,7 +71,8 @@ public class ProactiveSuggestionEngineTests
     [Fact]
     public void TimerFinished_WhenEnabled_PresentsFocusBreakSuggestion()
     {
-        var timerService = new StandardTimerService();
+        var clock = new TimerDeadlineTests.ManualTimeProvider();
+        using var timerService = new StandardTimerService(clock);
         var enabledSettings = AISettings.Default with { EnableProactiveSuggestions = true };
         using var service = new ProactiveSuggestionService(
             timerService: timerService,
@@ -79,10 +81,9 @@ public class ProactiveSuggestionEngineTests
 
         Assert.True(service.IsEnabled);
 
-        // Simulate a completed focus timer by starting and triggering completion
+        // Advance the injected clock through the real timer completion path.
         timerService.Start(TimeSpan.FromSeconds(1), "Deep Work");
-        // Wait briefly for tick to complete
-        Thread.Sleep(1200);
+        clock.Advance(TimeSpan.FromSeconds(1));
 
         Assert.NotNull(service.ActiveSuggestion);
         Assert.Equal("timer-focus-finished", service.ActiveSuggestion.Id);
@@ -95,7 +96,8 @@ public class ProactiveSuggestionEngineTests
     [Fact]
     public void TimerFinished_BreakTimer_PresentsFocusSuggestion()
     {
-        var timerService = new StandardTimerService();
+        var clock = new TimerDeadlineTests.ManualTimeProvider();
+        using var timerService = new StandardTimerService(clock);
         var enabledSettings = AISettings.Default with { EnableProactiveSuggestions = true };
         using var service = new ProactiveSuggestionService(
             timerService: timerService,
@@ -103,7 +105,7 @@ public class ProactiveSuggestionEngineTests
         );
 
         timerService.Start(TimeSpan.FromSeconds(1), "Break");
-        Thread.Sleep(1200);
+        clock.Advance(TimeSpan.FromSeconds(1));
 
         Assert.NotNull(service.ActiveSuggestion);
         Assert.Equal("timer-break-finished", service.ActiveSuggestion.Id);
@@ -114,7 +116,8 @@ public class ProactiveSuggestionEngineTests
     [Fact]
     public async Task TimerFinished_ActionExecution_StartsNewTimerAndDismisses()
     {
-        var timerService = new StandardTimerService();
+        var clock = new TimerDeadlineTests.ManualTimeProvider();
+        using var timerService = new StandardTimerService(clock);
         var enabledSettings = AISettings.Default with { EnableProactiveSuggestions = true };
         using var service = new ProactiveSuggestionService(
             timerService: timerService,
@@ -122,7 +125,7 @@ public class ProactiveSuggestionEngineTests
         );
 
         timerService.Start(TimeSpan.FromSeconds(1), "Focus");
-        Thread.Sleep(1200);
+        clock.Advance(TimeSpan.FromSeconds(1));
 
         Assert.NotNull(service.ActiveSuggestion);
 
@@ -138,7 +141,8 @@ public class ProactiveSuggestionEngineTests
     [Fact]
     public void StartingNewTimer_AutomaticallyClearsObsoleteTimerSuggestion()
     {
-        var timerService = new StandardTimerService();
+        var clock = new TimerDeadlineTests.ManualTimeProvider();
+        using var timerService = new StandardTimerService(clock);
         var enabledSettings = AISettings.Default with { EnableProactiveSuggestions = true };
         using var service = new ProactiveSuggestionService(
             timerService: timerService,
@@ -146,7 +150,7 @@ public class ProactiveSuggestionEngineTests
         );
 
         timerService.Start(TimeSpan.FromSeconds(1), "Focus");
-        Thread.Sleep(1200);
+        clock.Advance(TimeSpan.FromSeconds(1));
 
         Assert.NotNull(service.ActiveSuggestion);
 

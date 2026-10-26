@@ -1,11 +1,13 @@
 # AMORA Orbit — Windows Public Beta Release Manifest
 
-**Package:** `AMORA.Orbit-v0.6.0-beta.2-win-x64.zip`
-**Version:** `0.6.0-beta.2`
+**Package:** `AMORA.Orbit-v0.6.0-beta.3-win-x64.zip`
+**Version:** `0.6.0-beta.3`
 **Release Channel:** Controlled Public Beta
 **Target Architecture:** Windows x64 (`win-x64`)
 **Target Framework:** .NET 8 (`net8.0-windows10.0.19041.0`)
 **Deployment Model:** Self-Contained Unpackaged WinUI 3 Desktop Application
+
+This is an intermediate Mac parity checkpoint. The native island, mascot and local utilities are implemented; full Mac parity and clean-machine acceptance remain incomplete. Optional Local Brain uses genuine llama.cpp CPU x64 inference with Qwen2.5 GGUF models after an explicit initial runtime/model download. No model is bundled, and local inference never silently falls back to cloud AI. Chrome/Edge extension pairing remains unverified; native Windows system-media controls are a separate integration. See `Windows/PARITY_ROADMAP.md`, `Windows/LOCAL_BRAIN.md` and `Windows/BROWSER_BRIDGE.md` in the matching source tag for detailed limits.
 
 ---
 
@@ -60,7 +62,7 @@ The Actions artifact uploaded for CI debugging expires after 30 days. It is not 
 ## 4. Installation & First Launch
 
 ### Installation
-1. Open the [AMORA GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases), select the `AMORA Orbit v0.6.0-beta.2` pre-release, and download `AMORA.Orbit-v0.6.0-beta.2-win-x64.zip`.
+1. Open the [AMORA GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases), select the `AMORA Orbit v0.6.0-beta.3` pre-release, and download `AMORA.Orbit-v0.6.0-beta.3-win-x64.zip`.
 2. Extract the archive into a dedicated folder (recommended: `%LocalAppData%\Programs\AMORA.Orbit` or any portable folder).
 3. Run `AMORA.Orbit.exe`.
 4. *(Optional)* Right-click `AMORA.Orbit.exe` -> **Pin to Start** or **Show more options -> Create shortcut** on Desktop.
@@ -68,7 +70,7 @@ The Actions artifact uploaded for CI debugging expires after 30 days. It is not 
 ### First-Run Experience
 - Orbit launches directly into its **collapsed pill** mode at the top-center of your primary display.
 - Press `Ctrl + Alt + O` or click the pill to expand the workspace downward.
-- Upon expansion, the command input box automatically receives keyboard focus.
+- Use the Talk tab (`Alt+2`) for assistant input; Home (`Alt+1`) presents local controls.
 - **Offline & Local Features**: All local features (focus timers, media transport controls, battery/power metrics, hardware gauges, and local scheduled automations) operate immediately with **zero configuration**.
 
 If startup fails after Windows allows the executable to run, AMORA displays a startup error when its managed startup handler is available and attempts to write a sanitized report to `%LOCALAPPDATA%\AMORA\Logs\crash.log`. Failures before managed logging starts may only appear in Windows Event Viewer. Include the matching Event Viewer entry (Application log, AMORA.Orbit.exe or a related Windows App Runtime module, with timestamp and exception/faulting-module details) when reporting a failure. Selecting **Run anyway** only bypasses the unsigned-app warning; it does not guarantee successful startup.
@@ -90,7 +92,7 @@ If startup fails after Windows allows the executable to run, AMORA displays a st
 | **Media Playback State** | Local Only | Read via WinRT GSMTC; never transmitted. |
 | **Battery & Telemetry** | Local Only | Read via Win32 APIs; never transmitted unless user opts in. |
 | **Scheduled Automations** | Local Disk Only | Saved at `%LocalAppData%\AMORA\automations.json`. Never sent to cloud. |
-| **Conversation History** | Local Memory Only | Ephemeral in-memory FIFO buffer (max 6 turns). Discarded upon exit or reset. |
+| **Conversation History** | Local Memory Only | Ephemeral bounded history; Local Brain uses up to eight recent turns within its token budget. Discarded upon exit or reset. Explicit approved memory is stored separately. |
 | **Gemini API Prompts** | Google Gemini API | Sent over HTTPS to `generativelanguage.googleapis.com` only when user submits a query. |
 | **Status Context Sharing** | Google Gemini API | **Opt-in only** (default: OFF). Only sent if explicitly toggled in Settings. |
 | **Proactive Suggestions** | Local Only | **Opt-in only** (default: OFF). Evaluated deterministically on-device; never calls cloud AI. |
