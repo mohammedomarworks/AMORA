@@ -18,10 +18,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- Public Beta Versioning & Assembly Metadata -->
-    <Version>0.6.0-beta.3</Version>
+    <Version>0.6.0-beta.4</Version>
     <AssemblyVersion>0.6.0.0</AssemblyVersion>
     <FileVersion>0.6.0.0</FileVersion>
-    <InformationalVersion>0.6.0-beta.3</InformationalVersion>
+    <InformationalVersion>0.6.0-beta.4</InformationalVersion>
     <Product>AMORA Orbit</Product>
     <Company>AMORA</Company>
     <Description>AMORA Orbit - Ambient Windows Companion (Controlled Public Beta)</Description>

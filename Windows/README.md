@@ -40,7 +40,7 @@ Windows/
 ├── README.md                                     # This documentation
 ├── RELEASE_MANIFEST.md                           # Public beta release manifest & deployment guide
 ├── AMORA.Orbit/                                  # WinUI 3 Desktop App Project
-│   ├── AMORA.Orbit.csproj                        # Target: net8.0-windows10.0.19041.0 (v0.6.0-beta.3)
+│   ├── AMORA.Orbit.csproj                        # Target: net8.0-windows10.0.19041.0 (v0.6.0-beta.4)
 │   ├── app.manifest                              # PerMonitorV2 DPI awareness & OS compatibility
 │   ├── App.xaml / App.xaml.cs                    # Application lifecycle & unhandled exception handler
 │   ├── MainWindow.xaml / MainWindow.xaml.cs      # Borderless, topmost DWM-styled capsule window
@@ -122,7 +122,7 @@ Windows/
 │       ├── TimerControlView.xaml                 # Focus timer card
 │       └── SystemStatusView.xaml                 # Battery & hardware gauges
 └── AMORA.Orbit.Tests/                            # Unit Test Project
-    ├── AMORA.Orbit.Tests.csproj                  # Target: net8.0-windows10.0.19041.0 (v0.6.0-beta.3)
+    ├── AMORA.Orbit.Tests.csproj                  # Target: net8.0-windows10.0.19041.0 (v0.6.0-beta.4)
     ├── AmoraContextSnapshotTests.cs              # Snapshot generation, inactive honesty & privacy assertions
     ├── AssistantCommandViewModelTests.cs         # Command ViewModel, input tracking & confirmation tests
     ├── AssistantEngineAIToolExecutionTests.cs    # AI natural language interpretation & safe tool execution
@@ -171,7 +171,7 @@ Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engin
     - **Reduced-Motion Preference**: Queries Windows `UISettings.AnimationsEnabled` to respect user accessibility choices, disabling infinite breathing glow storyboards in favor of steady illumination.
     - **Resource Disposal**: Complete `IDisposable` lifecycle chaining across ViewModels, services, and cancellation tokens preventing memory leaks on repeated app interactions or shutdown.
 13. **Public Beta Readiness & Packaging (Phase 6J)**: Prepares Orbit for a controlled public beta:
-    - **Standalone Unpackaged Distribution**: Configured for a self-contained `win-x64` WinUI 3 distribution (`AMORA.Orbit-v0.6.0-beta.3-win-x64.zip`) with .NET 8 and Windows App SDK runtime components. The Windows release workflow verifies those runtime files in the actual published output; the app manifest is embedded in the executable.
+    - **Standalone Unpackaged Distribution**: Configured for a self-contained `win-x64` WinUI 3 distribution (`AMORA.Orbit-v0.6.0-beta.4-win-x64.zip`) with .NET 8 and Windows App SDK runtime components. The Windows release workflow verifies those runtime files in the actual published output; the app manifest is embedded in the executable.
     - **Resilient Path Resolution & Failure Recovery**: Settings (`ai_settings.json`), credentials (`Credentials/`), and automations (`automations.json`) resolve against `%LocalAppData%\AMORA` with safe fallback to `AppContext.BaseDirectory`. Corrupted or malformed configuration files recover to safe defaults automatically.
     - **Early Startup Diagnostics (`CrashLogger`)**: Registers process, task, and WinUI exception diagnostics before app XAML initialization and records startup stage, exception type, sanitized message, and stack trace in `%LocalAppData%\AMORA\Logs\crash.log` when possible. Native failures before managed startup can still require Windows Event Viewer.
     - **Automated CI Validation & Secret Scanning**: GitHub Actions builds Release x64, runs the Windows test suite, verifies required self-contained .NET and WinUI runtime files and x64 PE architecture, compares every ZIP path and file hash with the publish output, and scans for credential-like files before any release can publish.
@@ -199,18 +199,18 @@ dotnet test AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj -c Release
 ```cmd
 cd Windows
 ./Scripts/Publish-Release.ps1 -OutputDirectory ./publish/win-x64
-Compress-Archive -Path ./publish/win-x64/* -DestinationPath ./AMORA.Orbit-v0.6.0-beta.3-win-x64.zip
+Compress-Archive -Path ./publish/win-x64/* -DestinationPath ./AMORA.Orbit-v0.6.0-beta.4-win-x64.zip
 ```
 
 > [!NOTE]
-> The automated Windows CI workflow (`.github/workflows/windows-orbit.yml`) builds Release x64, runs the Windows unit tests, publishes the self-contained package, validates key runtime files and ZIP parity, and scans the archive for secrets. It does not prove interactive startup on a separate clean Windows machine. For CI debugging, it uploads the ZIP as a temporary GitHub Actions artifact retained for 30 days. That artifact is not the permanent download; only pushing the tag that exactly matches project metadata (currently `v0.6.0-beta.3`) publishes the validated ZIP to a GitHub pre-release. Ordinary pushes, pull requests, and manual workflow runs do not publish releases.
+> The automated Windows CI workflow (`.github/workflows/windows-orbit.yml`) builds Release x64, runs the Windows unit tests, publishes the self-contained package, validates key runtime files and ZIP parity, and scans the archive for secrets. It does not prove interactive startup on a separate clean Windows machine. For CI debugging, it uploads the ZIP as a temporary GitHub Actions artifact retained for 30 days. That artifact is not the permanent download; only pushing the tag that exactly matches project metadata (currently `v0.6.0-beta.4`) publishes the validated ZIP to a GitHub pre-release. Ordinary pushes, pull requests, and manual workflow runs do not publish releases.
 
 ---
 
 ## Controlled Public Beta Guide
 
 ### 1. Installation
-1. Open the [AMORA GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases), select the `AMORA Orbit v0.6.0-beta.3` pre-release, and download `AMORA.Orbit-v0.6.0-beta.3-win-x64.zip`.
+1. Open the [AMORA GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases), select the `AMORA Orbit v0.6.0-beta.4` pre-release, and download `AMORA.Orbit-v0.6.0-beta.4-win-x64.zip`.
 2. Extract the archive into `%LocalAppData%\Programs\AMORA.Orbit` or any preferred directory.
 3. Launch `AMORA.Orbit.exe`.
 
@@ -246,7 +246,7 @@ See the [release manifest](RELEASE_MANIFEST.md) for package contents and verifie
 - [ ] **Code Freeze**: All planned changes merged; working tree clean.
 - [ ] **Unit Tests**: All Windows unit tests pass in `AMORA.Orbit.Tests` (643 discovered; native inference requires the explicit local fixture and is skipped on hosted CI).
 - [ ] **macOS Host Tests**: 567 macOS unit tests pass with zero regressions (`swift test`).
-- [ ] **Version Consistency**: Version `0.6.0-beta.3` declared in `AMORA.Orbit.csproj` and `AMORA.Orbit.Tests.csproj`.
+- [ ] **Version Consistency**: Version `0.6.0-beta.4` declared in `AMORA.Orbit.csproj` and `AMORA.Orbit.Tests.csproj`.
 - [ ] **Manifest Staged**: `RELEASE_MANIFEST.md` includes accurate prerequisites, binary manifest, and SmartScreen guidance.
 - [ ] **Self-Contained Publish**: Windows CI verifies `win-x64` output contains the app, .NET runtime, WinUI/Windows App SDK runtime files and matching x64 executable, then checks the ZIP against that output.
 - [ ] **Clean Windows Launch**: Extract the versioned ZIP to a writable user directory and confirm Orbit visibly opens on a clean x64 Windows machine. This manual check is required before claiming launch readiness.
