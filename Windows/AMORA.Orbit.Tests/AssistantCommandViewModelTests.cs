@@ -12,6 +12,29 @@ namespace AMORA.Orbit.Tests;
 
 public class AssistantCommandViewModelTests : IDisposable
 {
+    private sealed class ControlledAssistantEngine : IAssistantEngine
+    {
+        private readonly TaskCompletionSource<AssistantExecutionResult> _execution = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool HasPendingConfirmation => false;
+        public string? PendingConfirmationPrompt => null;
+        public string? SubmittedInput { get; private set; }
+
+        public Task<AssistantExecutionResult> ExecuteAsync(string input, CancellationToken cancellationToken = default)
+        {
+            SubmittedInput = input;
+            return _execution.Task;
+        }
+
+        public Task<AssistantExecutionResult> ConfirmPendingActionAsync() =>
+            Task.FromResult(AssistantExecutionResult.Failed("No confirmation is pending."));
+
+        public void CancelPendingAction() { }
+
+        public void Complete(AssistantExecutionResult result) => _execution.TrySetResult(result);
+    }
+
     private class CancellableAIProvider : IAIProvider
     {
         private readonly TaskCompletionSource<string> _tcs = new();
@@ -190,21 +213,47 @@ public class AssistantCommandViewModelTests : IDisposable
     }
 
     [Fact]
-    public void StatusColorAndGlyph_ReflectProcessingState()
+    public async Task SubmitAsync_ProcessingStateDrivesStatusColorAndGlyph()
     {
-        _viewModel.IsProcessing = true;
-        Assert.Equal("#52CCFF", _viewModel.StatusColor);
-        Assert.Equal("\uF16A", _viewModel.StatusGlyph);
+        var engine = new ControlledAssistantEngine();
+        using var viewModel = new AssistantCommandViewModel(engine);
+        var processingTransitions = new List<bool>();
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(viewModel.IsProcessing))
+            {
+                processingTransitions.Add(viewModel.IsProcessing);
+            }
+        };
 
-        _viewModel.IsProcessing = false;
-        Assert.Equal("#9AA2B2", _viewModel.StatusColor);
+        viewModel.InputText = "hold this request";
+        var submitTask = viewModel.SubmitAsync();
+
+        Assert.Equal("hold this request", engine.SubmittedInput);
+        Assert.True(viewModel.IsProcessing);
+        Assert.Equal("#52CCFF", viewModel.StatusColor);
+        Assert.Equal("\uF16A", viewModel.StatusGlyph);
+
+        viewModel.InputText = "another request";
+        Assert.False(viewModel.CanSubmit);
+
+        engine.Complete(AssistantExecutionResult.Success("Completed."));
+        await submitTask;
+
+        Assert.False(viewModel.IsProcessing);
+        Assert.True(viewModel.CanSubmit);
+        Assert.Equal("#30D158", viewModel.StatusColor);
+        Assert.Equal(new[] { true, false }, processingTransitions);
+
+        viewModel.Clear();
+        Assert.Equal("#9AA2B2", viewModel.StatusColor);
     }
 
     [Fact]
     public async Task CancelActiveRequest_CancelsInFlightRequest_AndReportsCancelled()
     {
         var cancellableAi = new CancellableAIProvider();
-        using var engine = new AssistantEngine(
+        var engine = new AssistantEngine(
             _router,
             _timerService,
             _mediaService,
@@ -232,7 +281,7 @@ public class AssistantCommandViewModelTests : IDisposable
     public async Task ResetConversation_CancelsActiveInFlightRequest()
     {
         var cancellableAi = new CancellableAIProvider();
-        using var engine = new AssistantEngine(
+        var engine = new AssistantEngine(
             _router,
             _timerService,
             _mediaService,

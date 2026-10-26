@@ -180,7 +180,7 @@ public class AssistantEngineAIToolExecutionTests : IDisposable
             throw new HttpRequestException("Authentication failed (401): Invalid API key.")
         );
 
-        using var engine = new AssistantEngine(
+        var engine = new AssistantEngine(
             _router,
             _timerService,
             _mediaService,
@@ -204,7 +204,7 @@ public class AssistantEngineAIToolExecutionTests : IDisposable
             throw new HttpRequestException("Google Gemini API returned 429 ResourceExhausted: Quota exceeded.")
         );
 
-        using var engine = new AssistantEngine(
+        var engine = new AssistantEngine(
             _router,
             _timerService,
             _mediaService,
@@ -227,7 +227,7 @@ public class AssistantEngineAIToolExecutionTests : IDisposable
             throw new TimeoutException("The connection timed out after 15 seconds.")
         );
 
-        using var engine = new AssistantEngine(
+        var engine = new AssistantEngine(
             _router,
             _timerService,
             _mediaService,
