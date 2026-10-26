@@ -62,7 +62,7 @@ jobs:
           }
 
           $archiveName = "AMORA.Orbit-v$version-win-x64.zip"
-          $manifest = Get-Content Windows/RELEASE_MANIFEST.md -Raw
+          $manifest = (Get-Content Windows/RELEASE_MANIFEST.md -Raw).Replace("`r", '')
           $expectedPackageLine = '(?m)^\*\*Package:\*\*\s+`' + [regex]::Escape($archiveName) + '`$'
           $expectedVersionLine = '(?m)^\*\*Version:\*\*\s+`' + [regex]::Escape($version) + '`$'
           if ($manifest -notmatch $expectedPackageLine -or $manifest -notmatch $expectedVersionLine) {
