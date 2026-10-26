@@ -13,11 +13,11 @@
 
 | Requirement | Specification | Notes |
 | :--- | :--- | :--- |
-| **Operating System** | Windows 10 Version 1809 (Build 17763) or Windows 11 | Required for WinUI 3 and XAML island support |
-| **Architecture** | 64-bit Intel / AMD processor (`x64`) | ARM64 supported via emulation or native ARM64 build |
+| **Operating System** | Windows 10 version 1809 (build 17763) or later, or Windows 11 | Required for WinUI 3 and XAML island support |
+| **Architecture** | 64-bit Intel / AMD processor (`x64`) | This beta ZIP is built for `win-x64` only |
 | **.NET Runtime** | .NET 8.0 Runtime | **Bundled self-contained**; no separate download required |
 | **Windows App SDK** | Windows App Runtime 1.5 | **Bundled self-contained**; no separate MSIX required |
-| **C++ Runtime** | Microsoft Visual C++ 2015–2022 Redistributable (x64) | Pre-installed on most Windows 10/11 machines |
+| **C++ Runtime** | Microsoft Visual C++ 2015–2022 Redistributable (x64) | Install it if it is missing |
 | **Display** | Primary monitor with 100%–300% DPI scaling | PerMonitorV2 high-DPI awareness enabled |
 
 ---
@@ -52,14 +52,16 @@ When launching `AMORA.Orbit.exe` for the first time on a fresh Windows system:
 2. To proceed:
    - Click **More info**.
    - Click **Run anyway**.
-3. You can verify the integrity of your download against the official GitHub Actions build artifact and commit SHA.
+3. Verify the downloaded ZIP against the SHA-256 value published in the GitHub pre-release notes.
+
+The Actions artifact uploaded for CI debugging expires after 30 days. It is not the permanent download; use the [GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases).
 
 ---
 
 ## 4. Installation & First Launch
 
 ### Installation
-1. Download `AMORA.Orbit-v0.6.0-beta-win-x64.zip`.
+1. Open the [AMORA GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases), select the `AMORA Orbit v0.6.0-beta` pre-release, and download `AMORA.Orbit-v0.6.0-beta-win-x64.zip`.
 2. Extract the archive into a dedicated folder (recommended: `%LocalAppData%\Programs\AMORA.Orbit` or any portable folder).
 3. Run `AMORA.Orbit.exe`.
 4. *(Optional)* Right-click `AMORA.Orbit.exe` -> **Pin to Start** or **Show more options -> Create shortcut** on Desktop.

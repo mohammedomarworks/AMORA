@@ -27,7 +27,12 @@ body {
   min-height: 100vh;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+}
+
+.page {
+  width: 100%;
+  margin: auto 0;
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -37,6 +42,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-
 .container {
   max-width: 520px;
   width: 100%;
+  margin: 0 auto;
   padding: 48px 24px;
   text-align: center;
 }
@@ -69,6 +75,55 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-
   font-size: 1.05rem;
   line-height: 1.6;
   margin-bottom: 40px;
+}
+
+/* Windows Orbit beta */
+.windows-beta {
+  margin: 0 0 40px;
+  padding: 24px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.windows-beta h2 {
+  margin-bottom: 8px;
+  font-size: 1.45rem;
+  line-height: 1.3;
+}
+.eyebrow {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.windows-intro,
+.windows-features {
+  margin-bottom: 18px;
+  color: var(--dim);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  text-align: left;
+}
+.windows-beta .btn { margin-top: 2px; }
+.windows-beta .version-label { margin-bottom: 0; }
+.windows-beta code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+.windows-beta .warning { margin-top: 18px; }
+.windows-features { margin: 18px 0; }
+.platform-links {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.platform-links a {
+  font-size: 0.84rem;
+  font-weight: 500;
 }
 
 /* Download area */
@@ -154,6 +209,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-
   .tagline { font-size: 0.95rem; }
   .container { padding: 32px 16px; }
   .warning { padding: 14px 16px; }
+  .windows-beta { padding: 20px 16px; }
   .links { gap: 16px; }
 }
 

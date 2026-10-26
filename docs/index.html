@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AMORA — Native macOS AI Companion</title>
-  <meta name="description" content="AMORA is a local-first native macOS AI companion. Download the experimental beta or build from source.">
+  <title>AMORA — macOS App and Windows Orbit Beta</title>
+  <meta name="description" content="AMORA is a local-first macOS application with AMORA Orbit, a native Windows companion in beta.">
   <meta name="theme-color" content="#0a0a0f">
-  <meta property="og:title" content="AMORA — Native macOS AI Companion">
-  <meta property="og:description" content="A local-first native macOS AI companion with a Dynamic Island interface and on-device inference.">
+  <meta property="og:title" content="AMORA — macOS App and Windows Orbit Beta">
+  <meta property="og:description" content="A local-first macOS application with a native Windows companion in beta.">
   <meta property="og:type" content="website">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -22,7 +22,36 @@
         <h1 class="brand-name">AMORA</h1>
       </div>
 
-      <p class="tagline">A native macOS AI companion.<br>On-device inference. Dynamic Island interface. Privacy-first.</p>
+      <p class="tagline">A local-first macOS application with a native Windows companion in beta.</p>
+
+      <!-- Windows Orbit Beta -->
+      <section class="windows-beta" aria-labelledby="windows-beta-heading">
+        <p class="eyebrow">Native Windows Companion</p>
+        <h2 id="windows-beta-heading">Windows Orbit Beta</h2>
+        <p class="windows-intro">AMORA Orbit <strong>v0.6.0-beta</strong> is available for <strong>Windows x64</strong> (64-bit Intel or AMD). Requires Windows 10 version 1809 (build 17763) or later, or Windows 11. The .NET 8 and Windows App SDK runtimes are bundled; the Visual C++ 2015–2022 x64 Redistributable may be needed if missing.</p>
+
+        <a
+          class="btn btn-primary"
+          href="https://github.com/mohammedomarworks/AMORA/releases"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Download Windows x64 Beta
+        </a>
+        <p class="version-label">Choose <code>AMORA.Orbit-v0.6.0-beta-win-x64.zip</code> on the GitHub Releases page.</p>
+
+        <div class="warning" role="note">
+          <p><strong>Beta and unsigned:</strong> The executable is not code-signed. Windows SmartScreen may show an “Unknown Publisher” warning.</p>
+        </div>
+
+        <p class="windows-features">Focus timers, media controls, battery and CPU/RAM status, local scheduled automations, and an optional Gemini assistant. Gemini setup: expand Orbit with <strong>Ctrl + Alt + O</strong>, open <strong>Settings</strong>, enter a Gemini API key, select <strong>Test Connection</strong>, then <strong>Save</strong>. The key is encrypted with Windows DPAPI; when Gemini is enabled, submitted prompts are sent to Google, while system-status sharing is opt-in.</p>
+
+        <nav class="platform-links" aria-label="Windows Orbit links">
+          <a href="https://github.com/mohammedomarworks/AMORA/blob/main/Windows/README.md#controlled-public-beta-guide" target="_blank" rel="noopener noreferrer">Installation instructions</a>
+          <a href="https://github.com/mohammedomarworks/AMORA/blob/main/Windows/RELEASE_MANIFEST.md" target="_blank" rel="noopener noreferrer">Release manifest</a>
+          <a href="https://github.com/mohammedomarworks/AMORA/blob/main/Windows/README.md#3-data-privacy-boundaries" target="_blank" rel="noopener noreferrer">Privacy information</a>
+        </nav>
+      </section>
 
       <!-- Download -->
       <div class="download-area">
@@ -53,6 +82,7 @@
       <!-- Links -->
       <nav class="links" aria-label="Project links">
         <a href="https://github.com/mohammedomarworks/AMORA" target="_blank" rel="noopener noreferrer">Source Repository</a>
+        <a href="https://github.com/mohammedomarworks/AMORA/releases" target="_blank" rel="noopener noreferrer">Windows Orbit Releases</a>
         <a href="https://github.com/mohammedomarworks/AMORA/blob/main/docs/BUILD-FROM-SOURCE.md" target="_blank" rel="noopener noreferrer">Build from Source</a>
         <a href="https://github.com/mohammedomarworks/AMORA#readme" target="_blank" rel="noopener noreferrer">README</a>
         <a href="https://github.com/mohammedomarworks/AMORA/issues" target="_blank" rel="noopener noreferrer">Issues</a>

@@ -1,8 +1,18 @@
-# AMORA — Local-First macOS Companion
+# AMORA — Local-First macOS App with Native Windows Companion (Beta)
 
-AMORA is a local-first macOS companion featuring an interactive Dynamic Island interface, deterministic system automation, and optional AI capabilities bounded by a strict tool allowlist.
+AMORA is a local-first macOS application featuring an interactive Dynamic Island interface, deterministic system automation, and optional AI capabilities bounded by a strict tool allowlist. AMORA Orbit is its native Windows companion and is currently in controlled beta.
 
-Designed to operate entirely on-device, AMORA provides instant access to timers, media playback, system monitoring, notes, clipboard history, and desktop navigation without requiring cloud subscriptions or transmitting personal data.
+The macOS app's core utilities—including timers, media playback, system monitoring, notes, clipboard history, and desktop navigation—run on-device without a cloud subscription. Optional AI integrations connect to their selected providers; see the privacy details below.
+
+---
+
+## Windows Orbit Beta
+
+AMORA Orbit brings a native floating companion to Windows. **Version `0.6.0-beta` is available for Windows x64 (`win-x64`) only.** The package targets Windows 10 version 1809 (build 17763) or later and Windows 11 on a 64-bit Intel or AMD processor. It bundles the .NET 8 and Windows App SDK runtimes; the Microsoft Visual C++ 2015–2022 x64 Redistributable may need to be installed if it is missing.
+
+**[Download `AMORA.Orbit-v0.6.0-beta-win-x64.zip` from GitHub Releases](https://github.com/mohammedomarworks/AMORA/releases)**. This is an unsigned beta executable; Windows SmartScreen may show an “Unknown Publisher” warning. See the [Windows installation guide](Windows/README.md#controlled-public-beta-guide) and [release manifest](Windows/RELEASE_MANIFEST.md) for requirements and setup details.
+
+Orbit includes focus timers, media playback controls, battery and CPU/RAM status, local scheduled automations, and an optional Gemini assistant. Local features work without an AI account. To enable Gemini, expand Orbit with **Ctrl + Alt + O**, open **Settings**, enter a Gemini API key, choose **Test Connection**, then **Save**. The key is encrypted with Windows DPAPI. When Gemini is enabled, submitted prompts are sent to Google; sharing system status is opt-in. Read the [Windows privacy boundaries](Windows/README.md#3-data-privacy-boundaries).
 
 ---
 
