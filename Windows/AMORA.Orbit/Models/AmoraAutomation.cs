@@ -87,10 +87,10 @@ public record AutomationTrigger(
                     {
                         return next;
                     }
-                    // If multiple intervals passed while offline, advance to next upcoming boundary
+                    // If one or more intervals passed while offline, choose the next strictly future boundary.
                     var elapsed = referenceTime - lastRunAt.Value;
-                    var intervalsPassed = Math.Max(1.0, Math.Ceiling(elapsed.TotalSeconds / interval.TotalSeconds));
-                    return lastRunAt.Value.Add(TimeSpan.FromSeconds(intervalsPassed * interval.TotalSeconds));
+                    var intervalsPassed = elapsed.Ticks / interval.Ticks + 1;
+                    return lastRunAt.Value.AddTicks(intervalsPassed * interval.Ticks);
                 }
                 return referenceTime.Add(interval);
 

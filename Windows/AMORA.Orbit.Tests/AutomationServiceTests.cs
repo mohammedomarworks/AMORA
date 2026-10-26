@@ -167,17 +167,24 @@ public class AutomationServiceTests
     {
         var trigger = AutomationTrigger.IntervalTrigger(TimeSpan.FromMinutes(30));
 
-        var baseTime = DateTimeOffset.UtcNow;
+        var baseTime = new DateTimeOffset(2026, 10, 26, 12, 0, 0, TimeSpan.Zero);
         var nextRun = trigger.CalculateNextRunAt(baseTime);
         Assert.NotNull(nextRun);
         Assert.Equal(baseTime.AddMinutes(30), nextRun.Value);
 
-        // If last run was 2 hours ago, advance to the next upcoming boundary without stacking
+        // At an exact boundary after four missed intervals, schedule the next strictly future boundary.
         var twoHoursAgo = baseTime.AddHours(-2);
         var advanced = trigger.CalculateNextRunAt(baseTime, twoHoursAgo);
         Assert.NotNull(advanced);
+        Assert.Equal(baseTime.AddMinutes(30), advanced.Value);
         Assert.True(advanced.Value > baseTime);
-        Assert.True(advanced.Value <= baseTime.AddMinutes(30));
+
+        // Between boundaries, skip all missed intervals and keep the same next scheduled boundary.
+        var fiveMinutesLater = baseTime.AddMinutes(5);
+        var advancedBetweenBoundaries = trigger.CalculateNextRunAt(fiveMinutesLater, twoHoursAgo);
+        Assert.NotNull(advancedBetweenBoundaries);
+        Assert.Equal(baseTime.AddMinutes(30), advancedBetweenBoundaries.Value);
+        Assert.True(advancedBetweenBoundaries.Value > fiveMinutesLater);
     }
 
     [Fact]
