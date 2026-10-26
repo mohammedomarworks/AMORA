@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 
@@ -80,6 +85,129 @@ public sealed class ExplicitMemoryService : IExplicitMemoryService
 
     public void CancelPendingClear() => Interlocked.Exchange(ref _pendingClear, null);
 
+    public async Task<IReadOnlyList<ExplicitMemory>> GetRelevantMemoriesAsync(string query, int limit = 3, CancellationToken cancellationToken = default)
+    {
+        if (!_isEnabled() || string.IsNullOrWhiteSpace(query) || limit <= 0) return Array.Empty<ExplicitMemory>();
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken);
+            if (_items == null || _items.Length == 0) return Array.Empty<ExplicitMemory>();
+            return RankRelevantMemories(query, _items, limit);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            return Array.Empty<ExplicitMemory>();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public static IReadOnlyList<ExplicitMemory> RankRelevantMemories(string query, IReadOnlyList<ExplicitMemory> items, int limit = 3)
+    {
+        if (items.Count == 0 || string.IsNullOrWhiteSpace(query) || limit <= 0) return Array.Empty<ExplicitMemory>();
+
+        string normalizedQuery = MemoryCommandParser.Normalize(query);
+        if (string.IsNullOrWhiteSpace(normalizedQuery)) return Array.Empty<ExplicitMemory>();
+
+        var queryTokens = normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (queryTokens.Count == 0) return Array.Empty<ExplicitMemory>();
+        var queryStems = queryTokens.Select(Stem).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var scored = new List<(ExplicitMemory Item, int Score)>();
+        foreach (var item in items)
+        {
+            string normKey = MemoryCommandParser.Normalize(item.Key);
+            string normVal = MemoryCommandParser.Normalize(item.Value);
+            int score = 0;
+
+            // Exact phrase match in key
+            if (normKey.Equals(normalizedQuery, StringComparison.OrdinalIgnoreCase))
+                score += 25;
+            else if (normKey.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) || normalizedQuery.Contains(normKey, StringComparison.OrdinalIgnoreCase))
+                score += 12;
+
+            // Exact phrase match in value
+            if (normVal.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
+                score += 10;
+
+            var keyTokens = normKey.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var valTokens = normVal.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var keyStems = keyTokens.Select(Stem).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var valStems = valTokens.Select(Stem).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Token overlap
+            score += queryTokens.Intersect(keyTokens, StringComparer.OrdinalIgnoreCase).Count() * 6;
+            score += queryTokens.Intersect(valTokens, StringComparer.OrdinalIgnoreCase).Count() * 3;
+
+            // Stem overlap
+            score += queryStems.Intersect(keyStems, StringComparer.OrdinalIgnoreCase).Count() * 4;
+            score += queryStems.Intersect(valStems, StringComparer.OrdinalIgnoreCase).Count() * 2;
+
+            // Semantic domain associations
+            if (queryStems.Any(s => s is "music" or "song" or "track"))
+            {
+                if (normKey.Contains("spotify", StringComparison.OrdinalIgnoreCase) || normVal.Contains("spotify", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("youtube", StringComparison.OrdinalIgnoreCase) || normVal.Contains("youtube", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("apple music", StringComparison.OrdinalIgnoreCase) || normVal.Contains("apple music", StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 6;
+                }
+            }
+            if (queryStems.Any(s => s is "prefer" or "favorit"))
+            {
+                if (normKey.Contains("prefer", StringComparison.OrdinalIgnoreCase) || normVal.Contains("prefer", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("favorit", StringComparison.OrdinalIgnoreCase) || normVal.Contains("favorit", StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 8;
+                }
+            }
+            if (queryStems.Any(s => s is "program" or "code" or "project" or "develop" or "ide" or "editor"))
+            {
+                if (normKey.Contains("project", StringComparison.OrdinalIgnoreCase) || normVal.Contains("project", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("amora", StringComparison.OrdinalIgnoreCase) || normVal.Contains("amora", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("code", StringComparison.OrdinalIgnoreCase) || normVal.Contains("code", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("editor", StringComparison.OrdinalIgnoreCase) || normVal.Contains("editor", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("vs code", StringComparison.OrdinalIgnoreCase) || normVal.Contains("vs code", StringComparison.OrdinalIgnoreCase) ||
+                    normKey.Contains("visual studio", StringComparison.OrdinalIgnoreCase) || normVal.Contains("visual studio", StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 6;
+                }
+            }
+
+            if (score > 0)
+            {
+                scored.Add((item, score));
+            }
+        }
+
+        return scored
+            .OrderByDescending(x => x.Score)
+            .ThenByDescending(x => x.Item.UpdatedAt)
+            .Take(limit)
+            .Select(x => x.Item)
+            .ToArray();
+    }
+
+    public static string Stem(string word)
+    {
+        string w = word.Trim().ToLowerInvariant();
+        if (w.Length <= 3) return w;
+        if (w.EndsWith("sses", StringComparison.Ordinal)) return w[..^2];
+        if (w.EndsWith("ies", StringComparison.Ordinal)) return w[..^3] + "y";
+        if (w.EndsWith("ing", StringComparison.Ordinal) && w.Length > 5) return w[..^3];
+        if (w.EndsWith("tion", StringComparison.Ordinal) && w.Length > 5) return w[..^4];
+        if (w.EndsWith("ment", StringComparison.Ordinal) && w.Length > 5) return w[..^4];
+        if (w.EndsWith("ed", StringComparison.Ordinal) && w.Length > 4) return w[..^2];
+        if (w.EndsWith("ly", StringComparison.Ordinal) && w.Length > 4) return w[..^2];
+        if (w.EndsWith("es", StringComparison.Ordinal) && w.Length > 4) return w[..^2];
+        if (w.EndsWith("s", StringComparison.Ordinal) && !w.EndsWith("ss", StringComparison.Ordinal) && w.Length > 3) return w[..^1];
+        return w;
+    }
+
     private async Task EnsureLoadedAsync(CancellationToken token)
     {
         if (_items != null) return;
@@ -124,7 +252,7 @@ public sealed class ExplicitMemoryService : IExplicitMemoryService
     {
         var matches = FindMatches(subject);
         if (matches.Length > 1) return Ambiguous();
-        if (matches.Length == 0) return AssistantExecutionResult.Failed("I don't have a memory matching that subject. Use its full subject or value.");
+        if (matches.Length == 0) return AssistantExecutionResult.Failed("I don't have a memory matching that subject. Use its full subject or exact value.");
         var item = matches[0];
         await CommitAsync(_items!.Where(m => m.Id != item.Id).ToArray(), token);
         return AssistantExecutionResult.Success($"Forgotten: {item.Key}.");

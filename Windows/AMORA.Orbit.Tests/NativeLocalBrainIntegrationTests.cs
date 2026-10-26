@@ -36,6 +36,61 @@ public sealed class NativeLocalBrainIntegrationTests
         Assert.False(runtime.IsRunning);
         Assert.Equal(LocalBrainState.Stopped, service.Snapshot.State);
     }
+    [NativeLocalBrainFact]
+    [Trait("Category", "NativeLocalBrain")]
+    public async Task VerifiedNativeRuntimeExecutesAgentLoopWithRealToolAndMemoryContext()
+    {
+        string root = Environment.GetEnvironmentVariable("AMORA_LOCAL_BRAIN_TEST_ROOT")!;
+        using var downloads = new HttpClient(new NoDownloadsHandler());
+        using var runtime = new LlamaServerRuntime();
+        using var service = new LocalBrainService(root, assets: new LocalBrainAssetStore(root, downloads, availableStorage: () => 4 * 1024 * 1024), runtime: runtime);
+        await service.InstallAsync(LocalBrainCatalog.CompactModelId);
+        await service.StartAsync(LocalBrainCatalog.CompactModelId);
+        Assert.True(runtime.IsRunning);
+
+        var aiProvider = new LocalBrainAIProvider(service, () => AISettings.Default with { LocalBrainModelId = LocalBrainCatalog.CompactModelId });
+        using var timerService = new StandardTimerService();
+        var mediaService = new PreviewMediaService();
+        var batteryService = new PreviewBatteryService();
+        var telemetryService = new PreviewSystemTelemetryService();
+
+        string tempStorageDir = Path.Combine(Path.GetTempPath(), "AMORA_NativeAgent_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempStorageDir);
+        try
+        {
+            var memoryStorage = new DpapiMemoryStorage(Path.Combine(tempStorageDir, "memory.enc"));
+            var memoryService = new ExplicitMemoryService(memoryStorage);
+            await memoryService.TryExecuteAsync("remember user preference: focus timers should be 15 minutes");
+
+            var agentLoop = new AmoraAgentLoop(
+                aiProvider,
+                timerService,
+                mediaService,
+                batteryService,
+                telemetryService,
+                memoryService: memoryService,
+                settingsProvider: () => AISettings.Default with { LocalBrainModelId = LocalBrainCatalog.CompactModelId });
+
+            // Exercise real offline agent loop query with system instructions and persistent memory
+            var loopResult = await agentLoop.RunAsync("What is 15 + 25? Answer directly with final_answer JSON.");
+            Assert.False(string.IsNullOrWhiteSpace(loopResult.FinalAnswer));
+
+            // Bounded deterministic tool execution via real agent loop
+            timerService.Start(TimeSpan.FromMinutes(15), "NativeFocus");
+            var timerResult = await agentLoop.RunAsync("How much time is remaining on my timer? Check timer.status.");
+            Assert.False(string.IsNullOrWhiteSpace(timerResult.FinalAnswer));
+
+            // Verify clean shutdown releases native server process
+            await service.StopAsync();
+            Assert.False(runtime.IsRunning);
+            Assert.Equal(LocalBrainState.Stopped, service.Snapshot.State);
+        }
+        finally
+        {
+            if (Directory.Exists(tempStorageDir)) Directory.Delete(tempStorageDir, recursive: true);
+        }
+    }
+
     private sealed class NoDownloadsHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

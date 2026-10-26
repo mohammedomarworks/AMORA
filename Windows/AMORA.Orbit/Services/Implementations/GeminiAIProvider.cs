@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
@@ -106,6 +106,11 @@ public class GeminiAIProvider : IAIProvider, IDisposable
             return "Please provide a question or instruction.";
         }
 
+        if (prompt.Contains("[Relevant user memories]", StringComparison.OrdinalIgnoreCase) || MemoryCommandParser.Parse(prompt) != null)
+        {
+            throw new InvalidOperationException("Memory requests are handled locally and are never sent to cloud providers.");
+        }
+
         string? apiKey = await _apiKeyProvider();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -130,7 +135,7 @@ public class GeminiAIProvider : IAIProvider, IDisposable
             for (int i = startIndex; i < history.Count; i++)
             {
                 var msg = history[i];
-                if (string.IsNullOrWhiteSpace(msg.Content))
+                if (string.IsNullOrWhiteSpace(msg.Content) || msg.IsMemoryDerived || msg.Content.Contains("[Relevant user memories]", StringComparison.OrdinalIgnoreCase) || MemoryCommandParser.Parse(msg.Content) != null)
                 {
                     continue;
                 }

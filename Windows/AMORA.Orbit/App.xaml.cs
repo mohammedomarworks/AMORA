@@ -1,4 +1,4 @@
-using Microsoft.UI.Xaml;
+﻿using Microsoft.UI.Xaml;
 using System.Runtime.InteropServices;
 using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
@@ -135,7 +135,8 @@ public partial class App : Application
         EventHandler<AISettings> clipboardSettingsChanged = (_, settings) => clipboardService.SetEnabled(settings.EnableClipboardHistory);
         aiSettingsService.SettingsChanged += clipboardSettingsChanged;
         var clipboardVm = new ClipboardViewModel(clipboardService, dispatch);
-        var workspaceVm = new WorkspaceToolsViewModel(new WorkspaceToolsService(new JsonWorkspaceStorage(), new WindowsWorkspaceLauncher()), dispatch);
+        var workspaceService = new WorkspaceToolsService(new JsonWorkspaceStorage(), new WindowsWorkspaceLauncher());
+        var workspaceVm = new WorkspaceToolsViewModel(workspaceService, dispatch);
         _ = workspaceVm.InitializeAsync();
         var automationsVm = new AutomationsViewModel(automationService, dispatch);
         _ = automationsVm.LoadAsync();
@@ -155,7 +156,8 @@ public partial class App : Application
             conversationSession,
             () => aiSettingsService.CurrentSettings,
             new ExplicitMemoryService(isEnabled: () => aiSettingsService.CurrentSettings.MemoryEnabled),
-            new SafeNavigationService()
+            new SafeNavigationService(),
+            workspaceService
         );
         var assistantVm = new AssistantCommandViewModel(assistantEngine, dispatch);
 

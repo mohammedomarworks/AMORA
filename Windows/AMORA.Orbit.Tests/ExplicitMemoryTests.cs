@@ -261,6 +261,110 @@ public sealed class ExplicitMemoryTests : IDisposable
         Assert.DoesNotContain("drink: tea", result.Message);
     }
 
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_MatchesKeywordsAndStems()
+    {
+        var storage = new TestStorage();
+        var memory = new ExplicitMemoryService(storage);
+        await memory.TryExecuteAsync("remember coffee: prefers oat milk flat white");
+        await memory.TryExecuteAsync("remember dog: Milo the golden retriever");
+
+        var results = await memory.GetRelevantMemoriesAsync("What coffee do I prefer?");
+        Assert.Single(results);
+        Assert.Equal("coffee", results[0].Key);
+        Assert.Contains("oat milk", results[0].Value);
+    }
+
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_IrrelevantQuery_ReturnsEmpty()
+    {
+        var storage = new TestStorage();
+        var memory = new ExplicitMemoryService(storage);
+        await memory.TryExecuteAsync("remember editor: Vim");
+
+        var results = await memory.GetRelevantMemoriesAsync("What is the capital of France?");
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_RespectsLimit()
+    {
+        var storage = new TestStorage();
+        var memory = new ExplicitMemoryService(storage);
+        await memory.TryExecuteAsync("remember lang1: Swift programming language");
+        await memory.TryExecuteAsync("remember lang2: C# programming language");
+        await memory.TryExecuteAsync("remember lang3: Rust programming language");
+
+        var results = await memory.GetRelevantMemoriesAsync("programming language", limit: 2);
+        Assert.Equal(2, results.Count);
+    }
+
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_ReflectsUpdatesImmediately()
+    {
+        var storage = new TestStorage();
+        var memory = new ExplicitMemoryService(storage);
+        await memory.TryExecuteAsync("remember editor: Sublime Text");
+
+        var before = await memory.GetRelevantMemoriesAsync("editor");
+        Assert.Single(before);
+        Assert.Equal("Sublime Text", before[0].Value);
+
+        await memory.TryExecuteAsync("update my editor to VS Code");
+
+        var after = await memory.GetRelevantMemoriesAsync("editor");
+        Assert.Single(after);
+        Assert.Equal("VS Code", after[0].Value);
+    }
+
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_ReflectsDeletionAndForget()
+    {
+        var storage = new TestStorage();
+        var memory = new ExplicitMemoryService(storage);
+        await memory.TryExecuteAsync("remember vehicle: Honda Civic");
+
+        var before = await memory.GetRelevantMemoriesAsync("vehicle");
+        Assert.Single(before);
+
+        await memory.TryExecuteAsync("forget vehicle");
+
+        var after = await memory.GetRelevantMemoriesAsync("vehicle");
+        Assert.Empty(after);
+    }
+
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_CorruptedStorageOrError_ReturnsEmptyGracefully()
+    {
+        var storage = new TestStorage { FailLoad = true };
+        var memory = new ExplicitMemoryService(storage);
+
+        var results = await memory.GetRelevantMemoriesAsync("editor");
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_RespectsCancellation()
+    {
+        var storage = new TestStorage();
+        var memory = new ExplicitMemoryService(storage);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => memory.GetRelevantMemoriesAsync("test", cancellationToken: cts.Token));
+    }
+
+    [Fact]
+    public async Task GetRelevantMemoriesAsync_DisabledMemory_ReturnsEmpty()
+    {
+        var storage = new TestStorage();
+        var memory = new ExplicitMemoryService(storage, () => false);
+
+        var results = await memory.GetRelevantMemoriesAsync("editor");
+        Assert.Empty(results);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);

@@ -24,7 +24,11 @@ public class AssistantEngine : IAssistantEngine
     private readonly Func<AISettings> _settingsProvider;
     private readonly IExplicitMemoryService? _memory;
     private readonly ISafeNavigationService? _navigation;
+    private readonly IWorkspaceToolsService? _workspaceTools;
+    private readonly AmoraAgentLoop? _agentLoop;
     private readonly SemaphoreSlim _executionLock = new(1, 1);
+
+    public AmoraAgentLoop? AgentLoop => _agentLoop;
 
     private Func<Task<AssistantExecutionResult>>? _pendingAction;
     private string? _pendingPrompt;
@@ -47,7 +51,9 @@ public class AssistantEngine : IAssistantEngine
         IConversationSession? conversationSession = null,
         Func<AISettings>? settingsProvider = null,
         IExplicitMemoryService? memory = null,
-        ISafeNavigationService? navigation = null)
+        ISafeNavigationService? navigation = null,
+        IWorkspaceToolsService? workspaceTools = null,
+        AmoraAgentLoop? agentLoop = null)
     {
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _timerService = timerService ?? throw new ArgumentNullException(nameof(timerService));
@@ -59,6 +65,10 @@ public class AssistantEngine : IAssistantEngine
         _settingsProvider = settingsProvider ?? (() => AISettings.Default);
         _memory = memory;
         _navigation = navigation;
+        _workspaceTools = workspaceTools;
+        _agentLoop = agentLoop ?? (aiProvider != null
+            ? new AmoraAgentLoop(aiProvider, timerService, mediaService, batteryService, telemetryService, memory, navigation, workspaceTools, _settingsProvider)
+            : null);
     }
 
     public async Task<AssistantExecutionResult> ExecuteAsync(string input, CancellationToken cancellationToken = default)
@@ -437,6 +447,28 @@ public class AssistantEngine : IAssistantEngine
                     {
                         promptToSend = $"[System Context: {summary}]\n{rawInput}";
                     }
+                }
+
+                // If Local Brain or an explicit agent loop is active, run the bounded agent planning loop
+                if (_agentLoop != null && _aiProvider.ProviderId == AISettings.ProviderLocalBrain)
+                {
+                    var loopResult = await _agentLoop.RunAsync(rawInput, settings, history, cancellationToken);
+                    if (loopResult.RequiresConfirmation)
+                    {
+                        _pendingAction = loopResult.PendingAction;
+                        _pendingPrompt = loopResult.ConfirmationPrompt;
+                        return AssistantExecutionResult.NeedsConfirmation(_pendingPrompt ?? "Confirmation required", loopResult.ActionId ?? "action");
+                    }
+
+                    _conversationSession.AddTurn(rawInput, loopResult.FinalAnswer);
+                    if (loopResult.CompletedSuccessfully)
+                    {
+                        return loopResult.ExecutedToolCount > 0
+                            ? AssistantExecutionResult.Success(loopResult.FinalAnswer, MascotMood.Happy)
+                            : AssistantExecutionResult.Information(loopResult.FinalAnswer, MascotMood.Happy);
+                    }
+
+                    return AssistantExecutionResult.Failed(loopResult.FinalAnswer, MascotMood.Curious);
                 }
 
                 string aiResponse = await _aiProvider.GenerateResponseAsync(promptToSend, history, cancellationToken);

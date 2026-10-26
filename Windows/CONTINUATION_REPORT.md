@@ -217,3 +217,70 @@ Local verification (SDK 8.0.427):
 Hosted CI and tag publication are checked after this preparation commit. Browser pairing remains unverified; the previously rejected standalone fixture was not retried. Full Mac parity is not claimed.
 
 The extracted beta.3 executable visibly rendered both the 176×34 capsule and expanded Home. Its real timer preset counted down from 05:00 to 04:50, changed the mascot to Focused, then cancellation restored Timer off. Native media state and system metrics rendered live; user playback was not changed. Normal Alt+F4 shutdown was exercised. Screenshots are retained as local evidence (`beta3-collapsed.png`, `beta3-home.png`), excluded from Git.
+
+
+## Checkpoint 3 — Local Brain Agent Planning, Persistent Memory Context, and Safe Multi-Step Execution (2026-10-27)
+
+This checkpoint continues directly from the committed Windows beta 0.6.0-beta.3 (cd0ce9 fix(windows): stabilize timer CI and prepare beta.3 release).
+
+### 1. Architectural Parity and Implementations
+
+Following the canonical Mac references (Sources/AMORA/Core/AmoraAgentLoop.swift, Sources/AMORA/Core/AmoraAgentDecision.swift, Sources/AMORA/Memory/AmoraMemoryStore.swift, and Sources/AMORA/Core/AssistantManager.swift), the following core components were designed and implemented for native Windows:
+
+1. **Strict Typed Agent Decisions and Parsing** (AmoraAgentDecision.cs, AmoraAgentDecisionParser.cs):
+   - Strongly-typed decision hierarchy: FinalAnswer, ToolCall, and ToolBatch.
+   - Comprehensive parsing pipeline supporting markdown code fences (`json ... `), bare JSON objects, batch arrays, and backwards-compatible legacy command tags.
+   - Strict validation: rejects malformed JSON, unclosed fences, missing tool names, and unknown structure schemas with AmoraAgentDecisionException.
+   - Primitive type coercion ensuring boolean and numeric parameters are safely normalized into dictionary string arguments.
+
+2. **Bounded Local Agent Planning Loop** (AmoraAgentLoop.cs):
+   - Strict bounded loop limit of up to 4 allowlisted tool calls (MaximumToolExecutions = 4).
+   - Allowlist of 23 Windows tools:
+     - Timers: create_timer, 	imer.start, 	imer.cancel, 	imer.pause, 	imer.resume, 	imer.status.
+     - System & Power: get_battery_status, attery.status, get_system_status, system.telemetry, system.diagnostics.
+     - Media: media.play, media.pause, media.next, media.previous, media.status.
+     - Notes: search_notes,
+otes.create,
+otes.list.
+     - Safe Navigation: pp.open, older.open (confirmation required).
+     - Explicit Memory:
+emember_fact,
+ecall_memory, orget_memory, list_memories.
+     - System Confirmation Actions: system.confirm_test.
+   - Loop bounds and runaway protection:
+     - Duplicate action detection terminates immediately if the exact same tool and identical arguments are invoked consecutively.
+     - Consecutive failure guard aborts the loop safely after 2 consecutive tool execution failures.
+     - Untrusted input boundary: model outputs, note contents, file paths, and retrieved memories are treated as untrusted data; prompt injections cannot override system policies or allowlists.
+     - Consequential action confirmation: consequential operations (e.g., older.open, system.confirm_test, memory clearing) require explicit user confirmation before any action is executed.
+     - Cancellation and timeout: 30-second default operation timeout (TimeSpan.FromSeconds(30)) with immediate cancellation token propagation.
+
+3. **Persistent Memory Integration with Relevant Local Context** (IExplicitMemoryService.cs, ExplicitMemoryService.cs):
+   - Added GetRelevantMemoriesAsync(query, limit, cancellationToken) to IExplicitMemoryService.
+   - Exact scoring algorithm ported from Mac AmoraMemoryStore.swift: multi-tiered weighting combining exact phrase match, token overlap, morphological stemming (Stem), and domain keywords.
+   - Bounded injection: only relevant, ranked memories are retrieved (default limit 3); the full memory store is never dumped into prompts.
+   - Safe storage failure resilience: corrupt or inaccessible storage returns empty results gracefully without crashing the assistant.
+   - Live updates and deletion reflection: newly updated memories immediately reflect new content; deleted or forgotten memories are never returned.
+   - Strict local/cloud separation: persistent memories are injected only when SelectedProvider == ProviderLocalBrain or ProviderId == AISettings.ProviderLocalBrain. GeminiAIProvider and other cloud providers explicitly filter out [Relevant user memories] blocks from prompts and history to guarantee privacy.
+
+4. **AssistantEngine and App Wiring** (AssistantEngine.cs, App.xaml.cs):
+   - Wired AmoraAgentLoop and IWorkspaceToolsService into AssistantEngine.
+   - Bounded agent planning is executed when Local Brain is active, with seamless confirmation routing to the native UI.
+
+### 2. Comprehensive Test Verification
+
+A total of **31 new tests** were added to the test suite:
+- AmoraAgentDecisionParserTests.cs (13 tests): verifies pure prose fallback, markdown code fence parsing, bare JSON objects, standard and direct tool schemas, tool batches, legacy command tag mapping, malformed JSON rejection, missing tool rejection, and safe parameter coercion.
+- AmoraAgentLoopTests.cs (9 tests): verifies single tool execution, multi-step sequential execution, maximum 4-call limit enforcement, duplicate consecutive call termination, consecutive failure halting, consequential action confirmation, cancellation handling, local memory context injection, and irrelevant memory exclusion.
+- ExplicitMemoryTests.cs (8 new tests): verifies keyword and stem scoring, irrelevant query filtering, retrieval limits, immediate update reflection, deletion and forget reflection, corrupted storage resilience, cancellation, and disabled memory state.
+- NativeLocalBrainIntegrationTests.cs (1 new integration test): verifies real end-to-end execution of AmoraAgentLoop with the official llama.cpp CPU runtime and pinned Qwen 2.5 0.5B GGUF model, executing real offline inference, persistent memory search, and timer status query with clean process shutdown and zero network downloads.
+
+**Full Test Results**:
+- Without native fixture: **672 passed, 0 failed, 1 skipped** (the opt-in native fact).
+- With native fixture (AMORA_LOCAL_BRAIN_TEST_ROOT): **674 passed, 0 failed, 0 skipped** (duration: 8 seconds).
+- Release build: **0 warnings, 0 errors** across AMORA.BrowserHost, AMORA.Orbit, and AMORA.Orbit.Tests.
+
+### 3. Preserved Boundaries and Release Integrity
+
+- Baseline version remains 0.6.0-beta.3; no version metadata was modified, no tags were retargeted, and no unauthorized releases were published.
+- Browser pairing (Chrome/Edge/YouTube) remains documented as unverified/partial until safe real-browser testing is possible.
+- The authentic mascot and native island UI were fully preserved.

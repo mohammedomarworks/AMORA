@@ -9,6 +9,8 @@ public interface IExplicitMemoryService
     Task<AssistantExecutionResult?> TryExecuteAsync(string input, CancellationToken cancellationToken = default);
     Task<AssistantExecutionResult> ConfirmClearAsync(CancellationToken cancellationToken = default);
     void CancelPendingClear();
+    /// <summary>Retrieves relevant memories for a query, ranked by relevance. Never injects the entire store.</summary>
+    Task<IReadOnlyList<ExplicitMemory>> GetRelevantMemoriesAsync(string query, int limit = 3, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Save must commit atomically or leave previous persisted data intact.</summary>
