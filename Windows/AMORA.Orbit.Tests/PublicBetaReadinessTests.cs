@@ -134,7 +134,8 @@ public class PublicBetaReadinessTests : IDisposable
         Assert.True(await storage.HasCredentialAsync("corrupt.target"));
 
         // Overwrite file with invalid random non-cipher bytes
-        string filePath = Path.Combine(credDir, "amora_cred_corrupt.target.bin");
+        string filePath = Path.Combine(credDir, "corrupt_target.dat");
+        Assert.True(File.Exists(filePath));
         File.WriteAllBytes(filePath, new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x11, 0x22 });
 
         // GetCredentialAsync should catch failure and return null without crashing
