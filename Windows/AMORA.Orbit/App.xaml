@@ -5,6 +5,11 @@
     xmlns:converters="using:AMORA.Orbit.Converters">
     <Application.Resources>
         <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Load the standard WinUI control templates and theme resources before app styles. -->
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
             <!-- Converters -->
             <converters:BooleanToVisibilityConverter x:Key="BoolToVis" />
 

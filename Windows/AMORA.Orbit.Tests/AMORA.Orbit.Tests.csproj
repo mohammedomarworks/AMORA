@@ -28,4 +28,8 @@
   <ItemGroup>
     <ProjectReference Include="..\AMORA.Orbit\AMORA.Orbit.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\AMORA.Orbit\App.xaml" Link="Fixtures\App.xaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
