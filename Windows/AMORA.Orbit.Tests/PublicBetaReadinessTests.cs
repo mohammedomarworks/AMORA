@@ -90,7 +90,7 @@ public class PublicBetaReadinessTests : IDisposable
         File.WriteAllText(corruptedFilePath, "<<<< corrupt XML or invalid JSON syntax >>>>");
 
         using var timerService = new StandardTimerService();
-        using var mediaService = new PreviewMediaService();
+        var mediaService = new PreviewMediaService();
         var storage = new InMemoryCredentialStorage();
         var aiSettingsService = new AISettingsService(storage);
         var batteryService = new PreviewBatteryService();
