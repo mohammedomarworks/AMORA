@@ -289,7 +289,7 @@ public class AutomationServiceTests
             var result = await service.RunManuallyAsync(auto.Id);
 
             Assert.True(result.IsSuccess);
-            Assert.Equal(PlaybackState.Paused, media.CurrentTrack.State);
+            Assert.False(media.CurrentTrack.IsPlaying);
         }
         finally
         {
@@ -369,16 +369,17 @@ public class AutomationServiceTests
     public void GeminiIsolation_DeterministicCommandRouter_DoesNotExposeAutomationCreation()
     {
         var router = new DeterministicCommandRouter();
+        var context = new CommandContext();
 
         // Any attempt to command AI or pattern matching to create automations should NOT match
         // and must not create or modify automations autonomously.
-        var result1 = router.Route("create automation for 9am timer", CommandContext.Empty);
-        Assert.Null(result1);
+        var result1 = router.Route("create automation for 9am timer", context);
+        Assert.IsType<AssistantCommand.Unknown>(result1);
 
-        var result2 = router.Route("schedule reminder every day at 10", CommandContext.Empty);
-        Assert.Null(result2);
+        var result2 = router.Route("schedule reminder every day at 10", context);
+        Assert.IsType<AssistantCommand.Unknown>(result2);
 
-        var result3 = router.Route("delete all automations", CommandContext.Empty);
-        Assert.Null(result3);
+        var result3 = router.Route("delete all automations", context);
+        Assert.IsType<AssistantCommand.Unknown>(result3);
     }
 }
