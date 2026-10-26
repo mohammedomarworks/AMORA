@@ -107,6 +107,14 @@
                             <FontIcon Glyph="&#xE72C;" FontSize="12" />
                         </Button>
 
+                        <!-- Automations Toggle Button -->
+                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
+                                Padding="8,4"
+                                ToolTipService.ToolTip="Local Automations"
+                                Click="OnAutomationsToggleClicked">
+                            <FontIcon Glyph="&#xE768;" FontSize="13" />
+                        </Button>
+
                         <!-- Settings Toggle Button -->
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
@@ -225,6 +233,92 @@
                         <!-- Security Notice -->
                         <TextBlock Text="&#xE72E; Credentials are encrypted via Windows DPAPI for your user account. Keys are never written to disk in plaintext."
                                    FontSize="9" Foreground="#6C7280" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Automations Panel Drawer (Collapsible) -->
+                <Border Grid.Row="1"
+                        Background="#161822"
+                        BorderBrush="{StaticResource OrbitBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="16"
+                        Padding="14,12"
+                        Visibility="{Binding Automations.IsOpen, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Spacing="10">
+                        <!-- Drawer Header -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE768;" FontSize="12" Foreground="{StaticResource OrbitCyanAccentBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="Local Automations &amp; Schedules" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource OrbitTextPrimaryBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,2" Click="OnCloseAutomationsClicked">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Active Automations List -->
+                        <ItemsControl ItemsSource="{Binding Automations.Items}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#0D0F17" BorderBrush="#222634" BorderThickness="1" CornerRadius="10" Padding="10,6" Margin="0,0,0,6">
+                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                                                <TextBlock Text="{Binding TriggerText}" FontSize="10" Foreground="{StaticResource OrbitCyanAccentBrush}" />
+                                                <TextBlock Text="{Binding ActionText}" FontSize="9" Foreground="{StaticResource OrbitTextMutedBrush}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,3" FontSize="10"
+                                                    ToolTipService.ToolTip="Run Now" Tag="{Binding Id}" Click="OnRunAutomationNowClicked">
+                                                <FontIcon Glyph="&#xE768;" FontSize="10" />
+                                            </Button>
+                                            <Button Grid.Column="2" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,3" FontSize="10"
+                                                    ToolTipService.ToolTip="Delete" Tag="{Binding Id}" Click="OnDeleteAutomationClicked">
+                                                <FontIcon Glyph="&#xE74D;" FontSize="10" Foreground="#FF453A" />
+                                            </Button>
+                                            <ToggleSwitch Grid.Column="3" IsOn="{Binding IsEnabled, Mode=OneWay}"
+                                                          OnContent="" OffContent="" MinWidth="0"
+                                                          Tag="{Binding Id}" Toggled="OnAutomationToggled" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Create New Automation Form -->
+                        <Border Background="#10121C" BorderBrush="#2A2E3D" BorderThickness="1" CornerRadius="10" Padding="10,8">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Create New Automation" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource OrbitCyanAccentBrush}" />
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                    <TextBox Grid.Column="0" PlaceholderText="Automation name..." Text="{Binding Automations.NewName, Mode=TwoWay}"
+                                             FontSize="10" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                                    <TextBox Grid.Column="1" PlaceholderText="Reminder message..." Text="{Binding Automations.NewReminderMessage, Mode=TwoWay}"
+                                             FontSize="10" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+                                    <ComboBox Grid.Column="0" SelectedIndex="{Binding Automations.NewTriggerTypeIndex, Mode=TwoWay}" FontSize="10" Padding="6,2">
+                                        <ComboBoxItem Content="Daily Schedule (9 AM)" />
+                                        <ComboBoxItem Content="Every 30 Mins" />
+                                        <ComboBoxItem Content="Every 60 Mins" />
+                                    </ComboBox>
+                                    <ComboBox Grid.Column="1" SelectedIndex="{Binding Automations.NewActionTypeIndex, Mode=TwoWay}" FontSize="10" Padding="6,2">
+                                        <ComboBoxItem Content="Show Reminder" />
+                                        <ComboBoxItem Content="Start 25m Timer" />
+                                        <ComboBoxItem Content="Pause Media" />
+                                    </ComboBox>
+                                    <Button Grid.Column="3" Style="{StaticResource OrbitPrimaryActionButtonStyle}" Padding="10,4" FontSize="10" Click="OnCreateAutomationClicked">
+                                        <TextBlock Text="Add Automation" FontSize="10" />
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Status Indicator -->
+                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Visibility="{Binding Automations.HasStatusMessage, Converter={StaticResource BoolToVis}}">
+                            <FontIcon Glyph="{Binding Automations.StatusGlyph}" FontSize="11" Foreground="{Binding Automations.StatusColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Automations.StatusMessage}" FontSize="10" Foreground="{Binding Automations.StatusColor}"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="300" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

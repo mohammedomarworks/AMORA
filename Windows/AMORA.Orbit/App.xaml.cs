@@ -34,6 +34,13 @@ public partial class App : Application
             aiSettingsService,
             () => aiSettingsService.CurrentSettings
         );
+        IAutomationService automationService = new LocalAutomationService(
+            timerService,
+            mediaService,
+            suggestionService
+        );
+        _ = automationService.LoadAutomationsAsync();
+
         var hotKeyService = new WindowsHotKeyService();
         var trayService = new TaskbarTrayService();
 
@@ -45,6 +52,7 @@ public partial class App : Application
         );
 
         var settingsVm = new SettingsViewModel(aiSettingsService, aiProvider);
+        var automationsVm = new AutomationsViewModel(automationService);
 
         var conversationSession = new ConversationSession(
             () => aiSettingsService.CurrentSettings.MaxHistoryTurns
@@ -79,7 +87,8 @@ public partial class App : Application
             assistantVm,
             hotKeyService,
             trayService,
-            settingsVm
+            settingsVm,
+            automationsVm
         );
 
         // 3. Create and activate Window
@@ -100,6 +109,10 @@ public partial class App : Application
             if (suggestionService is IDisposable disposableSuggestion)
             {
                 disposableSuggestion.Dispose();
+            }
+            if (automationService is IDisposable disposableAutomation)
+            {
+                disposableAutomation.Dispose();
             }
         };
         _mainWindow.Activate();

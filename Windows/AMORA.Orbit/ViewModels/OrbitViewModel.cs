@@ -29,7 +29,8 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         AssistantCommandViewModel assistant,
         IHotKeyService? hotKeyService = null,
         ITaskbarTrayService? trayService = null,
-        SettingsViewModel? settings = null)
+        SettingsViewModel? settings = null,
+        AutomationsViewModel? automations = null)
     {
         _positioningService = positioningService ?? throw new ArgumentNullException(nameof(positioningService));
         Mascot = mascot ?? throw new ArgumentNullException(nameof(mascot));
@@ -39,8 +40,31 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         SystemStatus = systemStatus ?? throw new ArgumentNullException(nameof(systemStatus));
         Assistant = assistant ?? throw new ArgumentNullException(nameof(assistant));
         Settings = settings;
+        Automations = automations;
         _hotKeyService = hotKeyService;
         _trayService = trayService;
+
+        if (Automations != null)
+        {
+            Automations.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(Automations.IsOpen) && Automations.IsOpen && Settings != null)
+                {
+                    Settings.IsOpen = false;
+                }
+            };
+        }
+
+        if (Settings != null)
+        {
+            Settings.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(Settings.IsOpen) && Settings.IsOpen && Automations != null)
+                {
+                    Automations.IsOpen = false;
+                }
+            };
+        }
 
         Assistant.ResultReceived += OnAssistantResultReceived;
 
@@ -64,6 +88,7 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
     public SystemStatusViewModel SystemStatus { get; }
     public AssistantCommandViewModel Assistant { get; }
     public SettingsViewModel? Settings { get; }
+    public AutomationsViewModel? Automations { get; }
 
     public bool IsExpanded
     {
@@ -269,5 +294,6 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         Timer.Dispose();
         Suggestion.Dispose();
         SystemStatus.Dispose();
+        Automations?.Dispose();
     }
 }

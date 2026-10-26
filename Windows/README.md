@@ -48,6 +48,7 @@ Windows/
 │   │   └── DpiHelper.cs                          # Per-monitor DPI scale factor conversions
 │   ├── Models/
 │   │   ├── AISettings.cs                         # AI provider configuration & test connection results
+│   │   ├── AmoraAutomation.cs                    # Local automation models, schedules & allowlisted actions
 │   │   ├── AmoraContextSnapshot.cs               # Compact, privacy-first context snapshot of active services
 │   │   ├── AssistantCommand.cs                   # Strongly-typed discriminated command union
 │   │   ├── AssistantExecutionResult.cs           # Truthful execution outcomes & mood reactions
@@ -65,6 +66,7 @@ Windows/
 │   │   │   ├── IAISettingsService.cs             # AI settings and secure credential management
 │   │   │   ├── IAssistantCommandRouter.cs        # Contextual command routing interface
 │   │   │   ├── IAssistantEngine.cs               # Assistant execution engine contract
+│   │   │   ├── IAutomationService.cs             # Local automation & scheduled action contract
 │   │   │   ├── IBatteryService.cs
 │   │   │   ├── IConversationSession.cs           # Ephemeral multi-turn context contract
 │   │   │   ├── IHotKeyService.cs
@@ -82,6 +84,7 @@ Windows/
 │   │       ├── DeterministicCommandRouter.cs     # Pattern-based router with contextual disambiguation
 │   │       ├── GeminiAIProvider.cs               # Google Gemini REST API v1beta cloud provider
 │   │       ├── InMemoryCredentialStorage.cs      # In-memory secure storage for tests
+│   │       ├── LocalAutomationService.cs         # Local scheduled automation engine & JSON persistence
 │   │       ├── LocalStubAIProvider.cs            # Safe offline stub provider
 │   │       ├── PreviewBatteryService.cs          # Offline / preview battery mock
 │   │       ├── PreviewMediaService.cs            # Offline / interactive preview media
@@ -97,6 +100,7 @@ Windows/
 │   │       └── WindowsWindowPositioningService.cs # Multi-monitor work area & clamp math
 │   ├── ViewModels/                               # MVVM ViewModels
 │   │   ├── AssistantCommandViewModel.cs          # Command input, feedback & confirmation state
+│   │   ├── AutomationsViewModel.cs               # Local automation list, toggle & quick-creation state
 │   │   ├── OrbitViewModel.cs                     # Master capsule state machine
 │   │   ├── RobotMascotViewModel.cs               # Mascot expressions and interactive reactions
 │   │   ├── MediaControlViewModel.cs              # Media playback controls
@@ -119,6 +123,8 @@ Windows/
     ├── AssistantEngineContextTests.cs            # Context-aware queries, truthful data & privacy defaults tests
     ├── AssistantEngineConversationTests.cs       # Multi-turn conversation history, follow-up & reset tests
     ├── AssistantEngineTests.cs                   # End-to-end execution, real timers, media & honest failures
+    ├── AutomationServiceTests.cs                 # Local automation persistence, scheduling, missed runs & safety tests
+    ├── AutomationsViewModelTests.cs              # Automations drawer ViewModel, toggles & binding tests
     ├── BatteryServiceTests.cs                    # Power status, AC detection & charging calculations tests
     ├── ConversationSessionTests.cs               # Bounded in-memory turn management & trimming tests
     ├── DeterministicCommandRouterTests.cs        # Command regex parsing, context disambiguation & safety
@@ -149,6 +155,7 @@ Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engin
 8. **Bounded Session-Only Conversational Context (`ConversationSession`)**: Implements multi-turn conversational follow-up understanding using Gemini's native alternating `user`/`model` content history. Context is held strictly in memory with configurable turn limits (default: 6 turns) and predictable FIFO trimming that guarantees history always starts with a user turn. Never persists conversation content to disk or logs sensitive prompts. Failed requests and cancellations are safely omitted, and conversation can be reset via UI button or deterministic commands.
 9. **Privacy-First Context Awareness V1 (`AmoraContextSnapshot`)**: Synthesizes a compact, read-only context snapshot exclusively from AMORA-owned services (`ITimerService`, `IMediaService`, `IBatteryService`, `ISystemTelemetryService`). Resolves contextual follow-ups ("pause it", "how much time is left?", "am I charging?") deterministically without cloud AI when possible. Never captures screenshots, clipboard contents, keystrokes, window titles, or file systems. Status context is never sent to the AI provider unless the user explicitly opts in via a dedicated Settings toggle (`SendStatusContextToAI`, default: off). Snapshots are ephemeral and strictly excluded from conversation history turns.
 10. **Proactive AMORA V1 (`ProactiveSuggestionService`)**: Implements a lightweight, privacy-first proactive suggestion engine generating deterministic local insights strictly from AMORA-owned state (timer completions and low battery while unplugged). Opt-in by default (`EnableProactiveSuggestions`, default: off). Displays at most one suggestion at a time inside the existing Orbit UI, with duplicate suppression, cooldowns, and dismissal respect. Resolves obsolete alerts automatically (e.g. plugging in power clears low battery alerts; starting a new timer clears completion alerts). Never calls cloud AI, captures screenshots, or spams notifications. Offers safe actions without ever auto-executing.
+11. **Local Automations V1 (`LocalAutomationService`)**: Implements a minimal, safe local automation system for user-configured time-based automations (daily schedules, interval loops, and one-time reminders) executing predefined low-risk actions (proactive reminders, timer starts, media pause/play). Persisted locally at `%LocalAppData%/AMORA/automations.json`. Predictably handles missed schedules upon app restart and suppresses duplicate executions. Strict security boundaries: cloud AI (Gemini) is blocked from creating or modifying automations autonomously; arbitrary code/shell executions are completely disallowed.
 
 ---
 

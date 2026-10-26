@@ -183,4 +183,52 @@ public sealed partial class OrbitCapsuleView : UserControl
             SettingsApiKeyBox.Password = string.Empty;
         }
     }
+
+    private void OnAutomationsToggleClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Automations != null)
+        {
+            vm.Automations.ToggleOpen();
+        }
+    }
+
+    private void OnCloseAutomationsClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Automations != null)
+        {
+            vm.Automations.IsOpen = false;
+        }
+    }
+
+    private async void OnCreateAutomationClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Automations != null)
+        {
+            await vm.Automations.CreateAutomationAsync();
+        }
+    }
+
+    private async void OnAutomationToggled(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Automations != null && sender is FrameworkElement fe && fe.Tag is string id)
+        {
+            await vm.Automations.ToggleEnabledAsync(id);
+        }
+    }
+
+    private async void OnDeleteAutomationClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Automations != null && sender is FrameworkElement fe && fe.Tag is string id)
+        {
+            await vm.Automations.DeleteAsync(id);
+        }
+    }
+
+    private async void OnRunAutomationNowClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is OrbitViewModel vm && vm.Automations != null && sender is FrameworkElement fe && fe.Tag is string id)
+        {
+            await vm.Automations.RunNowAsync(id);
+        }
+    }
 }
