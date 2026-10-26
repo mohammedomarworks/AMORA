@@ -27,6 +27,10 @@ public class WindowsCredentialStorage : ISecureCredentialStorage
         else
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(localAppData))
+            {
+                localAppData = AppContext.BaseDirectory;
+            }
             _storageDirectory = Path.Combine(localAppData, "AMORA", "Credentials");
         }
     }

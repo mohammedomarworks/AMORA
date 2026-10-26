@@ -27,6 +27,10 @@ public class AISettingsService : IAISettingsService
         else
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(localAppData))
+            {
+                localAppData = AppContext.BaseDirectory;
+            }
             _settingsFilePath = Path.Combine(localAppData, "AMORA", "ai_settings.json");
         }
 

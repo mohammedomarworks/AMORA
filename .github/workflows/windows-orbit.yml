@@ -41,3 +41,46 @@ jobs:
 
       - name: Run xUnit Tests (Release x64)
         run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --no-build --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"
+
+      - name: Publish Release Package (win-x64)
+        run: dotnet publish Windows/AMORA.Orbit/AMORA.Orbit.csproj --configuration Release --runtime win-x64 --self-contained true /p:Platform=x64 --output ./publish/win-x64
+
+      - name: Stage Release Manifest
+        shell: pwsh
+        run: |
+          Copy-Item Windows/RELEASE_MANIFEST.md -Destination ./publish/win-x64/RELEASE_MANIFEST.md -Force
+
+      - name: Compress Release Archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ./publish/win-x64/* -DestinationPath ./AMORA.Orbit-v0.6.0-beta-win-x64.zip -Force
+
+      - name: Validate Release Package
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "./AMORA.Orbit-v0.6.0-beta-win-x64.zip")) {
+            throw "Beta package archive AMORA.Orbit-v0.6.0-beta-win-x64.zip was not generated!"
+          }
+          $zipSize = (Get-Item "./AMORA.Orbit-v0.6.0-beta-win-x64.zip").Length
+          Write-Host "Beta archive size: $zipSize bytes"
+          if ($zipSize -lt 1000000) {
+            throw "Package size ($zipSize bytes) is suspiciously small for a self-contained WinUI 3 distribution!"
+          }
+          $requiredFiles = @("AMORA.Orbit.exe", "AMORA.Orbit.dll", "resources.pri", "RELEASE_MANIFEST.md")
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path "./publish/win-x64/$file")) {
+              throw "Required file $file is missing from the publish directory!"
+            }
+          }
+          $forbiddenFiles = Get-ChildItem -Path ./publish/win-x64 -Recurse -Include *.apikey, *.key, *secret*, *.token, *.user
+          if ($forbiddenFiles.Count -gt 0) {
+            throw "Prohibited secret or development files found in publish package: $($forbiddenFiles.FullName)"
+          }
+          Write-Host "Release package validation succeeded: All binaries and manifest verified with zero sensitive artifacts."
+
+      - name: Upload Beta Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AMORA.Orbit-v0.6.0-beta-win-x64
+          path: ./AMORA.Orbit-v0.6.0-beta-win-x64.zip
+          retention-days: 30

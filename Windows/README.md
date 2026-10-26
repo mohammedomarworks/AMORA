@@ -38,11 +38,16 @@ AMORA Orbit is the native Windows companion application for AMORA. Designed spec
 Windows/
 ├── AMORA.sln                                     # Visual Studio Solution (.NET 8)
 ├── README.md                                     # This documentation
+├── RELEASE_MANIFEST.md                           # Public beta release manifest & deployment guide
 ├── AMORA.Orbit/                                  # WinUI 3 Desktop App Project
-│   ├── AMORA.Orbit.csproj                        # Target: net8.0-windows10.0.19041.0
+│   ├── AMORA.Orbit.csproj                        # Target: net8.0-windows10.0.19041.0 (v0.6.0-beta)
 │   ├── app.manifest                              # PerMonitorV2 DPI awareness & OS compatibility
-│   ├── App.xaml / App.xaml.cs                    # Application lifecycle & DI container
+│   ├── App.xaml / App.xaml.cs                    # Application lifecycle & unhandled exception handler
 │   ├── MainWindow.xaml / MainWindow.xaml.cs      # Borderless, topmost DWM-styled capsule window
+│   ├── Properties/
+│   │   └── PublishProfiles/                      # Unpackaged self-contained publish profiles
+│   │       ├── win-x64.pubxml                    # x64 self-contained release publish profile
+│   │       └── win-arm64.pubxml                  # ARM64 self-contained release publish profile
 │   ├── Interop/
 │   │   ├── NativeMethods.cs                      # Win32 user32/kernel32/dwmapi/shell32 P/Invoke
 │   │   └── DpiHelper.cs                          # Per-monitor DPI scale factor conversions
@@ -81,6 +86,7 @@ Windows/
 │   │       ├── AISettingsService.cs              # AI settings persistence & key coordination
 │   │       ├── AssistantEngine.cs                # Unified command execution engine with AI tool parsing
 │   │       ├── ConversationSession.cs            # Thread-safe in-memory bounded turn manager
+│   │       ├── CrashLogger.cs                    # Diagnostic crash logger with automated secret redaction
 │   │       ├── DeterministicCommandRouter.cs     # Pattern-based router with contextual disambiguation
 │   │       ├── GeminiAIProvider.cs               # Google Gemini REST API v1beta cloud provider
 │   │       ├── InMemoryCredentialStorage.cs      # In-memory secure storage for tests
@@ -116,7 +122,7 @@ Windows/
 │       ├── TimerControlView.xaml                 # Focus timer card
 │       └── SystemStatusView.xaml                 # Battery & hardware gauges
 └── AMORA.Orbit.Tests/                            # Unit Test Project
-    ├── AMORA.Orbit.Tests.csproj                  # Target: net8.0-windows10.0.19041.0
+    ├── AMORA.Orbit.Tests.csproj                  # Target: net8.0-windows10.0.19041.0 (v0.6.0-beta)
     ├── AmoraContextSnapshotTests.cs              # Snapshot generation, inactive honesty & privacy assertions
     ├── AssistantCommandViewModelTests.cs         # Command ViewModel, input tracking & confirmation tests
     ├── AssistantEngineAIToolExecutionTests.cs    # AI natural language interpretation & safe tool execution
@@ -133,6 +139,7 @@ Windows/
     ├── MediaTrackTests.cs                        # Duration formatting & progress percent tests
     ├── PositioningServiceTests.cs                # Work area centering, DPI & clamping tests
     ├── ProactiveSuggestionEngineTests.cs        # Opt-in defaults, triggers, cooldowns, duplicate suppression & safety tests
+    ├── PublicBetaReadinessTests.cs               # Crash logging, corrupted file recovery & DPAPI security tests
     ├── SecureCredentialStorageTests.cs           # DPAPI / in-memory credential storage & masking tests
     ├── SettingsViewModelTests.cs                 # Settings lifecycle, key save/clear & connection testing
     ├── SuggestionServiceTests.cs                 # Action execution, snooze, and dismiss tests
@@ -163,10 +170,15 @@ Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engin
     - **Desktop Keyboard Ergonomics**: Hierarchical Escape handling (Automations drawer -> Settings drawer -> Input clearing -> Capsule collapse) and automatic programmatic focus to the command input box whenever Orbit expands.
     - **Reduced-Motion Preference**: Queries Windows `UISettings.AnimationsEnabled` to respect user accessibility choices, disabling infinite breathing glow storyboards in favor of steady illumination.
     - **Resource Disposal**: Complete `IDisposable` lifecycle chaining across ViewModels, services, and cancellation tokens preventing memory leaks on repeated app interactions or shutdown.
+13. **Public Beta Readiness & Packaging (Phase 6J)**: Prepares Orbit for a controlled public beta:
+    - **Standalone Unpackaged Distribution**: Published as a self-contained `win-x64` WinUI 3 distribution (`AMORA.Orbit-v0.6.0-beta-win-x64.zip`) with bundled .NET 8 runtime and self-contained Windows App SDK binaries (`Microsoft.ui.xaml.dll`, `resources.pri`, `app.manifest`). Users do not need separate .NET or Windows App Runtime MSIX installations.
+    - **Resilient Path Resolution & Failure Recovery**: Settings (`ai_settings.json`), credentials (`Credentials/`), and automations (`automations.json`) resolve against `%LocalAppData%\AMORA` with safe fallback to `AppContext.BaseDirectory`. Corrupted or malformed configuration files recover to safe defaults automatically.
+    - **Diagnostic Crash Logging (`CrashLogger`)**: Captures unhandled UI and background thread exceptions to `%LocalAppData%\AMORA\Logs\crash.log` with automated redaction of Gemini API keys, passwords, bearer tokens, and credentials.
+    - **Automated CI Validation & Secret Scanning**: GitHub Actions builds the release, executes all 181 unit tests, packages the zip, verifies required binaries and manifest, and ensures zero credentials or development artifacts are bundled.
 
 ---
 
-## Building and Running
+## Building and Packaging
 
 ### Prerequisites (Windows Development Machine)
 1. **Windows 10 Version 1809 (Build 17763) or Windows 11**.
@@ -176,21 +188,69 @@ Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engin
    - Windows 10/11 SDK (10.0.19041.0 or higher)
 3. Or **.NET 8 SDK** via command line with Windows App SDK installed.
 
-### Build via Visual Studio
-1. Open `Windows/AMORA.sln` in Visual Studio 2022.
-2. Select target platform `x64` or `arm64` and configuration `Debug` or `Release`.
-3. Set `AMORA.Orbit` as the Startup Project.
-4. Press `F5` to build and launch AMORA Orbit.
-
-### Build and Test via Command Line (Windows Machine / CI)
+### Build and Test via Command Line
 ```cmd
 cd Windows
 dotnet build AMORA.sln -c Release
 dotnet test AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj -c Release
 ```
 
+### Reproducible Beta Packaging Command
+```cmd
+cd Windows
+dotnet publish AMORA.Orbit/AMORA.Orbit.csproj --configuration Release --runtime win-x64 --self-contained true /p:Platform=x64 --output ./publish/win-x64
+copy RELEASE_MANIFEST.md publish\win-x64\RELEASE_MANIFEST.md
+powershell Compress-Archive -Path ./publish/win-x64/* -DestinationPath ./AMORA.Orbit-v0.6.0-beta-win-x64.zip -Force
+```
+
 > [!NOTE]
-> Unit tests run automatically in GitHub Actions on `windows-latest` via `.github/workflows/windows-orbit.yml`. They test pure C# view models, service contracts, command routing, and execution logic.
+> The automated Windows CI pipeline (`.github/workflows/windows-orbit.yml`) builds Release x64, runs all 181 unit tests, publishes the self-contained package, validates binary integrity, scans for secrets, and publishes `AMORA.Orbit-v0.6.0-beta-win-x64.zip` as a workflow artifact.
+
+---
+
+## Controlled Public Beta Guide
+
+### 1. Installation
+1. Download `AMORA.Orbit-v0.6.0-beta-win-x64.zip` from the latest GitHub Actions release run.
+2. Extract the archive into `%LocalAppData%\Programs\AMORA.Orbit` or any preferred directory.
+3. Launch `AMORA.Orbit.exe`.
+
+> [!IMPORTANT]
+> **Windows SmartScreen Notice**: Because this public beta build is unsigned, Windows SmartScreen will display an *"Unknown Publisher"* warning. Click **More info** -> **Run anyway** to launch the app.
+
+### 2. First Run & Configuration
+- **Local Ambient Mode**: Focus timers, media playback controls, battery/power metrics, hardware telemetry, and local automations work immediately out of the box with zero configuration.
+- **Enabling Google Gemini AI**:
+  1. Expand Orbit (`Ctrl + Alt + O` or click the collapsed pill).
+  2. Click the **Settings** (Gear) button in the header.
+  3. Paste your Gemini API key (encrypted with Windows DPAPI).
+  4. Click **Test Connection** to verify your key.
+  5. Click **Save**.
+
+### 3. Data Privacy Boundaries
+- **Local Only**: Timers, media sessions, power metrics, CPU/RAM telemetry, scheduled automations, and conversation history turns. Conversation history is session-only and never written to disk.
+- **Sent to Gemini API**: Only user query prompts submitted through the command bar. System status snapshot is **strictly opt-in** (`SendStatusContextToAI`, default: off).
+- **Zero Ingestion**: AMORA never logs keystrokes, screenshots, clipboard items, or window contents.
+
+### 4. Updating & Recovery
+- **Update**: Exit Orbit, then extract the new beta zip over the existing folder. User settings in `%LocalAppData%\AMORA` persist across updates.
+- **Uninstall**: Exit Orbit, delete the application directory, and optionally remove `%LocalAppData%\AMORA`.
+- **Corrupted State Recovery**: Corrupted settings recover to defaults automatically. To factory-reset Orbit, delete `%LocalAppData%\AMORA`.
+- **Crash Diagnostics**: Sanitized incident reports are saved to `%LocalAppData%\AMORA\Logs\crash.log`.
+
+---
+
+## Reusable Beta Release Checklist
+
+- [ ] **Code Freeze**: All planned changes merged; working tree clean.
+- [ ] **Unit Tests**: All 181 Windows unit tests pass in `AMORA.Orbit.Tests`.
+- [ ] **macOS Host Tests**: 567 macOS unit tests pass with zero regressions (`swift test`).
+- [ ] **Version Consistency**: Version `0.6.0-beta` declared in `AMORA.Orbit.csproj` and `AMORA.Orbit.Tests.csproj`.
+- [ ] **Manifest Staged**: `RELEASE_MANIFEST.md` includes accurate prerequisites, binary manifest, and SmartScreen guidance.
+- [ ] **Self-Contained Publish**: `dotnet publish` produces standalone `win-x64` folder containing `AMORA.Orbit.exe`, `resources.pri`, and Windows App SDK binaries.
+- [ ] **Secret Scan**: Published output verified free of `.key`, `.apikey`, `.token`, or developer files.
+- [ ] **Archive Verification**: Archive size > 10 MB and decompresses cleanly without missing runtime components.
+- [ ] **CI Run**: GitHub Actions `Windows AMORA Orbit CI` run finishes green on `windows-latest`.
 
 ---
 

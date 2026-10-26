@@ -9,6 +9,7 @@
     <IsTestProject>true</IsTestProject>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.6.0-beta</Version>
   </PropertyGroup>
 
   <ItemGroup>

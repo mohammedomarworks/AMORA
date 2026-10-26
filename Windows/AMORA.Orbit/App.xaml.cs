@@ -15,6 +15,21 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        UnhandledException += OnUnhandledException;
+    }
+
+    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            CrashLogger.LogException(e.Exception);
+            // Mark handled if possible so desktop companion doesn't vanish silently on non-fatal errors
+            e.Handled = true;
+        }
+        catch
+        {
+            // Do not fault during crash logging
+        }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

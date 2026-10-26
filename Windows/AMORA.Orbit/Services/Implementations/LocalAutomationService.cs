@@ -57,6 +57,10 @@ public class LocalAutomationService : IAutomationService, IDisposable
         else
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(localAppData))
+            {
+                localAppData = AppContext.BaseDirectory;
+            }
             _filePath = Path.Combine(localAppData, "AMORA", "automations.json");
         }
 
