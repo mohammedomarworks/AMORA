@@ -184,8 +184,21 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
 
     public void HandleEscape()
     {
+        if (Automations?.IsOpen == true)
+        {
+            Automations.IsOpen = false;
+            return;
+        }
+
+        if (Settings?.IsOpen == true)
+        {
+            Settings.IsOpen = false;
+            return;
+        }
+
         if (IsExpanded)
         {
+            Assistant.CancelActiveRequest();
             IsExpanded = false;
             IsPinned = false;
         }
@@ -295,5 +308,6 @@ public class OrbitViewModel : INotifyPropertyChanged, IDisposable
         Suggestion.Dispose();
         SystemStatus.Dispose();
         Automations?.Dispose();
+        Assistant.Dispose();
     }
 }

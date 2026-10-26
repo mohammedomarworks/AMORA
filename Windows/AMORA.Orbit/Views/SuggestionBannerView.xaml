@@ -55,6 +55,7 @@
                 <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
                         Padding="10,4"
                         FontSize="11"
+                        AutomationProperties.Name="Execute Proactive Suggestion Action"
                         Click="OnExecuteActionClicked">
                     <TextBlock Text="{Binding ActionLabel}" />
                 </Button>
@@ -62,6 +63,7 @@
                 <Button Style="{StaticResource OrbitGhostButtonStyle}"
                         Padding="6,4"
                         ToolTipService.ToolTip="Snooze 15 minutes"
+                        AutomationProperties.Name="Snooze Suggestion 15 minutes"
                         Click="OnSnoozeClicked">
                     <FontIcon Glyph="&#xE823;" FontSize="12" />
                 </Button>
@@ -69,6 +71,7 @@
                 <Button Style="{StaticResource OrbitGhostButtonStyle}"
                         Padding="6,4"
                         ToolTipService.ToolTip="Dismiss"
+                        AutomationProperties.Name="Dismiss Suggestion"
                         Click="OnDismissClicked">
                     <FontIcon Glyph="&#xE711;" FontSize="12" />
                 </Button>

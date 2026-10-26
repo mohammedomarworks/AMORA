@@ -78,6 +78,7 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16">
                     <!-- Previous Track -->
                     <Button Style="{StaticResource OrbitGhostButtonStyle}"
+                            AutomationProperties.Name="Previous Track"
                             Click="OnPreviousClicked"
                             ToolTipService.ToolTip="Previous Track">
                         <FontIcon Glyph="&#xE892;" FontSize="14" />
@@ -88,6 +89,7 @@
                             Width="36" Height="36"
                             Padding="0"
                             CornerRadius="18"
+                            AutomationProperties.Name="Play or Pause Media"
                             Click="OnPlayPauseClicked"
                             ToolTipService.ToolTip="Play / Pause">
                         <FontIcon Glyph="{Binding PlayPauseIconGlyph}"
@@ -99,6 +101,7 @@
 
                     <!-- Next Track -->
                     <Button Style="{StaticResource OrbitGhostButtonStyle}"
+                            AutomationProperties.Name="Next Track"
                             Click="OnNextClicked"
                             ToolTipService.ToolTip="Next Track">
                         <FontIcon Glyph="&#xE893;" FontSize="14" />

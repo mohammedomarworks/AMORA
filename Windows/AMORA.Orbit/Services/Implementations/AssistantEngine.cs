@@ -442,12 +442,26 @@ public class AssistantEngine : IAssistantEngine
             }
             catch (Exception ex)
             {
-                return AssistantExecutionResult.Failed($"AI request failed: {ex.Message}");
+                string userFriendlyError = ex.Message;
+                if (ex.Message.Contains("429") || ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase))
+                {
+                    userFriendlyError = "rate limit reached. Please wait a moment before trying again.";
+                }
+                else if (ex.Message.Contains("401") || ex.Message.Contains("403") || ex.Message.Contains("API key", StringComparison.OrdinalIgnoreCase))
+                {
+                    userFriendlyError = "invalid Gemini API key. Please check your credentials in Settings.";
+                }
+                else if (ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+                {
+                    userFriendlyError = "connection timed out. Please check your internet connection.";
+                }
+
+                return AssistantExecutionResult.Failed($"AI request failed: {userFriendlyError}");
             }
         }
 
         return AssistantExecutionResult.Unsupported(
-            "Local AI engine is currently offline. You can control timers, media, and system status directly.",
+            "Local AI engine is currently offline. You can control timers, media, and system status directly, or configure an API key in Settings.",
             MascotMood.Thinking
         );
     }

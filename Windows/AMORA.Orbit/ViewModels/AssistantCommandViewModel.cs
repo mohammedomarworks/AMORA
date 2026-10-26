@@ -1,13 +1,14 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 
 namespace AMORA.Orbit.ViewModels;
 
-public class AssistantCommandViewModel : INotifyPropertyChanged
+public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IAssistantEngine _engine;
     private string _inputText = string.Empty;
@@ -16,6 +17,7 @@ public class AssistantCommandViewModel : INotifyPropertyChanged
     private AssistantResultStatus? _lastStatus;
     private bool _hasPendingConfirmation;
     private string? _confirmationPrompt;
+    private CancellationTokenSource? _activeCts;
 
     public AssistantCommandViewModel(IAssistantEngine engine)
     {
@@ -114,25 +116,29 @@ public class AssistantCommandViewModel : INotifyPropertyChanged
     public bool HasText => !string.IsNullOrEmpty(_inputText);
     public bool HasStatus => !string.IsNullOrWhiteSpace(_statusMessage);
 
-    public string StatusColor => _lastStatus switch
-    {
-        AssistantResultStatus.Success => "#30D158",            // Green
-        AssistantResultStatus.Failed => "#FF453A",             // Coral Red
-        AssistantResultStatus.NeedsConfirmation => "#FF9F0A",  // Amber
-        AssistantResultStatus.Information => "#52CCFF",        // Electric Cyan
-        AssistantResultStatus.Unsupported => "#FF9F0A",        // Amber
-        _ => "#9AA2B2"                                         // Muted text
-    };
+    public string StatusColor => _isProcessing
+        ? "#52CCFF"
+        : _lastStatus switch
+        {
+            AssistantResultStatus.Success => "#30D158",            // Green
+            AssistantResultStatus.Failed => "#FF453A",             // Coral Red
+            AssistantResultStatus.NeedsConfirmation => "#FF9F0A",  // Amber
+            AssistantResultStatus.Information => "#52CCFF",        // Electric Cyan
+            AssistantResultStatus.Unsupported => "#FF9F0A",        // Amber
+            _ => "#9AA2B2"                                         // Muted text
+        };
 
-    public string StatusGlyph => _lastStatus switch
-    {
-        AssistantResultStatus.Success => "\uE73E",            // CheckMark
-        AssistantResultStatus.Failed => "\uEA39",             // ErrorCircle
-        AssistantResultStatus.NeedsConfirmation => "\uE7BA",  // Warning
-        AssistantResultStatus.Information => "\uE946",        // Info
-        AssistantResultStatus.Unsupported => "\uE897",        // Help
-        _ => "\uE946"
-    };
+    public string StatusGlyph => _isProcessing
+        ? "\uF16A"                                                // Sparkles / Thinking
+        : _lastStatus switch
+        {
+            AssistantResultStatus.Success => "\uE73E",            // CheckMark
+            AssistantResultStatus.Failed => "\uEA39",             // ErrorCircle
+            AssistantResultStatus.NeedsConfirmation => "\uE7BA",  // Warning
+            AssistantResultStatus.Information => "\uE946",        // Info
+            AssistantResultStatus.Unsupported => "\uE897",        // Help
+            _ => "\uE946"
+        };
 
     public event EventHandler<AssistantExecutionResult>? ResultReceived;
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -146,11 +152,20 @@ public class AssistantCommandViewModel : INotifyPropertyChanged
 
         string commandToRun = _inputText.Trim();
         InputText = string.Empty;
+
+        _activeCts?.Cancel();
+        _activeCts?.Dispose();
+        _activeCts = new CancellationTokenSource();
+        var token = _activeCts.Token;
+
         IsProcessing = true;
+        StatusMessage = "AMORA is thinking...";
+        LastStatus = AssistantResultStatus.Information;
+        ResultReceived?.Invoke(this, AssistantExecutionResult.Information("AMORA is thinking...", MascotMood.Thinking));
 
         try
         {
-            var result = await _engine.ExecuteAsync(commandToRun);
+            var result = await _engine.ExecuteAsync(commandToRun, token);
             ApplyResult(result);
             return result;
         }
@@ -210,8 +225,17 @@ public class AssistantCommandViewModel : INotifyPropertyChanged
         ResultReceived?.Invoke(this, cancelResult);
     }
 
+    public void CancelActiveRequest()
+    {
+        if (_isProcessing)
+        {
+            _activeCts?.Cancel();
+        }
+    }
+
     public void Clear()
     {
+        CancelActiveRequest();
         InputText = string.Empty;
         StatusMessage = string.Empty;
         LastStatus = null;
@@ -221,10 +245,19 @@ public class AssistantCommandViewModel : INotifyPropertyChanged
 
     public void ResetConversation()
     {
+        CancelActiveRequest();
         _engine.ResetConversation();
         Clear();
         StatusMessage = "Conversation reset.";
         LastStatus = AssistantResultStatus.Information;
+        ResultReceived?.Invoke(this, AssistantExecutionResult.Information("Conversation reset.", MascotMood.Idle));
+    }
+
+    public void Dispose()
+    {
+        _activeCts?.Cancel();
+        _activeCts?.Dispose();
+        _activeCts = null;
     }
 
     private void ApplyResult(AssistantExecutionResult result)

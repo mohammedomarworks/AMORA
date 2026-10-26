@@ -189,6 +189,7 @@ public class AssistantEngineTests : IDisposable
 
         Assert.Equal(AssistantResultStatus.Unsupported, result.Status);
         Assert.Contains("Local AI engine is currently offline", result.FeedbackMessage);
+        Assert.Contains("configure an API key in Settings", result.FeedbackMessage);
         Assert.Equal(MascotMood.Thinking, result.Mood);
     }
 

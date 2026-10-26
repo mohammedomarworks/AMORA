@@ -180,7 +180,7 @@ public class AssistantEngineAIToolExecutionTests : IDisposable
             throw new HttpRequestException("Authentication failed (401): Invalid API key.")
         );
 
-        var engine = new AssistantEngine(
+        using var engine = new AssistantEngine(
             _router,
             _timerService,
             _mediaService,
@@ -193,6 +193,53 @@ public class AssistantEngineAIToolExecutionTests : IDisposable
 
         Assert.Equal(AssistantResultStatus.Failed, result.Status);
         Assert.Contains("AI request failed", result.Message);
+        Assert.Contains("invalid Gemini API key", result.Message);
+        Assert.Equal(MascotMood.Alert, result.Mood);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RateLimit429_ReturnsFriendlyRateLimitOutcome()
+    {
+        var mockAi = new MockAIProvider(prompt =>
+            throw new HttpRequestException("Google Gemini API returned 429 ResourceExhausted: Quota exceeded.")
+        );
+
+        using var engine = new AssistantEngine(
+            _router,
+            _timerService,
+            _mediaService,
+            _batteryService,
+            _telemetryService,
+            mockAi
+        );
+
+        var result = await engine.ExecuteAsync("Test query");
+
+        Assert.Equal(AssistantResultStatus.Failed, result.Status);
+        Assert.Contains("AI request failed: rate limit reached", result.Message);
+        Assert.Equal(MascotMood.Alert, result.Mood);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ConnectionTimeout_ReturnsFriendlyTimeoutOutcome()
+    {
+        var mockAi = new MockAIProvider(prompt =>
+            throw new TimeoutException("The connection timed out after 15 seconds.")
+        );
+
+        using var engine = new AssistantEngine(
+            _router,
+            _timerService,
+            _mediaService,
+            _batteryService,
+            _telemetryService,
+            mockAi
+        );
+
+        var result = await engine.ExecuteAsync("Test query");
+
+        Assert.Equal(AssistantResultStatus.Failed, result.Status);
+        Assert.Contains("AI request failed: connection timed out", result.Message);
         Assert.Equal(MascotMood.Alert, result.Mood);
     }
 }

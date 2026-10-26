@@ -11,11 +11,44 @@ public sealed partial class OrbitCapsuleView : UserControl
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        DataContextChanged += OnDataContextChanged;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        BreathingGlowStoryboard.Begin();
+        try
+        {
+            var uiSettings = new Windows.UI.ViewManagement.UISettings();
+            if (uiSettings.AnimationsEnabled)
+            {
+                BreathingGlowStoryboard.Begin();
+            }
+            else
+            {
+                PillGlowDot.Opacity = 0.8;
+            }
+        }
+        catch
+        {
+            BreathingGlowStoryboard.Begin();
+        }
+    }
+
+    private void OnDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    {
+        if (args.NewValue is OrbitViewModel vm)
+        {
+            vm.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(OrbitViewModel.IsExpanded) && vm.IsExpanded)
+                {
+                    DispatcherQueue?.TryEnqueue(() =>
+                    {
+                        AssistantInputBox?.Focus(FocusState.Programmatic);
+                    });
+                }
+            };
+        }
     }
 
     private void OnCollapsedPillTapped(object sender, TappedRoutedEventArgs e)
@@ -54,6 +87,7 @@ public sealed partial class OrbitCapsuleView : UserControl
     {
         if (DataContext is OrbitViewModel vm)
         {
+            vm.Assistant.CancelActiveRequest();
             vm.Collapse();
         }
     }
@@ -90,6 +124,21 @@ public sealed partial class OrbitCapsuleView : UserControl
             {
                 e.Handled = true;
                 await vm.Assistant.SubmitAsync();
+            }
+        }
+        else if (e.Key == Windows.System.VirtualKey.Escape)
+        {
+            if (DataContext is OrbitViewModel vm)
+            {
+                e.Handled = true;
+                if (vm.Assistant.HasText)
+                {
+                    vm.Assistant.InputText = string.Empty;
+                }
+                else
+                {
+                    vm.HandleEscape();
+                }
             }
         }
     }

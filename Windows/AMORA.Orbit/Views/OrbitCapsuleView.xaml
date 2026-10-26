@@ -103,6 +103,7 @@
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
                                 ToolTipService.ToolTip="New Conversation (Reset Chat)"
+                                AutomationProperties.Name="New Conversation"
                                 Click="OnResetConversationClicked">
                             <FontIcon Glyph="&#xE72C;" FontSize="12" />
                         </Button>
@@ -111,6 +112,7 @@
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
                                 ToolTipService.ToolTip="Local Automations"
+                                AutomationProperties.Name="Local Automations"
                                 Click="OnAutomationsToggleClicked">
                             <FontIcon Glyph="&#xE768;" FontSize="13" />
                         </Button>
@@ -119,6 +121,7 @@
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
                                 ToolTipService.ToolTip="AI &amp; Secure Settings"
+                                AutomationProperties.Name="AI and Secure Settings"
                                 Click="OnSettingsToggleClicked">
                             <FontIcon Glyph="&#xE713;" FontSize="13" />
                         </Button>
@@ -127,6 +130,7 @@
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
                                 ToolTipService.ToolTip="Keep Orbit Open (Pin)"
+                                AutomationProperties.Name="Pin Orbit Window"
                                 Click="OnPinToggleClicked">
                             <FontIcon Glyph="{Binding PinIconGlyph}" FontSize="13" />
                         </Button>
@@ -135,6 +139,7 @@
                         <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                 Padding="8,4"
                                 ToolTipService.ToolTip="Collapse to Capsule (Esc)"
+                                AutomationProperties.Name="Collapse Orbit"
                                 Click="OnCollapseClicked">
                             <FontIcon Glyph="&#xE70E;" FontSize="13" />
                         </Button>
@@ -155,7 +160,9 @@
                                 <FontIcon Glyph="&#xE713;" FontSize="12" Foreground="{StaticResource OrbitCyanAccentBrush}" VerticalAlignment="Center" />
                                 <TextBlock Text="AI Provider &amp; Secure Credentials" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource OrbitTextPrimaryBrush}" VerticalAlignment="Center" />
                             </StackPanel>
-                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,2" Click="OnCloseSettingsClicked">
+                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,2"
+                                    AutomationProperties.Name="Close Settings"
+                                    Click="OnCloseSettingsClicked">
                                 <FontIcon Glyph="&#xE711;" FontSize="10" />
                             </Button>
                         </Grid>
@@ -165,12 +172,14 @@
                             <StackPanel Grid.Column="0" Spacing="4">
                                 <TextBlock Text="Provider" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
                                 <TextBox Text="{Binding Settings.SelectedProvider, Mode=TwoWay}"
+                                         AutomationProperties.Name="AI Provider"
                                          FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
                                          Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="4">
                                 <TextBlock Text="Model" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
                                 <TextBox Text="{Binding Settings.ModelName, Mode=TwoWay}"
+                                         AutomationProperties.Name="AI Model"
                                          FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
                                          Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                             </StackPanel>
@@ -184,6 +193,7 @@
                                            Visibility="{Binding Settings.HasSavedKey, Converter={StaticResource BoolToVis}}" />
                             </Grid>
                             <PasswordBox x:Name="SettingsApiKeyBox"
+                                         AutomationProperties.Name="Gemini API Key"
                                          PlaceholderText="Paste Gemini API key (encrypted with Windows DPAPI)..."
                                          PasswordChanged="OnSettingsApiKeyPasswordChanged"
                                          FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
@@ -192,6 +202,7 @@
 
                         <!-- Context Awareness Privacy Toggle -->
                         <CheckBox IsChecked="{Binding Settings.SendStatusContextToAI, Mode=TwoWay}"
+                                  AutomationProperties.Name="Share System Status with AI"
                                   Margin="0,2,0,2">
                             <TextBlock Text="Share system status with AI (active timer, media, power; default: Off)"
                                        FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" VerticalAlignment="Center" />
@@ -199,6 +210,7 @@
 
                         <!-- Proactive Suggestions Opt-In Toggle -->
                         <CheckBox IsChecked="{Binding Settings.EnableProactiveSuggestions, Mode=TwoWay}"
+                                  AutomationProperties.Name="Enable Proactive Suggestions"
                                   Margin="0,2,0,2">
                             <TextBlock Text="Enable proactive suggestions (local, deterministic smart insights; default: Off)"
                                        FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" VerticalAlignment="Center" />
@@ -207,15 +219,18 @@
                         <!-- Action Buttons & Status -->
                         <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
                             <Button Grid.Column="0" Style="{StaticResource OrbitPrimaryActionButtonStyle}"
+                                    AutomationProperties.Name="Save Settings"
                                     Padding="10,4" FontSize="11" Click="OnSaveSettingsClicked">
                                 <TextBlock Text="Save" FontSize="11" />
                             </Button>
                             <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}"
+                                    AutomationProperties.Name="Test Connection"
                                     Padding="10,4" FontSize="11" Click="OnTestConnectionClicked"
                                     IsEnabled="{Binding Settings.CanTest}">
                                 <TextBlock Text="Test Connection" FontSize="11" />
                             </Button>
                             <Button Grid.Column="2" Style="{StaticResource OrbitGhostButtonStyle}"
+                                    AutomationProperties.Name="Clear Saved API Key"
                                     Padding="10,4" FontSize="11" Click="OnClearKeyClicked"
                                     Visibility="{Binding Settings.HasSavedKey, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="Clear Key" FontSize="11" Foreground="#FF453A" />
@@ -251,7 +266,9 @@
                                 <FontIcon Glyph="&#xE768;" FontSize="12" Foreground="{StaticResource OrbitCyanAccentBrush}" VerticalAlignment="Center" />
                                 <TextBlock Text="Local Automations &amp; Schedules" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource OrbitTextPrimaryBrush}" VerticalAlignment="Center" />
                             </StackPanel>
-                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,2" Click="OnCloseAutomationsClicked">
+                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,2"
+                                    AutomationProperties.Name="Close Automations"
+                                    Click="OnCloseAutomationsClicked">
                                 <FontIcon Glyph="&#xE711;" FontSize="10" />
                             </Button>
                         </Grid>
@@ -268,14 +285,19 @@
                                                 <TextBlock Text="{Binding ActionText}" FontSize="9" Foreground="{StaticResource OrbitTextMutedBrush}" />
                                             </StackPanel>
                                             <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,3" FontSize="10"
-                                                    ToolTipService.ToolTip="Run Now" Tag="{Binding Id}" Click="OnRunAutomationNowClicked">
+                                                    ToolTipService.ToolTip="Run Now"
+                                                    AutomationProperties.Name="Run Automation Now"
+                                                    Tag="{Binding Id}" Click="OnRunAutomationNowClicked">
                                                 <FontIcon Glyph="&#xE768;" FontSize="10" />
                                             </Button>
                                             <Button Grid.Column="2" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,3" FontSize="10"
-                                                    ToolTipService.ToolTip="Delete" Tag="{Binding Id}" Click="OnDeleteAutomationClicked">
+                                                    ToolTipService.ToolTip="Delete"
+                                                    AutomationProperties.Name="Delete Automation"
+                                                    Tag="{Binding Id}" Click="OnDeleteAutomationClicked">
                                                 <FontIcon Glyph="&#xE74D;" FontSize="10" Foreground="#FF453A" />
                                             </Button>
                                             <ToggleSwitch Grid.Column="3" IsOn="{Binding IsEnabled, Mode=OneWay}"
+                                                          AutomationProperties.Name="Toggle Automation Enabled State"
                                                           OnContent="" OffContent="" MinWidth="0"
                                                           Tag="{Binding Id}" Toggled="OnAutomationToggled" />
                                         </Grid>
@@ -290,22 +312,32 @@
                                 <TextBlock Text="Create New Automation" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource OrbitCyanAccentBrush}" />
                                 <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                     <TextBox Grid.Column="0" PlaceholderText="Automation name..." Text="{Binding Automations.NewName, Mode=TwoWay}"
+                                             AutomationProperties.Name="New Automation Name"
                                              FontSize="10" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                                     <TextBox Grid.Column="1" PlaceholderText="Reminder message..." Text="{Binding Automations.NewReminderMessage, Mode=TwoWay}"
+                                             AutomationProperties.Name="New Automation Reminder Message"
                                              FontSize="10" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                                 </Grid>
                                 <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
-                                    <ComboBox Grid.Column="0" SelectedIndex="{Binding Automations.NewTriggerTypeIndex, Mode=TwoWay}" FontSize="10" Padding="6,2">
+                                    <ComboBox Grid.Column="0" SelectedIndex="{Binding Automations.NewTriggerTypeIndex, Mode=TwoWay}"
+                                              AutomationProperties.Name="New Automation Trigger Schedule"
+                                              Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}"
+                                              FontSize="10" Padding="6,2">
                                         <ComboBoxItem Content="Daily Schedule (9 AM)" />
                                         <ComboBoxItem Content="Every 30 Mins" />
                                         <ComboBoxItem Content="Every 60 Mins" />
                                     </ComboBox>
-                                    <ComboBox Grid.Column="1" SelectedIndex="{Binding Automations.NewActionTypeIndex, Mode=TwoWay}" FontSize="10" Padding="6,2">
+                                    <ComboBox Grid.Column="1" SelectedIndex="{Binding Automations.NewActionTypeIndex, Mode=TwoWay}"
+                                              AutomationProperties.Name="New Automation Action Type"
+                                              Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}"
+                                              FontSize="10" Padding="6,2">
                                         <ComboBoxItem Content="Show Reminder" />
                                         <ComboBoxItem Content="Start 25m Timer" />
                                         <ComboBoxItem Content="Pause Media" />
                                     </ComboBox>
-                                    <Button Grid.Column="3" Style="{StaticResource OrbitPrimaryActionButtonStyle}" Padding="10,4" FontSize="10" Click="OnCreateAutomationClicked">
+                                    <Button Grid.Column="3" Style="{StaticResource OrbitPrimaryActionButtonStyle}" Padding="10,4" FontSize="10"
+                                            AutomationProperties.Name="Add Automation"
+                                            Click="OnCreateAutomationClicked">
                                         <TextBlock Text="Add Automation" FontSize="10" />
                                     </Button>
                                 </Grid>
@@ -342,6 +374,7 @@
 
                             <TextBox Grid.Column="1"
                                      x:Name="AssistantInputBox"
+                                     AutomationProperties.Name="Assistant Command Input"
                                      Text="{Binding Assistant.InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      PlaceholderText="Ask AMORA or command (e.g. 'start 15m timer', 'pause music')..."
                                      Background="Transparent"
@@ -357,7 +390,8 @@
                                     FontSize="11"
                                     IsEnabled="{Binding Assistant.CanSubmit}"
                                     Click="OnSubmitCommandClicked"
-                                    ToolTipService.ToolTip="Execute Command (Enter)">
+                                    ToolTipService.ToolTip="Execute Command (Enter)"
+                                    AutomationProperties.Name="Execute Assistant Command">
                                 <StackPanel Orientation="Horizontal" Spacing="4">
                                     <TextBlock Text="Ask" FontSize="11" />
                                     <FontIcon Glyph="&#xE724;" FontSize="10" />
@@ -369,7 +403,8 @@
                                     Padding="6,4"
                                     Visibility="{Binding Assistant.HasText, Converter={StaticResource BoolToVis}}"
                                     Click="OnClearCommandClicked"
-                                    ToolTipService.ToolTip="Clear">
+                                    ToolTipService.ToolTip="Clear"
+                                    AutomationProperties.Name="Clear Command Input">
                                 <FontIcon Glyph="&#xE711;" FontSize="10" />
                             </Button>
                         </Grid>
@@ -402,12 +437,14 @@
                                         Padding="8,3"
                                         FontSize="10"
                                         Background="#FF9F0A"
+                                        AutomationProperties.Name="Confirm Action"
                                         Click="OnConfirmCommandClicked">
                                     <TextBlock Text="Confirm" FontSize="10" Foreground="#090B10" FontWeight="SemiBold" />
                                 </Button>
                                 <Button Style="{StaticResource OrbitGhostButtonStyle}"
                                         Padding="8,3"
                                         FontSize="10"
+                                        AutomationProperties.Name="Cancel Action"
                                         Click="OnCancelConfirmationClicked">
                                     <TextBlock Text="Cancel" FontSize="10" />
                                 </Button>
@@ -468,6 +505,7 @@
                                         Visibility="{Binding Suggestion.HasSuggestion, Converter={StaticResource BoolToVis}}">
                                 <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
                                         HorizontalAlignment="Stretch"
+                                        AutomationProperties.Name="Execute Smart Insight Action"
                                         Click="OnLeftPrimaryActionClicked">
                                     <TextBlock Text="{Binding Suggestion.ActionLabel}" HorizontalAlignment="Center" />
                                 </Button>
@@ -476,6 +514,7 @@
                                             Style="{StaticResource OrbitGhostButtonStyle}"
                                             HorizontalAlignment="Stretch"
                                             Padding="4,4"
+                                            AutomationProperties.Name="Snooze Smart Insight"
                                             Click="OnLeftSnoozeClicked">
                                         <TextBlock Text="Snooze" FontSize="11" HorizontalAlignment="Center" />
                                     </Button>
@@ -483,6 +522,7 @@
                                             Style="{StaticResource OrbitGhostButtonStyle}"
                                             HorizontalAlignment="Stretch"
                                             Padding="4,4"
+                                            AutomationProperties.Name="Dismiss Smart Insight"
                                             Click="OnLeftDismissClicked">
                                         <TextBlock Text="Dismiss" FontSize="11" HorizontalAlignment="Center" />
                                     </Button>

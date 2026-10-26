@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
@@ -11,6 +12,23 @@ namespace AMORA.Orbit.Tests;
 
 public class AssistantCommandViewModelTests : IDisposable
 {
+    private class CancellableAIProvider : IAIProvider
+    {
+        private readonly TaskCompletionSource<string> _tcs = new();
+
+        public string ProviderId => "cancellable_ai";
+        public string DisplayName => "Cancellable AI Provider";
+        public bool IsConfigured => true;
+
+        public async Task<string> GenerateResponseAsync(string prompt, CancellationToken cancellationToken = default)
+        {
+            using var reg = cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
+            return await _tcs.Task;
+        }
+
+        public void Complete(string result) => _tcs.TrySetResult(result);
+    }
+
     private readonly StandardTimerService _timerService;
     private readonly PreviewMediaService _mediaService;
     private readonly PreviewBatteryService _batteryService;
@@ -42,6 +60,7 @@ public class AssistantCommandViewModelTests : IDisposable
 
     public void Dispose()
     {
+        _viewModel.Dispose();
         _timerService.Dispose();
     }
 
@@ -153,5 +172,87 @@ public class AssistantCommandViewModelTests : IDisposable
         Assert.True(_viewModel.HasStatus);
         Assert.Equal("Conversation reset.", _viewModel.StatusMessage);
         Assert.Equal(AssistantResultStatus.Information, _viewModel.LastStatus);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_EmitsThinkingStateBeforeFinalResult()
+    {
+        var capturedResults = new List<AssistantExecutionResult>();
+        _viewModel.ResultReceived += (s, res) => capturedResults.Add(res);
+
+        _viewModel.InputText = "start 5m timer";
+        await _viewModel.SubmitAsync();
+
+        Assert.True(capturedResults.Count >= 2);
+        Assert.Equal("AMORA is thinking...", capturedResults[0].FeedbackMessage);
+        Assert.Equal(MascotMood.Thinking, capturedResults[0].Mood);
+        Assert.Equal(AssistantResultStatus.Success, capturedResults[1].Status);
+    }
+
+    [Fact]
+    public void StatusColorAndGlyph_ReflectProcessingState()
+    {
+        _viewModel.IsProcessing = true;
+        Assert.Equal("#52CCFF", _viewModel.StatusColor);
+        Assert.Equal("\uF16A", _viewModel.StatusGlyph);
+
+        _viewModel.IsProcessing = false;
+        Assert.Equal("#9AA2B2", _viewModel.StatusColor);
+    }
+
+    [Fact]
+    public async Task CancelActiveRequest_CancelsInFlightRequest_AndReportsCancelled()
+    {
+        var cancellableAi = new CancellableAIProvider();
+        using var engine = new AssistantEngine(
+            _router,
+            _timerService,
+            _mediaService,
+            _batteryService,
+            _telemetryService,
+            cancellableAi);
+
+        using var vm = new AssistantCommandViewModel(engine);
+        vm.InputText = "Tell me a long story";
+
+        var submitTask = vm.SubmitAsync();
+
+        Assert.True(vm.IsProcessing);
+
+        vm.CancelActiveRequest();
+
+        var result = await submitTask;
+
+        Assert.False(vm.IsProcessing);
+        Assert.Equal("Request cancelled.", result.FeedbackMessage);
+        Assert.Equal(MascotMood.Idle, result.Mood);
+    }
+
+    [Fact]
+    public async Task ResetConversation_CancelsActiveInFlightRequest()
+    {
+        var cancellableAi = new CancellableAIProvider();
+        using var engine = new AssistantEngine(
+            _router,
+            _timerService,
+            _mediaService,
+            _batteryService,
+            _telemetryService,
+            cancellableAi);
+
+        using var vm = new AssistantCommandViewModel(engine);
+        vm.InputText = "Tell me a story";
+
+        var submitTask = vm.SubmitAsync();
+
+        Assert.True(vm.IsProcessing);
+
+        vm.ResetConversation();
+
+        var result = await submitTask;
+
+        Assert.False(vm.IsProcessing);
+        Assert.Equal("Conversation reset.", vm.StatusMessage);
+        Assert.Equal(AssistantResultStatus.Information, vm.LastStatus);
     }
 }
