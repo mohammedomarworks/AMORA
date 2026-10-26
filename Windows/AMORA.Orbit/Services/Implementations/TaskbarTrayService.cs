@@ -27,8 +27,11 @@ public class TaskbarTrayService : ITaskbarTrayService, IDisposable
             cbSize = Marshal.SizeOf<NativeMethods.NOTIFYICONDATA>(),
             hWnd = _windowHandle,
             uID = TrayIconId,
-            uFlags = NativeMethods.NIF_MESSAGE | NativeMethods.NIF_TIP,
+            uFlags = NativeMethods.NIF_MESSAGE | NativeMethods.NIF_TIP | NativeMethods.NIF_ICON,
             uCallbackMessage = NativeMethods.WM_TRAYICON,
+            // Shared system icon remains valid for the process lifetime. A missing
+            // hIcon previously created an invisible/unusable tray entry.
+            hIcon = NativeMethods.LoadIcon(IntPtr.Zero, new IntPtr(32512)),
             szTip = _currentTip
         };
 
@@ -38,6 +41,7 @@ public class TaskbarTrayService : ITaskbarTrayService, IDisposable
     public void SetTooltip(string tooltip)
     {
         _currentTip = string.IsNullOrWhiteSpace(tooltip) ? "AMORA Orbit" : tooltip;
+        if (_currentTip.Length > 127) _currentTip = _currentTip[..127];
         if (!_isVisible || _windowHandle == IntPtr.Zero) return;
 
         var nid = new NativeMethods.NOTIFYICONDATA

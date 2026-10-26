@@ -371,7 +371,7 @@ public class ProactiveSuggestionEngineTests
     public async Task TogglingSettingOff_ImmediatelyClearsActiveSuggestion()
     {
         var credStorage = new InMemoryCredentialStorage();
-        var settingsService = new AISettingsService(credStorage);
+        var settingsService = new AISettingsService(credStorage, System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AMORA.Tests", System.Guid.NewGuid().ToString("N"), "settings.json"));
         await settingsService.SaveSettingsAsync(AISettings.Default with { EnableProactiveSuggestions = true });
 
         using var service = new ProactiveSuggestionService(
@@ -486,10 +486,14 @@ public class ProactiveSuggestionEngineTests
         service.PresentSuggestion(suggestion);
         Assert.NotNull(service.ActiveSuggestion);
 
-        // Must not crash the process; must dismiss safely
+        // Keep a truthful retry state instead of hiding a failed action as if it succeeded.
         var exception = await Record.ExceptionAsync(() => service.ExecuteActiveActionAsync());
         Assert.Null(exception);
-        Assert.Null(service.ActiveSuggestion);
+        Assert.NotNull(service.ActiveSuggestion);
+        Assert.Equal("sug-throwing", service.ActiveSuggestion.Id);
+        Assert.Equal("Try again", service.ActiveSuggestion.ActionLabel);
+        Assert.Contains("could not be completed", service.ActiveSuggestion.Message);
+        Assert.DoesNotContain("Simulation failure", service.ActiveSuggestion.Message);
     }
 
     [Fact]
@@ -514,7 +518,7 @@ public class ProactiveSuggestionEngineTests
 
         Assert.False(vm2.HasSuggestion);
         Assert.Equal("All caught up", vm2.Title);
-        Assert.Contains("monitoring", vm2.Message);
+        Assert.Contains("No suggestions", vm2.Message);
         Assert.Equal(string.Empty, vm2.ActionLabel);
     }
 }

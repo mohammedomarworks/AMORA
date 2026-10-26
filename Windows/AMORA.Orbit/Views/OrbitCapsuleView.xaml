@@ -1,264 +1,101 @@
-<UserControl
-    x:Class="AMORA.Orbit.Views.OrbitCapsuleView"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:local="using:AMORA.Orbit.Views"
-    xmlns:vm="using:AMORA.Orbit.ViewModels"
-    mc:Ignorable="d"
-    d:DataContext="{d:DesignInstance Type=vm:OrbitViewModel}">
+<UserControl x:Class="AMORA.Orbit.Views.OrbitCapsuleView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:AMORA.Orbit.Views" RequestedTheme="Dark" KeyboardAcceleratorPlacementMode="Hidden">
+ <UserControl.KeyboardAccelerators>
+  <KeyboardAccelerator Key="Number1" Modifiers="Menu" Invoked="OnHomeAcceleratorInvoked"/>
+  <KeyboardAccelerator Key="Number2" Modifiers="Menu" Invoked="OnTalkAcceleratorInvoked"/>
+ </UserControl.KeyboardAccelerators>
+ <UserControl.Resources>
+  <Storyboard x:Name="BreathingGlowStoryboard" RepeatBehavior="Forever" AutoReverse="True"><DoubleAnimation Storyboard.TargetName="PillGlowDot" Storyboard.TargetProperty="Opacity" From="0.5" To="1" Duration="0:0:2.4"/></Storyboard>
+  <Storyboard x:Name="OpenStoryboard"><DoubleAnimation Storyboard.TargetName="IslandContents" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.15"/></Storyboard>
+ </UserControl.Resources>
+ <Grid x:Name="IslandRoot" Background="Black" SizeChanged="OnIslandSizeChanged" PointerEntered="OnContainerPointerEntered" PointerExited="OnContainerPointerExited" GotFocus="OnIslandGotFocus" LostFocus="OnIslandLostFocus">
+  <Button x:Name="CollapsedCapsule" Visibility="{Binding CollapsedIndicatorVisibility, Converter={StaticResource BoolToVis}}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Padding="16,0" CornerRadius="16" Background="#080A0D" BorderBrush="#34404A" BorderThickness="1" AutomationProperties.Name="Open AMORA island" Click="OnCollapsedPillClicked">
+   <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="10"><StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><Border Width="4" Height="8" CornerRadius="2" Background="{ThemeResource OrbitCyanAccentBrush}"/><Border Width="4" Height="8" CornerRadius="2" Background="{ThemeResource OrbitCyanAccentBrush}"/></StackPanel><TextBlock Grid.Column="1" Text="AMORA" FontSize="11" CharacterSpacing="140" FontWeight="SemiBold" VerticalAlignment="Center"/><Ellipse x:Name="PillGlowDot" Grid.Column="2" Width="5" Height="5" Fill="{ThemeResource OrbitCyanAccentBrush}"/></Grid>
+  </Button>
+  <Grid x:Name="ExpandedPanel" Visibility="{Binding ExpandedVisibility, Converter={StaticResource BoolToVis}}" Background="Black">
+   <Grid x:Name="IslandContents" RowDefinitions="42,*">
+    <Grid Margin="16,0" ColumnDefinitions="Auto,*,Auto">
+     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <Button x:Name="HomeButton" Width="38" Height="30" Style="{StaticResource OrbitGhostButtonStyle}" AutomationProperties.Name="Home" Click="OnHomeClicked"><FontIcon Glyph="&#xE80F;" FontSize="18"/></Button>
+      <Button x:Name="TalkButton" Width="38" Height="30" Style="{StaticResource OrbitGhostButtonStyle}" AutomationProperties.Name="Talk to AMORA" Click="OnTalkClicked"><FontIcon Glyph="&#xE8F2;" FontSize="18"/></Button>
+      <Button x:Name="QuickButton" Width="38" Height="30" Style="{StaticResource OrbitGhostButtonStyle}" AutomationProperties.Name="Quick actions" Click="OnQuickMenuToggle"><FontIcon Glyph="&#xE710;" FontSize="18"/></Button>
+     </StackPanel>
+     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <Button Width="36" Height="30" Style="{StaticResource OrbitGhostButtonStyle}" AutomationProperties.Name="Settings" Click="OnSettingsToggleClicked"><FontIcon Glyph="&#xE713;" FontSize="18"/></Button>
+      <Button Width="36" Height="30" Style="{StaticResource OrbitGhostButtonStyle}" AutomationProperties.Name="Toggle companion sounds" Click="OnSoundClicked"><FontIcon Glyph="{Binding SoundGlyph}" FontSize="18"/></Button>
+      <Button Width="30" Height="30" Style="{StaticResource OrbitGhostButtonStyle}" AutomationProperties.Name="Pin island" Click="OnPinToggleClicked"><FontIcon Glyph="{Binding PinIconGlyph}" FontSize="13"/></Button>
+      <Button Width="28" Height="30" Style="{StaticResource OrbitGhostButtonStyle}" AutomationProperties.Name="Collapse island" Click="OnCollapseClicked"><FontIcon Glyph="&#xE70E;" FontSize="12"/></Button>
+     </StackPanel>
+    </Grid>
+    <Border x:Name="SurfacePanel" Grid.Row="1" Margin="8,0,8,8" Padding="8" CornerRadius="20" Background="{ThemeResource OrbitSurfaceBrush}" BorderBrush="#343A40" BorderThickness="1">
+     <Grid ColumnDefinitions="248,1,*" ColumnSpacing="14">
+      <Border Background="{ThemeResource OrbitCardBrush}" CornerRadius="16" Padding="14,12">
+       <StackPanel Spacing="9" VerticalAlignment="Top" Margin="0,4,0,0">
+        <Viewbox x:Name="MascotSizer" Height="58" Stretch="Uniform"><local:RobotMascotView DataContext="{Binding Mascot}"/></Viewbox>
+        <Border Background="#254B5D" CornerRadius="10" Padding="9,2" HorizontalAlignment="Center"><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="{ThemeResource OrbitCyanAccentBrush}"/><TextBlock Text="{Binding CompanionBadge}" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource OrbitCyanAccentBrush}"/></StackPanel></Border>
+        <TextBlock Text="{Binding CompanionMessage}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Center" MaxLines="3"/>
+        <StackPanel Spacing="4" Visibility="{Binding Suggestion.HasSuggestion, Converter={StaticResource BoolToVis}}">
+         <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}" Content="{Binding Suggestion.ActionLabel}" HorizontalAlignment="Stretch" Click="OnLeftPrimaryActionClicked"/>
+         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="Snooze" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnLeftSnoozeClicked"/><Button Content="Dismiss" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnLeftDismissClicked"/></StackPanel>
+        </StackPanel>
+       </StackPanel>
+      </Border>
+      <Border Grid.Column="1" Background="#2A2D33" Margin="0,4"/>
+      <Grid Grid.Column="2">
+       <Grid x:Name="HomePanel" RowDefinitions="Auto,*,*" RowSpacing="8">
+        <local:SuggestionBannerView Height="48" Visibility="{Binding HasSuggestion, Converter={StaticResource BoolToVis}}" DataContext="{Binding Suggestion}"/>
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="8"><local:MediaControlView x:Name="HomeMedia" DataContext="{Binding Media}"/><local:TimerControlView x:Name="HomeTimer" Grid.Column="1" DataContext="{Binding Timer}"/></Grid>
+        <local:SystemStatusView x:Name="HomeSystemStatus" Grid.Row="2" DataContext="{Binding SystemStatus}"/>
+       </Grid>
+       <Grid x:Name="TalkPanel" Visibility="Collapsed" RowDefinitions="*,Auto" RowSpacing="8" Padding="8,4">
+        <StackPanel x:Name="ChatWelcome" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10"><TextBlock Text="What can I help you with?" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center"/><StackPanel Orientation="Horizontal" Spacing="6"><Button Style="{StaticResource OrbitActionButtonStyle}" Content="25m focus timer" Tag="start a 25 minute timer" Click="OnChatChipClicked"/><Button Style="{StaticResource OrbitActionButtonStyle}" Content="Battery level" Tag="battery level" Click="OnChatChipClicked"/><Button Style="{StaticResource OrbitActionButtonStyle}" Content="Search notes" Click="OnNotesClicked"/></StackPanel></StackPanel>
+        <ScrollViewer x:Name="ConversationScroll" VerticalScrollBarVisibility="Auto"><StackPanel Spacing="8">
+         <ItemsControl ItemsSource="{Binding Assistant.Transcript}"><ItemsControl.ItemTemplate><DataTemplate><Border Background="#24282E" CornerRadius="10" Padding="10" Margin="0,0,0,6"><StackPanel Spacing="3"><TextBlock Text="{Binding Role}" FontSize="10" Foreground="{ThemeResource OrbitCyanAccentBrush}"/><TextBlock Text="{Binding Text}" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+         <TextBlock Text="{Binding Assistant.StatusMessage}" Visibility="{Binding Assistant.IsProcessing, Converter={StaticResource BoolToVis}}" Foreground="{ThemeResource OrbitCyanAccentBrush}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+         <StackPanel Visibility="{Binding Assistant.HasPendingConfirmation, Converter={StaticResource BoolToVis}}" Spacing="6"><TextBlock Text="{Binding Assistant.PendingActionDescription}" TextWrapping="Wrap"/><StackPanel Orientation="Horizontal" Spacing="6"><Button Content="Confirm" Style="{StaticResource OrbitPrimaryActionButtonStyle}" Click="OnConfirmCommandClicked"/><Button Content="Cancel" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnCancelConfirmationClicked"/></StackPanel></StackPanel>
+        </StackPanel></ScrollViewer>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6"><TextBox x:Name="AssistantInputBox" Text="{Binding Assistant.InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Ask AMORA anything..." Background="#101215" CornerRadius="12" BorderThickness="0" FontSize="13" AutomationProperties.Name="Assistant command input" KeyDown="OnCommandInputKeyDown"/><Button Grid.Column="1" Style="{StaticResource OrbitPrimaryActionButtonStyle}" IsEnabled="{Binding Assistant.CanSubmit}" Click="OnSubmitCommandClicked" AutomationProperties.Name="Send message"><FontIcon Glyph="&#xE72A;" FontSize="16"/></Button><Button Grid.Column="2" Content="Stop" Style="{StaticResource OrbitGhostButtonStyle}" Visibility="{Binding Assistant.IsProcessing, Converter={StaticResource BoolToVis}}" Click="OnStopClicked"/></Grid>
+       </Grid>
+       <Grid x:Name="TimerPanel" Visibility="Collapsed" Padding="12" RowDefinitions="Auto,*,Auto" RowSpacing="12"><TextBlock Text="Timer &amp; focus" FontSize="18" FontWeight="SemiBold"/><local:TimerControlView Grid.Row="1" DataContext="{Binding Timer}"/><TextBlock Grid.Row="2" Text="5m break · 15m short sprint · 25m focus. The same timer is shared with your commands and automations." TextWrapping="Wrap" FontSize="12" Foreground="#ADB3BB"/></Grid>
+     <Grid x:Name="ClipboardPanel" Visibility="Collapsed" Background="#1B1D21" CornerRadius="16" Padding="16" RowDefinitions="Auto,Auto,*" RowSpacing="12">
+      <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Clipboard history" FontSize="18" FontWeight="SemiBold"/><Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Content="Clear history" Click="OnClearClipboardClicked" IsEnabled="{Binding Clipboard.HasEntries}"/></Grid>
+      <TextBlock Grid.Row="1" Text="{Binding Clipboard.StatusText}" TextWrapping="Wrap" Foreground="#A6ABB2" FontSize="12"/>
+      <ScrollViewer Grid.Row="2"><ItemsControl ItemsSource="{Binding Clipboard.Entries}"><ItemsControl.ItemTemplate><DataTemplate>
+       <Border Background="#24282D" CornerRadius="10" Padding="12" Margin="0,0,0,8"><Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8"><StackPanel><TextBlock Text="{Binding Preview}" TextWrapping="Wrap" MaxLines="2" FontSize="12"/><TextBlock Text="{Binding TimeLabel}" FontSize="10" Foreground="#A6ABB2"/></StackPanel><Button Grid.Column="1" Style="{StaticResource OrbitActionButtonStyle}" Content="Copy" Tag="{Binding Id}" Click="OnCopyClipboardClicked"/><Button Grid.Column="2" Style="{StaticResource OrbitGhostButtonStyle}" Content="Remove" Tag="{Binding Id}" Click="OnRemoveClipboardClicked"/></Grid></Border>
+      </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+     </Grid>
+     <Grid x:Name="NotesPanel" Visibility="Collapsed" Background="#1B1D21" CornerRadius="16" Padding="16" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+      <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Notes" FontSize="18" FontWeight="SemiBold"/><Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Content="New note" Click="OnNewNoteClicked"/></Grid>
+      <TextBlock Grid.Row="1" Text="{Binding Workspace.StatusMessage}" TextWrapping="Wrap" Foreground="#8DDDF2" FontSize="11"/>
+      <Grid Grid.Row="2" ColumnDefinitions="170,*" ColumnSpacing="14">
+       <Grid RowDefinitions="Auto,*" RowSpacing="8"><TextBox Text="{Binding Workspace.SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnNoteSearchChanged" PlaceholderText="Search notes" AutomationProperties.Name="Search notes"/>
+        <ScrollViewer Grid.Row="1"><ItemsControl ItemsSource="{Binding Workspace.Notes}"><ItemsControl.ItemTemplate><DataTemplate>
+         <Button Style="{StaticResource OrbitGhostButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Tag="{Binding Id}" Click="OnSelectNoteClicked" Margin="0,0,0,6"><StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Preview}" Foreground="#A6ABB2" FontSize="11" TextTrimming="CharacterEllipsis"/></StackPanel></Button>
+        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+       </Grid>
+       <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="8"><TextBox Text="{Binding Workspace.NoteTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Note title" AutomationProperties.Name="Note title"/>
+        <TextBox Grid.Row="1" Text="{Binding Workspace.NoteBody, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="Write a note. Notes stay on this PC." AutomationProperties.Name="Note body" VerticalAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><Button Style="{StaticResource OrbitPrimaryActionButtonStyle}" Content="{Binding Workspace.NoteSaveLabel}" IsEnabled="{Binding Workspace.CanEdit}" Click="OnSaveNoteClicked"/><Button Style="{StaticResource OrbitGhostButtonStyle}" Content="Pin / Unpin" Click="OnPinNoteClicked"/><Button Style="{StaticResource OrbitGhostButtonStyle}" Content="Delete" Click="OnDeleteNoteClicked"/></StackPanel>
+       </Grid>
+      </Grid>
+     </Grid>
+     <Grid x:Name="FilesPanel" Visibility="Collapsed" Background="#1B1D21" CornerRadius="16" Padding="16" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="12" AllowDrop="True" DragOver="OnFilesDragOver" Drop="OnFilesDrop">
+      <TextBlock Text="File shelf" FontSize="18" FontWeight="SemiBold"/>
+      <TextBlock Grid.Row="1" Text="Drop files or folders here, or add a path. Only references are saved; your files stay where they are." TextWrapping="Wrap" Foreground="#A6ABB2" FontSize="12"/>
+      <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8"><TextBox Text="{Binding Workspace.FilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Full file or folder path" AutomationProperties.Name="File shelf path"/><Button Grid.Column="1" Content="Add" Style="{StaticResource OrbitPrimaryActionButtonStyle}" Click="OnAddFileClicked"/></Grid>
+      <ScrollViewer Grid.Row="3"><StackPanel Spacing="8"><TextBlock Text="{Binding Workspace.StatusMessage}" TextWrapping="Wrap" Foreground="#8DDDF2" FontSize="11"/><ItemsControl ItemsSource="{Binding Workspace.Shelf}"><ItemsControl.ItemTemplate><DataTemplate>
+       <Border Background="#24282D" CornerRadius="10" Padding="10" Margin="0,0,0,8"><Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="6"><StackPanel><TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding StatusText}" FontSize="10" Foreground="#A6ABB2" TextTrimming="CharacterEllipsis"/></StackPanel><Button Grid.Column="1" Style="{StaticResource OrbitActionButtonStyle}" Content="Open" Tag="{Binding Id}" Click="OnOpenFileClicked"/><Button Grid.Column="2" Style="{StaticResource OrbitGhostButtonStyle}" Content="Show" Tag="{Binding Id}" Click="OnRevealFileClicked"/><Button Grid.Column="3" Style="{StaticResource OrbitGhostButtonStyle}" Content="{Binding PinText}" Tag="{Binding Id}" Click="OnPinFileClicked"/><Button Grid.Column="4" Style="{StaticResource OrbitGhostButtonStyle}" Content="Remove" Tag="{Binding Id}" Click="OnRemoveFileClicked"/></Grid></Border>
+      </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></ScrollViewer>
+     </Grid>
 
-    <UserControl.Resources>
-        <!-- Storyboard for Collapsed Pill Cyan Breathing Glow -->
-        <Storyboard x:Name="BreathingGlowStoryboard" RepeatBehavior="Forever" AutoReverse="True">
-            <DoubleAnimation Storyboard.TargetName="PillGlowDot"
-                             Storyboard.TargetProperty="Opacity"
-                             From="0.3" To="1.0"
-                             Duration="0:0:1.8" />
-        </Storyboard>
-    </UserControl.Resources>
-
-    <Grid HorizontalAlignment="Center" VerticalAlignment="Top"
-          PointerEntered="OnContainerPointerEntered"
-          PointerExited="OnContainerPointerExited">
-
-        <!-- ========================================== -->
-        <!-- 1. COLLAPSED FLOATING CAPSULE PILL         -->
-        <!-- ========================================== -->
-        <Border x:Name="CollapsedCapsule"
-                Visibility="{Binding CollapsedIndicatorVisibility, Converter={StaticResource BoolToVis}}"
-                Width="240" Height="38"
-                CornerRadius="19"
-                Background="#EE0D0F17"
-                BorderBrush="{StaticResource OrbitBorderBrush}"
-                BorderThickness="1"
-                Padding="10,4"
-                Tapped="OnCollapsedPillTapped">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
-                <!-- Mini Mascot Icon / Face -->
-                <Border Grid.Column="0"
-                        Width="22" Height="22"
-                        CornerRadius="11"
-                        Background="#161822"
-                        BorderBrush="#252A3A"
-                        BorderThickness="1"
-                        VerticalAlignment="Center">
-                    <FontIcon Glyph="&#xE99A;" FontSize="11" Foreground="{StaticResource OrbitCyanAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-
-                <!-- Breathing Status Indicator Dot -->
-                <Grid Grid.Column="1" VerticalAlignment="Center" Width="8" Height="8">
-                    <Ellipse x:Name="PillGlowDot" Fill="{StaticResource OrbitCyanGlowBrush}" Width="8" Height="8" Opacity="0.8" />
-                    <Ellipse Fill="{StaticResource OrbitCyanAccentBrush}" Width="5" Height="5" />
-                </Grid>
-
-                <!-- Status Label -->
-                <TextBlock Grid.Column="2"
-                           Text="AMORA Orbit"
-                           FontSize="12"
-                           FontWeight="SemiBold"
-                           Foreground="{StaticResource OrbitTextPrimaryBrush}"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" />
-
-                <!-- Expand Indicator -->
-                <FontIcon Grid.Column="3"
-                          Glyph="&#xE70D;"
-                          FontSize="10"
-                          Foreground="{StaticResource OrbitTextMutedBrush}"
-                          VerticalAlignment="Center" />
-            </Grid>
-        </Border>
-
-        <!-- ========================================== -->
-        <!-- 2. EXPANDED INTERACTIVE PANEL              -->
-        <!-- ========================================== -->
-        <Border x:Name="ExpandedPanel"
-                Visibility="{Binding ExpandedVisibility, Converter={StaticResource BoolToVis}}"
-                Width="660"
-                MaxHeight="520"
-                CornerRadius="24"
-                Background="#FA0D0F17"
-                BorderBrush="{StaticResource OrbitBorderBrush}"
-                BorderThickness="1.5"
-                Padding="18,14">
-            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="12">
-                <!-- Header Toolbar -->
-                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
-                    <!-- Branding & Status -->
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Border Width="26" Height="26" CornerRadius="13" Background="#161822" BorderBrush="#2A2E3D" BorderThickness="1">
-                            <FontIcon Glyph="&#xE99A;" FontSize="13" Foreground="{StaticResource OrbitCyanAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <TextBlock Text="AMORA Orbit" FontSize="14" FontWeight="Bold" Foreground="{StaticResource OrbitTextPrimaryBrush}" VerticalAlignment="Center" />
-                        <Border Background="#1C2130" CornerRadius="6" Padding="6,2" VerticalAlignment="Center">
-                            <TextBlock Text="WINDOWS COMPANION" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource OrbitCyanAccentBrush}" />
-                        </Border>
-                    </StackPanel>
-
-                    <!-- Header Controls -->
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                        <!-- New Conversation Button -->
-                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                                Padding="8,4"
-                                ToolTipService.ToolTip="New Conversation (Reset Chat)"
-                                AutomationProperties.Name="New Conversation"
-                                Click="OnResetConversationClicked">
-                            <FontIcon Glyph="&#xE72C;" FontSize="12" />
-                        </Button>
-
-                        <!-- Automations Toggle Button -->
-                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                                Padding="8,4"
-                                ToolTipService.ToolTip="Local Automations"
-                                AutomationProperties.Name="Local Automations"
-                                Click="OnAutomationsToggleClicked">
-                            <FontIcon Glyph="&#xE768;" FontSize="13" />
-                        </Button>
-
-                        <!-- Settings Toggle Button -->
-                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                                Padding="8,4"
-                                ToolTipService.ToolTip="AI &amp; Secure Settings"
-                                AutomationProperties.Name="AI and Secure Settings"
-                                Click="OnSettingsToggleClicked">
-                            <FontIcon Glyph="&#xE713;" FontSize="13" />
-                        </Button>
-
-                        <!-- Pin Toggle Button -->
-                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                                Padding="8,4"
-                                ToolTipService.ToolTip="Keep Orbit Open (Pin)"
-                                AutomationProperties.Name="Pin Orbit Window"
-                                Click="OnPinToggleClicked">
-                            <FontIcon Glyph="{Binding PinIconGlyph}" FontSize="13" />
-                        </Button>
-
-                        <!-- Collapse Button -->
-                        <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                                Padding="8,4"
-                                ToolTipService.ToolTip="Collapse to Capsule (Esc)"
-                                AutomationProperties.Name="Collapse Orbit"
-                                Click="OnCollapseClicked">
-                            <FontIcon Glyph="&#xE70E;" FontSize="13" />
-                        </Button>
-                    </StackPanel>
-                </Grid>
-
-                <!-- Settings Panel Drawer (Collapsible) -->
-                <Border Grid.Row="1"
-                        Background="#161822"
-                        BorderBrush="{StaticResource OrbitBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="16"
-                        Padding="14,12"
-                        Visibility="{Binding Settings.IsOpen, Converter={StaticResource BoolToVis}}">
-                    <StackPanel Spacing="10">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE713;" FontSize="12" Foreground="{StaticResource OrbitCyanAccentBrush}" VerticalAlignment="Center" />
-                                <TextBlock Text="AI Provider &amp; Secure Credentials" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource OrbitTextPrimaryBrush}" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,2"
-                                    AutomationProperties.Name="Close Settings"
-                                    Click="OnCloseSettingsClicked">
-                                <FontIcon Glyph="&#xE711;" FontSize="10" />
-                            </Button>
-                        </Grid>
-
-                        <!-- Provider & Model Selection -->
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                            <StackPanel Grid.Column="0" Spacing="4">
-                                <TextBlock Text="Provider" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
-                                <TextBox Text="{Binding Settings.SelectedProvider, Mode=TwoWay}"
-                                         AutomationProperties.Name="AI Provider"
-                                         FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
-                                         Foreground="{StaticResource OrbitTextPrimaryBrush}" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4">
-                                <TextBlock Text="Model" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
-                                <TextBox Text="{Binding Settings.ModelName, Mode=TwoWay}"
-                                         AutomationProperties.Name="AI Model"
-                                         FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
-                                         Foreground="{StaticResource OrbitTextPrimaryBrush}" />
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- API Key Input & Masked Display -->
-                        <StackPanel Spacing="4">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Google Gemini API Key" FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Settings.MaskedApiKey}" FontSize="10" Foreground="{StaticResource OrbitCyanAccentBrush}"
-                                           Visibility="{Binding Settings.HasSavedKey, Converter={StaticResource BoolToVis}}" />
-                            </Grid>
-                            <PasswordBox x:Name="SettingsApiKeyBox"
-                                         AutomationProperties.Name="Gemini API Key"
-                                         PlaceholderText="Paste Gemini API key (encrypted with Windows DPAPI)..."
-                                         PasswordChanged="OnSettingsApiKeyPasswordChanged"
-                                         FontSize="11" Padding="8,4" Background="#0D0F17" BorderBrush="#2A2E3D"
-                                         Foreground="{StaticResource OrbitTextPrimaryBrush}" />
-                        </StackPanel>
-
-                        <!-- Context Awareness Privacy Toggle -->
-                        <CheckBox IsChecked="{Binding Settings.SendStatusContextToAI, Mode=TwoWay}"
-                                  AutomationProperties.Name="Share System Status with AI"
-                                  Margin="0,2,0,2">
-                            <TextBlock Text="Share system status with AI (active timer, media, power; default: Off)"
-                                       FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" VerticalAlignment="Center" />
-                        </CheckBox>
-
-                        <!-- Proactive Suggestions Opt-In Toggle -->
-                        <CheckBox IsChecked="{Binding Settings.EnableProactiveSuggestions, Mode=TwoWay}"
-                                  AutomationProperties.Name="Enable Proactive Suggestions"
-                                  Margin="0,2,0,2">
-                            <TextBlock Text="Enable proactive suggestions (local, deterministic smart insights; default: Off)"
-                                       FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" VerticalAlignment="Center" />
-                        </CheckBox>
-
-                        <!-- Action Buttons & Status -->
-                        <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
-                            <Button Grid.Column="0" Style="{StaticResource OrbitPrimaryActionButtonStyle}"
-                                    AutomationProperties.Name="Save Settings"
-                                    Padding="10,4" FontSize="11" Click="OnSaveSettingsClicked">
-                                <TextBlock Text="Save" FontSize="11" />
-                            </Button>
-                            <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}"
-                                    AutomationProperties.Name="Test Connection"
-                                    Padding="10,4" FontSize="11" Click="OnTestConnectionClicked"
-                                    IsEnabled="{Binding Settings.CanTest}">
-                                <TextBlock Text="Test Connection" FontSize="11" />
-                            </Button>
-                            <Button Grid.Column="2" Style="{StaticResource OrbitGhostButtonStyle}"
-                                    AutomationProperties.Name="Clear Saved API Key"
-                                    Padding="10,4" FontSize="11" Click="OnClearKeyClicked"
-                                    Visibility="{Binding Settings.HasSavedKey, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="Clear Key" FontSize="11" Foreground="#FF453A" />
-                            </Button>
-
-                            <!-- Test / Save Status Indicator -->
-                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                        Visibility="{Binding Settings.HasTestStatus, Converter={StaticResource BoolToVis}}">
-                                <FontIcon Glyph="{Binding Settings.TestStatusGlyph}" FontSize="11" Foreground="{Binding Settings.TestStatusColor}" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding Settings.TestStatusMessage}" FontSize="10" Foreground="{Binding Settings.TestStatusColor}"
-                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="220" />
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- Security Notice -->
-                        <TextBlock Text="&#xE72E; Credentials are encrypted via Windows DPAPI for your user account. Keys are never written to disk in plaintext."
-                                   FontSize="9" Foreground="#6C7280" />
-                    </StackPanel>
-                </Border>
-
+       <ScrollViewer x:Name="AutomationsScroll" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                 <!-- Automations Panel Drawer (Collapsible) -->
-                <Border Grid.Row="1"
+                <Border Grid.Row="0"
                         Background="#161822"
                         BorderBrush="{StaticResource OrbitBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="16"
                         Padding="14,12"
-                        Visibility="{Binding Automations.IsOpen, Converter={StaticResource BoolToVis}}">
+                        x:Name="AutomationsPanel" Visibility="{Binding Automations.IsOpen, Converter={StaticResource BoolToVis}}">
                     <StackPanel Spacing="10">
                         <!-- Drawer Header -->
                         <Grid ColumnDefinitions="*,Auto">
@@ -282,7 +119,7 @@
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                                 <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                                                 <TextBlock Text="{Binding TriggerText}" FontSize="10" Foreground="{StaticResource OrbitCyanAccentBrush}" />
-                                                <TextBlock Text="{Binding ActionText}" FontSize="9" Foreground="{StaticResource OrbitTextMutedBrush}" />
+                                                <TextBlock Text="{Binding ActionText}" FontSize="11" Foreground="{StaticResource OrbitTextMutedBrush}" />
                                             </StackPanel>
                                             <Button Grid.Column="1" Style="{StaticResource OrbitGhostButtonStyle}" Padding="6,3" FontSize="10"
                                                     ToolTipService.ToolTip="Run Now"
@@ -313,10 +150,10 @@
                                 <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                     <TextBox Grid.Column="0" PlaceholderText="Automation name..." Text="{Binding Automations.NewName, Mode=TwoWay}"
                                              AutomationProperties.Name="New Automation Name"
-                                             FontSize="10" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                                             FontSize="12" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                                     <TextBox Grid.Column="1" PlaceholderText="Reminder message..." Text="{Binding Automations.NewReminderMessage, Mode=TwoWay}"
                                              AutomationProperties.Name="New Automation Reminder Message"
-                                             FontSize="10" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
+                                             FontSize="12" Padding="6,3" Background="#090B10" BorderBrush="#2A2E3D" Foreground="{StaticResource OrbitTextPrimaryBrush}" />
                                 </Grid>
                                 <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
                                     <ComboBox Grid.Column="0" SelectedIndex="{Binding Automations.NewTriggerTypeIndex, Mode=TwoWay}"
@@ -354,202 +191,27 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Assistant Command Input Bar -->
-                <Border Grid.Row="2"
-                        Background="{StaticResource OrbitCardBrush}"
-                        BorderBrush="{StaticResource OrbitBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="16"
-                        Padding="12,8">
-                    <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
-                        <!-- Input Row -->
-                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
-                            <Border Grid.Column="0"
-                                    Width="24" Height="24"
-                                    CornerRadius="12"
-                                    Background="#1C2130"
-                                    VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE756;" FontSize="11" Foreground="{StaticResource OrbitCyanAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
 
-                            <TextBox Grid.Column="1"
-                                     x:Name="AssistantInputBox"
-                                     AutomationProperties.Name="Assistant Command Input"
-                                     Text="{Binding Assistant.InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     PlaceholderText="Ask AMORA or command (e.g. 'start 15m timer', 'pause music')..."
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     Foreground="{StaticResource OrbitTextPrimaryBrush}"
-                                     FontSize="12"
-                                     VerticalAlignment="Center"
-                                     KeyDown="OnCommandInputKeyDown" />
-
-                            <Button Grid.Column="2"
-                                    Style="{StaticResource OrbitPrimaryActionButtonStyle}"
-                                    Padding="10,4"
-                                    FontSize="11"
-                                    IsEnabled="{Binding Assistant.CanSubmit}"
-                                    Click="OnSubmitCommandClicked"
-                                    ToolTipService.ToolTip="Execute Command (Enter)"
-                                    AutomationProperties.Name="Execute Assistant Command">
-                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <TextBlock Text="Ask" FontSize="11" />
-                                    <FontIcon Glyph="&#xE724;" FontSize="10" />
-                                </StackPanel>
-                            </Button>
-
-                            <Button Grid.Column="3"
-                                    Style="{StaticResource OrbitGhostButtonStyle}"
-                                    Padding="6,4"
-                                    Visibility="{Binding Assistant.HasText, Converter={StaticResource BoolToVis}}"
-                                    Click="OnClearCommandClicked"
-                                    ToolTipService.ToolTip="Clear"
-                                    AutomationProperties.Name="Clear Command Input">
-                                <FontIcon Glyph="&#xE711;" FontSize="10" />
-                            </Button>
-                        </Grid>
-
-                        <!-- Feedback & Confirmation Banner -->
-                        <Grid Grid.Row="1"
-                              Visibility="{Binding Assistant.HasStatus, Converter={StaticResource BoolToVis}}"
-                              ColumnDefinitions="Auto,*,Auto"
-                              ColumnSpacing="8"
-                              Margin="2,0,0,0">
-                            <FontIcon Grid.Column="0"
-                                      Glyph="{Binding Assistant.StatusGlyph}"
-                                      FontSize="12"
-                                      Foreground="{Binding Assistant.StatusColor}"
-                                      VerticalAlignment="Center" />
-
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding Assistant.StatusMessage}"
-                                       FontSize="11"
-                                       Foreground="{Binding Assistant.StatusColor}"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis" />
-
-                            <!-- Confirmation Action Controls -->
-                            <StackPanel Grid.Column="2"
-                                        Orientation="Horizontal"
-                                        Spacing="6"
-                                        Visibility="{Binding Assistant.HasPendingConfirmation, Converter={StaticResource BoolToVis}}">
-                                <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
-                                        Padding="8,3"
-                                        FontSize="10"
-                                        Background="#FF9F0A"
-                                        AutomationProperties.Name="Confirm Action"
-                                        Click="OnConfirmCommandClicked">
-                                    <TextBlock Text="Confirm" FontSize="10" Foreground="#090B10" FontWeight="SemiBold" />
-                                </Button>
-                                <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                                        Padding="8,3"
-                                        FontSize="10"
-                                        AutomationProperties.Name="Cancel Action"
-                                        Click="OnCancelConfirmationClicked">
-                                    <TextBlock Text="Cancel" FontSize="10" />
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-                    </Grid>
-                </Border>
-
-                <!-- Main Content (2 Columns) -->
-                <Grid Grid.Row="3" ColumnDefinitions="210,*" ColumnSpacing="16">
-                    <!-- LEFT COLUMN: Robot Mascot & Proactive Recommendation -->
-                    <Border Grid.Column="0"
-                            Background="{StaticResource OrbitCardBrush}"
-                            BorderBrush="{StaticResource OrbitBorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="18"
-                            Padding="12,14">
-                        <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
-                            <!-- Mascot Representation -->
-                            <local:RobotMascotView Grid.Row="0" DataContext="{Binding Mascot}" />
-
-                            <!-- Mascot Mood / State -->
-                            <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="2">
-                                <TextBlock Text="{Binding Mascot.StatusDescription}"
-                                           FontSize="12"
-                                           FontWeight="SemiBold"
-                                           Foreground="{StaticResource OrbitTextPrimaryBrush}"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="{Binding Mascot.StatusSubtext}"
-                                           FontSize="10"
-                                           Foreground="{StaticResource OrbitTextMutedBrush}"
-                                           HorizontalAlignment="Center" />
-                            </StackPanel>
-
-                            <!-- Mini Proactive Card -->
-                            <Border Grid.Row="2"
-                                    Background="#11131C"
-                                    BorderBrush="#222634"
-                                    BorderThickness="1"
-                                    CornerRadius="12"
-                                    Padding="10,8"
-                                    VerticalAlignment="Bottom">
-                                <StackPanel Spacing="6">
-                                    <TextBlock Text="Smart Insight"
-                                               FontSize="10"
-                                               FontWeight="SemiBold"
-                                               Foreground="{StaticResource OrbitCyanAccentBrush}" />
-                                    <TextBlock Text="{Binding Suggestion.Title}"
-                                               FontSize="11"
-                                               Foreground="{StaticResource OrbitTextPrimaryBrush}"
-                                               TextWrapping="Wrap"
-                                               MaxLines="3" />
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Action Buttons -->
-                            <StackPanel Grid.Row="3" Spacing="6"
-                                        Visibility="{Binding Suggestion.HasSuggestion, Converter={StaticResource BoolToVis}}">
-                                <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
-                                        HorizontalAlignment="Stretch"
-                                        AutomationProperties.Name="Execute Smart Insight Action"
-                                        Click="OnLeftPrimaryActionClicked">
-                                    <TextBlock Text="{Binding Suggestion.ActionLabel}" HorizontalAlignment="Center" />
-                                </Button>
-                                <Grid ColumnDefinitions="*,*">
-                                    <Button Grid.Column="0"
-                                            Style="{StaticResource OrbitGhostButtonStyle}"
-                                            HorizontalAlignment="Stretch"
-                                            Padding="4,4"
-                                            AutomationProperties.Name="Snooze Smart Insight"
-                                            Click="OnLeftSnoozeClicked">
-                                        <TextBlock Text="Snooze" FontSize="11" HorizontalAlignment="Center" />
-                                    </Button>
-                                    <Button Grid.Column="1"
-                                            Style="{StaticResource OrbitGhostButtonStyle}"
-                                            HorizontalAlignment="Stretch"
-                                            Padding="4,4"
-                                            AutomationProperties.Name="Dismiss Smart Insight"
-                                            Click="OnLeftDismissClicked">
-                                        <TextBlock Text="Dismiss" FontSize="11" HorizontalAlignment="Center" />
-                                    </Button>
-                                </Grid>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <!-- RIGHT COLUMN: Banner, Media & Timer, System Status -->
-                    <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="12">
-                        <!-- Top Suggestion Banner -->
-                        <local:SuggestionBannerView Grid.Row="0" DataContext="{Binding Suggestion}" />
-
-                        <!-- Center: Media and Focus Timer Cards -->
-                        <Grid Grid.Row="1" RowDefinitions="*,*" RowSpacing="10">
-                            <!-- Media Player -->
-                            <local:MediaControlView Grid.Row="0" DataContext="{Binding Media}" />
-
-                            <!-- Focus Timer -->
-                            <local:TimerControlView Grid.Row="1" DataContext="{Binding Timer}" />
-                        </Grid>
-
-                        <!-- Bottom: Battery & Hardware Telemetry -->
-                        <local:SystemStatusView Grid.Row="2" DataContext="{Binding SystemStatus}" />
-                    </Grid>
-                </Grid>
-            </Grid>
-        </Border>
-    </Grid>
+       </ScrollViewer>
+       <local:GitHubPanelView x:Name="GitHubPanel" Visibility="Collapsed" DataContext="{Binding GitHub}"/>
+      </Grid>
+     </Grid>
+    </Border>
+   </Grid>
+   <Grid x:Name="QuickMenuLayer" Visibility="Collapsed">
+    <Button Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Click="OnCloseQuickMenu" AutomationProperties.Name="Close quick actions"/>
+    <Border Width="190" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="98,42,0,0" Background="#FA090B0D" BorderBrush="#3B3D41" BorderThickness="1" CornerRadius="14" Padding="8">
+     <ScrollViewer MaxHeight="214" VerticalScrollBarVisibility="Auto"><StackPanel Spacing="2">
+      <Button Content="◷   Timer" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnTimerPageClicked"/>
+      <Button Content="▣   Clipboard" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnClipboardClicked"/>
+      <Button Content="▤   Notes" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnNotesClicked"/>
+      <Button Content="▱   File shelf" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnFilesClicked"/>
+      <Button Content="ϟ   Automations" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnAutomationsToggleClicked"/>
+      <Button Content="&lt;/&gt; GitHub" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnGitHubClicked"/>
+      <Button Content="New conversation" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource OrbitGhostButtonStyle}" Click="OnResetConversationClicked"/>
+     </StackPanel></ScrollViewer>
+    </Border>
+   </Grid>
+  </Grid>
+ </Grid>
 </UserControl>

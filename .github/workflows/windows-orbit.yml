@@ -94,7 +94,8 @@ jobs:
         run: dotnet test Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj --configuration Release --no-build --no-restore /p:Platform=x64 --verbosity normal --logger "console;verbosity=detailed"
 
       - name: Publish Release Package (win-x64)
-        run: dotnet publish Windows/AMORA.Orbit/AMORA.Orbit.csproj --configuration Release --runtime win-x64 --self-contained true /p:Platform=x64 /p:WindowsAppSDKSelfContained=true --output ./publish/win-x64
+        shell: pwsh
+        run: ./Windows/Scripts/Publish-Release.ps1 -OutputDirectory ./publish/win-x64
 
       - name: Stage Release Manifest
         shell: pwsh
@@ -188,6 +189,14 @@ jobs:
           $sha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
           Add-Content -Path $env:GITHUB_OUTPUT -Value "sha256=$sha256"
           Write-Host "Release package validation succeeded. SHA-256: $sha256"
+
+      - name: Validate Browser Host and Shared Extension Package
+        shell: pwsh
+        env:
+          ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
+        run: |
+          $validationId = [guid]::NewGuid().ToString('N')
+          ./Windows/Scripts/Validate-Release.ps1 -PublishDirectory ./publish/win-x64 -ArchivePath (Join-Path '.' $env:ARCHIVE_NAME) -ExtractionDirectory (Join-Path $env:RUNNER_TEMP "amora-browser-validation-$validationId") -ReportPath (Join-Path $env:RUNNER_TEMP "amora-browser-validation-$validationId.json")
 
       - name: Upload Temporary CI Debug Artifact
         uses: actions/upload-artifact@v4

@@ -12,6 +12,30 @@ namespace AMORA.Orbit.Tests;
 
 public class AssistantCommandViewModelTests : IDisposable
 {
+    [Fact]
+    public async Task ResetConversation_DiscardsLateResultAndVisibleTranscript()
+    {
+        var engine = new ControlledAssistantEngine();
+        using var vm = new AssistantCommandViewModel(engine) { InputText = "hello" };
+        var pending = vm.SubmitAsync();
+        Assert.Single(vm.Transcript);
+        vm.ResetConversation();
+        engine.Complete(AssistantExecutionResult.Information("obsolete response"));
+        await pending;
+        Assert.Empty(vm.Transcript);
+        Assert.Equal("Conversation reset.", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task LocalCommand_AddsUserAndAssistantToSessionTranscript()
+    {
+        _viewModel.InputText = "start a 5 minute timer";
+        await _viewModel.SubmitAsync();
+        Assert.Equal(2, _viewModel.Transcript.Count);
+        Assert.Equal("You", _viewModel.Transcript[0].Role);
+        Assert.Equal("AMORA", _viewModel.Transcript[1].Role);
+        Assert.Equal(TimerStatus.Running, _timerService.CurrentTimer.Status);
+    }
     private sealed class ControlledAssistantEngine : IAssistantEngine
     {
         private readonly TaskCompletionSource<AssistantExecutionResult> _execution = new(

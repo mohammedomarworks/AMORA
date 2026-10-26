@@ -6,53 +6,53 @@ namespace AMORA.Orbit.Services.Implementations;
 
 public class WindowsBatteryService : IBatteryService
 {
-    private BatterySnapshot _current = BatterySnapshot.DesktopAC;
+    private readonly Func<NativeMethods.SYSTEM_POWER_STATUS?> _readStatus;
+    private BatterySnapshot _current = BatterySnapshot.Unavailable;
     public BatterySnapshot CurrentSnapshot => _current;
     public BatterySnapshot GetSnapshot() => CurrentSnapshot;
-
     public event EventHandler<BatterySnapshot>? BatteryUpdated;
 
-    public WindowsBatteryService()
+    public WindowsBatteryService(Func<NativeMethods.SYSTEM_POWER_STATUS?>? readStatus = null)
     {
+        _readStatus = readStatus ?? ReadNativeStatus;
         Refresh();
     }
 
     public void Refresh()
     {
+        BatterySnapshot next;
         try
         {
-            if (NativeMethods.GetSystemPowerStatus(out var status))
-            {
-                // BatteryFlag == 128 indicates "No system battery" (Desktop PC)
-                bool hasBattery = (status.BatteryFlag & 128) == 0 && status.BatteryLifePercent != 255;
-                bool isCharging = (status.BatteryFlag & 8) != 0;
-                bool isPluggedIn = status.ACLineStatus == 1;
-                int percent = hasBattery ? Math.Clamp((int)status.BatteryLifePercent, 0, 100) : 100;
-                TimeSpan? remaining = null;
-
-                if (hasBattery && !isCharging && status.BatteryLifeTime > 0)
-                {
-                    remaining = TimeSpan.FromSeconds(status.BatteryLifeTime);
-                }
-
-                _current = new BatterySnapshot(
-                    Percentage: percent,
-                    IsCharging: isCharging,
-                    IsPluggedIn: isPluggedIn,
-                    HasBattery: hasBattery,
-                    EstimatedRemaining: remaining
-                );
-            }
-            else
-            {
-                _current = BatterySnapshot.DesktopAC;
-            }
+            var result = _readStatus();
+            next = result.HasValue ? FromNativeStatus(result.Value) : BatterySnapshot.Unavailable;
         }
         catch
         {
-            _current = BatterySnapshot.DesktopAC;
+            next = BatterySnapshot.Unavailable;
+        }
+        _current = next;
+        BatteryUpdated?.Invoke(this, next);
+    }
+
+    public static BatterySnapshot FromNativeStatus(NativeMethods.SYSTEM_POWER_STATUS status)
+    {
+        // 255 is unknown, not a collection of battery flags. Only 128 proves no battery.
+        if (status.BatteryFlag == 255) return BatterySnapshot.Unavailable;
+        if ((status.BatteryFlag & 128) != 0)
+        {
+            return status.ACLineStatus == 1 ? BatterySnapshot.DesktopAC : BatterySnapshot.Unavailable;
         }
 
-        BatteryUpdated?.Invoke(this, _current);
+        bool isCharging = (status.BatteryFlag & 8) != 0;
+        return new BatterySnapshot(
+            Percentage: status.BatteryLifePercent <= 100 ? status.BatteryLifePercent : -1,
+            IsCharging: isCharging,
+            IsPluggedIn: status.ACLineStatus == 1,
+            HasBattery: true,
+            EstimatedRemaining: !isCharging && status.BatteryLifeTime > 0
+                ? TimeSpan.FromSeconds(status.BatteryLifeTime) : null);
     }
+
+    private static NativeMethods.SYSTEM_POWER_STATUS? ReadNativeStatus() =>
+        NativeMethods.GetSystemPowerStatus(out var status) ? status : null;
 }

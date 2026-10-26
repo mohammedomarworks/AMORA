@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.ObjectModel;
 using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
 
@@ -10,7 +11,12 @@ namespace AMORA.Orbit.ViewModels;
 
 public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 {
+    public record TranscriptEntry(string Role, string Text);
+    public ObservableCollection<TranscriptEntry> Transcript { get; } = new();
+    private int _requestGeneration;
     private readonly IAssistantEngine _engine;
+    private readonly Action<Action> _dispatch;
+    private bool _disposed;
     private string _inputText = string.Empty;
     private bool _isProcessing;
     private string _statusMessage = string.Empty;
@@ -19,9 +25,10 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
     private string? _confirmationPrompt;
     private CancellationTokenSource? _activeCts;
 
-    public AssistantCommandViewModel(IAssistantEngine engine)
+    public AssistantCommandViewModel(IAssistantEngine engine, Action<Action>? dispatch = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _dispatch = dispatch ?? (action => action());
     }
 
     public string InputText
@@ -112,7 +119,7 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 
     public string? PendingActionDescription => _confirmationPrompt;
 
-    public bool CanSubmit => !string.IsNullOrWhiteSpace(_inputText) && !_isProcessing;
+    public bool CanSubmit => !_disposed && !string.IsNullOrWhiteSpace(_inputText) && !_isProcessing;
     public bool HasText => !string.IsNullOrEmpty(_inputText);
     public bool HasStatus => !string.IsNullOrWhiteSpace(_statusMessage);
 
@@ -145,12 +152,14 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task<AssistantExecutionResult> SubmitAsync()
     {
-        if (string.IsNullOrWhiteSpace(_inputText) || _isProcessing)
+        if (_disposed || string.IsNullOrWhiteSpace(_inputText) || _isProcessing)
         {
             return AssistantExecutionResult.Failed("Command cannot be empty.");
         }
 
         string commandToRun = _inputText.Trim();
+        var generation = ++_requestGeneration;
+        AddTranscript("You", commandToRun);
         InputText = string.Empty;
 
         _activeCts?.Cancel();
@@ -166,59 +175,62 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             var result = await _engine.ExecuteAsync(commandToRun, token);
-            ApplyResult(result);
+            PublishResult(result, generation);
             return result;
         }
         catch (OperationCanceledException)
         {
             var cancelResult = AssistantExecutionResult.Information("Request cancelled.", MascotMood.Idle);
-            ApplyResult(cancelResult);
+            PublishResult(cancelResult, generation);
             return cancelResult;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            var errorResult = AssistantExecutionResult.Failed($"Error: {ex.Message}");
-            ApplyResult(errorResult);
+            var errorResult = AssistantExecutionResult.Failed("The request could not be completed. Check the service and try again.");
+            PublishResult(errorResult, generation);
             return errorResult;
         }
         finally
         {
-            IsProcessing = false;
+            OnUi(() => IsProcessing = false);
         }
     }
 
     public async Task<AssistantExecutionResult> ConfirmAsync()
     {
-        if (!HasPendingConfirmation || _isProcessing)
+        if (_disposed || !HasPendingConfirmation || _isProcessing)
         {
             return AssistantExecutionResult.Failed("No confirmation is pending.");
         }
 
         IsProcessing = true;
+        var generation = ++_requestGeneration;
         try
         {
             var result = await _engine.ConfirmPendingActionAsync();
-            ApplyResult(result);
+            PublishResult(result, generation);
             return result;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            var errorResult = AssistantExecutionResult.Failed($"Confirmation error: {ex.Message}");
-            ApplyResult(errorResult);
+            var errorResult = AssistantExecutionResult.Failed("The confirmed action could not be completed. Check the service and try again.");
+            PublishResult(errorResult, generation);
             return errorResult;
         }
         finally
         {
-            IsProcessing = false;
+            OnUi(() => IsProcessing = false);
         }
     }
 
     public void CancelConfirmation()
     {
+        if (_disposed) return;
         _engine.CancelPendingAction();
         HasPendingConfirmation = false;
         ConfirmationPrompt = null;
         StatusMessage = "Action cancelled.";
+        AddTranscript("AMORA", StatusMessage);
         LastStatus = AssistantResultStatus.Information;
 
         var cancelResult = AssistantExecutionResult.Information("Action cancelled.", MascotMood.Idle);
@@ -227,6 +239,7 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 
     public void CancelActiveRequest()
     {
+        if (_disposed) return;
         if (_isProcessing)
         {
             _activeCts?.Cancel();
@@ -235,6 +248,8 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 
     public void Clear()
     {
+        if (_disposed) return;
+        _engine.CancelPendingAction();
         CancelActiveRequest();
         InputText = string.Empty;
         StatusMessage = string.Empty;
@@ -245,9 +260,12 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 
     public void ResetConversation()
     {
+        if (_disposed) return;
+        _requestGeneration++;
         CancelActiveRequest();
         _engine.ResetConversation();
         Clear();
+        Transcript.Clear();
         StatusMessage = "Conversation reset.";
         LastStatus = AssistantResultStatus.Information;
         ResultReceived?.Invoke(this, AssistantExecutionResult.Information("Conversation reset.", MascotMood.Idle));
@@ -255,6 +273,10 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        _requestGeneration++;
+        _engine.CancelPendingAction();
         _activeCts?.Cancel();
         _activeCts?.Dispose();
         _activeCts = null;
@@ -262,6 +284,8 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyResult(AssistantExecutionResult result)
     {
+        if (_disposed) return;
+        AddTranscript("AMORA", result.Message);
         StatusMessage = result.Message;
         LastStatus = result.Status;
         HasPendingConfirmation = result.RequiresConfirmation;
@@ -270,8 +294,21 @@ public class AssistantCommandViewModel : INotifyPropertyChanged, IDisposable
         ResultReceived?.Invoke(this, result);
     }
 
+    private void AddTranscript(string role, string text)
+    {
+        if (_disposed) return;
+        Transcript.Add(new TranscriptEntry(role, text));
+        // Visible session history is bounded and never persisted as user memory.
+        while (Transcript.Count > 40) Transcript.RemoveAt(0);
+    }
+
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
+        if (_disposed) return;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+
+    private void OnUi(Action action) => _dispatch(() => { if (!_disposed) action(); });
+    private void PublishResult(AssistantExecutionResult result, int generation) =>
+        OnUi(() => { if (generation == _requestGeneration) ApplyResult(result); });
 }

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace AMORA.Orbit.Interop;
 
@@ -6,13 +7,17 @@ public static class NativeMethods
 {
     // Window Styles & Positioning
     public const int GWL_WNDPROC = -4;
+    public const int GWL_STYLE = -16;
     public const int GWL_EXSTYLE = -20;
+    public const long WS_CAPTION = 0x00C00000;
     public const int WS_EX_TOOLWINDOW = 0x00000080;
     public const int WS_EX_TOPMOST = 0x00000008;
     public const int WS_EX_LAYERED = 0x00080000;
     public const int WS_EX_NOACTIVATE = 0x08000000;
 
     public const int WM_DPICHANGED = 0x02E0;
+    public const int WM_DISPLAYCHANGE = 0x007E;
+    public const int WM_SETTINGCHANGE = 0x001A;
 
     public static readonly IntPtr HWND_TOPMOST = new(-1);
     public const uint SWP_NOSIZE = 0x0001;
@@ -21,6 +26,7 @@ public static class NativeMethods
     public const uint SWP_SHOWWINDOW = 0x0040;
 
     public const uint MONITOR_DEFAULTTONEAREST = 2;
+    public const uint SPI_GETWORKAREA = 0x0030;
 
     // Hotkey
     public const uint MOD_ALT = 0x0001;
@@ -86,6 +92,13 @@ public static class NativeMethods
         public int Height => Bottom - Top;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     public struct MONITORINFO
     {
@@ -136,6 +149,36 @@ public static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromPoint(POINT point, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetCursorPos(out POINT point);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SystemParametersInfo(uint action, uint parameter, out RECT value, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int index);
+
+    [DllImport("shcore.dll")]
+    public static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsIconic(IntPtr window);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint RegisterWindowMessage(string message);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr LoadIcon(IntPtr instance, IntPtr iconName);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

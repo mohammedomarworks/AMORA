@@ -8,107 +8,103 @@ namespace AMORA.Orbit.ViewModels;
 public class MediaControlViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IMediaService _mediaService;
-    private MediaTrack? _track;
-    private bool _isPlaying;
+    private readonly Action<Action> _dispatch;
+    private MediaTrack _track;
+    private string _actionStatus = string.Empty;
+    private bool _isBusy;
+    private bool _disposed;
 
-    public MediaControlViewModel(IMediaService mediaService)
+    public MediaControlViewModel(IMediaService mediaService, Action<Action>? dispatch = null)
     {
         _mediaService = mediaService ?? throw new ArgumentNullException(nameof(mediaService));
+        _dispatch = dispatch ?? (action => action());
         _track = _mediaService.CurrentTrack;
-        _isPlaying = _track?.IsPlaying ?? false;
-
         _mediaService.TrackChanged += OnTrackChanged;
     }
 
-    public MediaTrack? CurrentTrack => _track;
-
-    public string Title => _track?.Title ?? "No Media Playing";
-    public string Artist => _track?.Artist ?? "AMORA Audio";
-    public string SourceName => _track?.Source.ToString() ?? "Windows";
-    public bool HasTrack => _track != null;
-
-    public bool IsPlaying
-    {
-        get => _isPlaying;
-        private set
-        {
-            if (_isPlaying != value)
-            {
-                _isPlaying = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(PlayPauseIconGlyph));
-            }
-        }
-    }
-
-    public string PlayPauseIconGlyph => _isPlaying ? "\uE769" : "\uE768"; // Segoe Fluent Icons: Pause / Play
-
-    public double ProgressRatio => _track?.ProgressPercent ?? 0.0;
-
-    public string FormattedProgress
-    {
-        get
-        {
-            if (_track == null || _track.Duration <= TimeSpan.Zero)
-            {
-                return "--:-- / --:--";
-            }
-            return $"{_track.FormattedElapsed} / {_track.FormattedDuration}";
-        }
-    }
-
+    public MediaTrack CurrentTrack => _track;
+    public string Title => IsAvailable ? _track.Title : "No media playing";
+    public string Artist => IsAvailable ? _track.Artist : "Open a player with Windows media controls";
+    public string SourceName => IsAvailable ? (_track.Source == MediaSourceType.System ? "Windows media" : _track.Source.ToString()) : "Windows media";
+    public bool HasTrack => IsAvailable;
+    public bool IsAvailable => _track.IsAvailable && _mediaService.IsConnected;
+    public bool IsPlaying => IsAvailable && _track.IsPlaying;
+    public bool CanPlayPause => !_isBusy && IsAvailable && _mediaService.CanTogglePlayPause;
+    public bool CanNext => !_isBusy && IsAvailable && _mediaService.CanGoNext;
+    public bool CanPrevious => !_isBusy && IsAvailable && _mediaService.CanGoPrevious;
+    public bool CanSeek => !_isBusy && IsAvailable && _mediaService.CanSeek;
+    public bool HasProgress => IsAvailable && _track.Duration > TimeSpan.Zero;
+    public bool HasActionStatus => _actionStatus.Length > 0;
+    public string StatusText => _actionStatus.Length > 0 ? _actionStatus : _mediaService.StatusText;
+    public string PlayPauseIconGlyph => IsPlaying ? "\uE769" : "\uE768";
+    public double ProgressRatio => IsAvailable ? _track.ProgressFraction : 0;
+    public string FormattedProgress => IsAvailable && _track.Duration > TimeSpan.Zero
+        ? $"{_track.FormattedElapsed} / {_track.FormattedDuration}" : "--:-- / --:--";
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public async Task TogglePlayPauseAsync()
+    public Task TogglePlayPauseAsync() => RunActionAsync(_mediaService.TogglePlayPauseAsync);
+    public Task NextTrackAsync() => RunActionAsync(_mediaService.NextTrackAsync);
+    public Task PreviousTrackAsync() => RunActionAsync(_mediaService.PreviousTrackAsync);
+    public Task SeekRelativeAsync(double ratio)
     {
-        await _mediaService.TogglePlayPauseAsync();
+        if (!double.IsFinite(ratio) || !CanSeek || _track.Duration <= TimeSpan.Zero) return Task.CompletedTask;
+        return RunActionAsync(() => _mediaService.SeekAsync(_track.Duration.TotalSeconds * Math.Clamp(ratio, 0, 1)));
     }
 
-    public async Task NextTrackAsync()
+    private async Task RunActionAsync(Func<Task> action)
     {
-        await _mediaService.NextTrackAsync();
-    }
-
-    public async Task PreviousTrackAsync()
-    {
-        await _mediaService.PreviousTrackAsync();
-    }
-
-    public async Task SeekRelativeAsync(double ratio)
-    {
-        if (_track != null && _track.Duration > TimeSpan.Zero)
+        if (_disposed || _isBusy) return;
+        _isBusy = true;
+        _actionStatus = string.Empty;
+        NotifyAllProperties();
+        try { await action(); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException)
         {
-            double clamped = Math.Clamp(ratio, 0.0, 1.0);
-            var target = TimeSpan.FromSeconds(_track.Duration.TotalSeconds * clamped);
-            await _mediaService.SeekToAsync(target);
+            _dispatch(() =>
+            {
+                if (_disposed) return;
+                _actionStatus = string.IsNullOrWhiteSpace(_mediaService.StatusText)
+                    ? "This media command is unavailable." : _mediaService.StatusText;
+            });
+        }
+        catch
+        {
+            _dispatch(() => { if (!_disposed) _actionStatus = "Windows media did not respond. Try the player again."; });
+        }
+        finally
+        {
+            _dispatch(() =>
+            {
+                if (_disposed) return;
+                _isBusy = false;
+                NotifyAllProperties();
+            });
         }
     }
 
-    private void OnTrackChanged(object? sender, MediaTrack? track)
+    private void OnTrackChanged(object? sender, MediaTrack track) => _dispatch(() =>
     {
+        if (_disposed) return;
         _track = track;
-        IsPlaying = track?.IsPlaying ?? false;
         NotifyAllProperties();
-    }
+    });
 
     private void NotifyAllProperties()
     {
-        OnPropertyChanged(nameof(CurrentTrack));
-        OnPropertyChanged(nameof(Title));
-        OnPropertyChanged(nameof(Artist));
-        OnPropertyChanged(nameof(SourceName));
-        OnPropertyChanged(nameof(HasTrack));
-        OnPropertyChanged(nameof(ProgressRatio));
-        OnPropertyChanged(nameof(FormattedProgress));
+        foreach (var property in new[] { nameof(CurrentTrack), nameof(Title), nameof(Artist), nameof(SourceName),
+            nameof(HasTrack), nameof(IsAvailable), nameof(IsPlaying), nameof(PlayPauseIconGlyph), nameof(CanPlayPause),
+            nameof(CanNext), nameof(CanPrevious), nameof(CanSeek), nameof(HasProgress), nameof(HasActionStatus), nameof(StatusText), nameof(ProgressRatio), nameof(FormattedProgress) })
+            OnPropertyChanged(property);
     }
 
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _mediaService.TrackChanged -= OnTrackChanged;
     }
 }

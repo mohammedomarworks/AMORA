@@ -12,6 +12,7 @@ public class AISettingsService : IAISettingsService
     private readonly ISecureCredentialStorage _credentialStorage;
     private readonly string _settingsFilePath;
     private AISettings _currentSettings;
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public AISettings CurrentSettings => _currentSettings;
     public event EventHandler<AISettings>? SettingsChanged;
@@ -45,22 +46,26 @@ public class AISettingsService : IAISettingsService
 
     public async Task SaveSettingsAsync(AISettings settings)
     {
-        _currentSettings = settings ?? throw new ArgumentNullException(nameof(settings));
-
+        ArgumentNullException.ThrowIfNull(settings);
+        await _saveGate.WaitAsync();
+        string temporaryPath = _settingsFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             string dir = Path.GetDirectoryName(_settingsFilePath)!;
             Directory.CreateDirectory(dir);
 
-            string json = JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions
+            string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions
             {
                 WriteIndented = true
             });
-            await File.WriteAllTextAsync(_settingsFilePath, json);
+            await File.WriteAllTextAsync(temporaryPath, json);
+            File.Move(temporaryPath, _settingsFilePath, overwrite: true);
+            _currentSettings = settings;
         }
-        catch
+        finally
         {
-            // Transient write failure; in-memory settings remain active
+            try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); } catch { }
+            _saveGate.Release();
         }
 
         SettingsChanged?.Invoke(this, _currentSettings);

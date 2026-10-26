@@ -7,100 +7,70 @@ namespace AMORA.Orbit.Services.Implementations;
 
 public class WindowsSystemTelemetryService : ISystemTelemetryService
 {
+    private readonly Func<(ulong Idle, ulong Kernel, ulong User)?> _readCpu;
+    private readonly Func<(ulong Total, ulong Available)?> _readMemory;
+    private readonly object _sampleLock = new();
+    private (ulong Idle, ulong Kernel, ulong User)? _previousCpu;
     private SystemTelemetrySnapshot _current = SystemTelemetrySnapshot.Empty;
+
     public SystemTelemetrySnapshot CurrentSnapshot => _current;
     public SystemTelemetrySnapshot GetSnapshot() => CurrentSnapshot;
-
     public event EventHandler<SystemTelemetrySnapshot>? TelemetryUpdated;
 
-    private ulong _previousIdleTime;
-    private ulong _previousKernelTime;
-    private ulong _previousUserTime;
-    private bool _hasPreviousCpuSample;
-
-    public WindowsSystemTelemetryService()
+    public WindowsSystemTelemetryService(
+        Func<(ulong Idle, ulong Kernel, ulong User)?>? readCpu = null,
+        Func<(ulong Total, ulong Available)?>? readMemory = null)
     {
+        _readCpu = readCpu ?? ReadNativeCpu;
+        _readMemory = readMemory ?? ReadNativeMemory;
         Refresh();
     }
 
     public void Refresh()
     {
-        double cpuPercent = SampleCpuUsage();
-        var (memoryPercent, totalMemory, availableMemory) = SampleMemoryUsage();
-
-        _current = new SystemTelemetrySnapshot(
-            CpuUsagePercent: cpuPercent,
-            MemoryUsagePercent: memoryPercent,
-            TotalPhysicalMemoryBytes: totalMemory,
-            AvailablePhysicalMemoryBytes: availableMemory
-        );
-
-        TelemetryUpdated?.Invoke(this, _current);
+        SystemTelemetrySnapshot next;
+        lock (_sampleLock)
+        {
+            var cpu = SampleCpu();
+            (ulong Total, ulong Available)? memory;
+            try { memory = _readMemory(); }
+            catch { memory = null; }
+            bool hasMemory = memory.HasValue && memory.Value.Total > 0 && memory.Value.Available <= memory.Value.Total;
+            var total = hasMemory ? memory!.Value.Total : 0;
+            var available = hasMemory ? memory!.Value.Available : 0;
+            var memoryPercent = hasMemory ? (total - available) * 100.0 / total : 0;
+            next = new SystemTelemetrySnapshot(cpu ?? 0, memoryPercent, total, available, cpu.HasValue);
+            _current = next;
+        }
+        TelemetryUpdated?.Invoke(this, next);
     }
 
-    private double SampleCpuUsage()
+    private double? SampleCpu()
     {
-        try
-        {
-            if (NativeMethods.GetSystemTimes(out var idleTime, out var kernelTime, out var userTime))
-            {
-                ulong currentIdle = idleTime.ToUInt64();
-                ulong currentKernel = kernelTime.ToUInt64();
-                ulong currentUser = userTime.ToUInt64();
+        (ulong Idle, ulong Kernel, ulong User)? current;
+        try { current = _readCpu(); }
+        catch { current = null; }
+        var previous = _previousCpu;
+        _previousCpu = current;
+        if (!current.HasValue || !previous.HasValue) return null;
 
-                if (_hasPreviousCpuSample)
-                {
-                    ulong diffIdle = currentIdle - _previousIdleTime;
-                    ulong diffKernel = currentKernel - _previousKernelTime;
-                    ulong diffUser = currentUser - _previousUserTime;
-
-                    ulong totalSystemTime = diffKernel + diffUser;
-                    if (totalSystemTime > 0 && totalSystemTime >= diffIdle)
-                    {
-                        ulong busyTime = totalSystemTime - diffIdle;
-                        double percent = (busyTime * 100.0) / totalSystemTime;
-
-                        _previousIdleTime = currentIdle;
-                        _previousKernelTime = currentKernel;
-                        _previousUserTime = currentUser;
-
-                        return Math.Clamp(percent, 0.0, 100.0);
-                    }
-                }
-
-                _previousIdleTime = currentIdle;
-                _previousKernelTime = currentKernel;
-                _previousUserTime = currentUser;
-                _hasPreviousCpuSample = true;
-            }
-        }
-        catch
-        {
-            // Fallback gracefully on non-Win32 environments
-        }
-
-        return 0.0;
+        var c = current.Value;
+        var p = previous.Value;
+        // Counter reset/wrap or a zero-length sample must not appear as zero load.
+        if (c.Idle < p.Idle || c.Kernel < p.Kernel || c.User < p.User) return null;
+        double idle = c.Idle - p.Idle;
+        double total = (double)(c.Kernel - p.Kernel) + (c.User - p.User);
+        if (total <= 0 || idle > total) return null;
+        return Math.Clamp((total - idle) * 100.0 / total, 0, 100);
     }
 
-    private static (double percent, ulong total, ulong available) SampleMemoryUsage()
+    private static (ulong Idle, ulong Kernel, ulong User)? ReadNativeCpu() =>
+        NativeMethods.GetSystemTimes(out var idle, out var kernel, out var user)
+            ? (idle.ToUInt64(), kernel.ToUInt64(), user.ToUInt64()) : null;
+
+    private static (ulong Total, ulong Available)? ReadNativeMemory()
     {
-        try
-        {
-            var memStatus = new NativeMethods.MEMORYSTATUSEX
-            {
-                dwLength = (uint)Marshal.SizeOf<NativeMethods.MEMORYSTATUSEX>()
-            };
-
-            if (NativeMethods.GlobalMemoryStatusEx(ref memStatus))
-            {
-                return (memStatus.dwMemoryLoad, memStatus.ullTotalPhys, memStatus.ullAvailPhys);
-            }
-        }
-        catch
-        {
-            // Fallback gracefully
-        }
-
-        return (0.0, 0, 0);
+        var status = new NativeMethods.MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<NativeMethods.MEMORYSTATUSEX>() };
+        return NativeMethods.GlobalMemoryStatusEx(ref status) ? (status.ullTotalPhys, status.ullAvailPhys) : null;
     }
 }

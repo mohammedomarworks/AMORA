@@ -20,7 +20,7 @@ public record TimerSnapshot(
     public static TimerSnapshot None => Idle;
 
     public int TotalSeconds => (int)TotalDuration.TotalSeconds;
-    public int RemainingSeconds => (int)Remaining.TotalSeconds;
+    public int RemainingSeconds => (int)Math.Ceiling(Math.Max(0, Remaining.TotalSeconds));
 
     public bool IsActive => Status is TimerStatus.Running or TimerStatus.Paused;
 
@@ -34,8 +34,8 @@ public record TimerSnapshot(
     {
         get
         {
-            var minutes = (int)Remaining.TotalMinutes;
-            var seconds = Remaining.Seconds;
+            var minutes = RemainingSeconds / 60;
+            var seconds = RemainingSeconds % 60;
             return $"{minutes:D2}:{seconds:D2}";
         }
     }

@@ -9,107 +9,116 @@ public class SystemStatusViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IBatteryService _batteryService;
     private readonly ISystemTelemetryService _telemetryService;
+    private readonly Action<Action> _dispatch;
+    private readonly object _refreshLock = new();
     private BatterySnapshot _battery;
     private SystemTelemetrySnapshot _telemetry;
     private readonly CancellationTokenSource _refreshCts = new();
+    private volatile bool _disposed;
 
-    public SystemStatusViewModel(IBatteryService batteryService, ISystemTelemetryService telemetryService)
+    public SystemStatusViewModel(IBatteryService batteryService, ISystemTelemetryService telemetryService,
+        Action<Action>? dispatch = null)
     {
         _batteryService = batteryService ?? throw new ArgumentNullException(nameof(batteryService));
         _telemetryService = telemetryService ?? throw new ArgumentNullException(nameof(telemetryService));
-
+        var context = SynchronizationContext.Current;
+        _dispatch = dispatch ?? (action =>
+        {
+            if (context == null) action();
+            else context.Post(_ => action(), null);
+        });
         _battery = _batteryService.GetSnapshot();
         _telemetry = _telemetryService.GetSnapshot();
-
-        StartRefreshLoop();
+        _ = RunRefreshLoopAsync(_refreshCts.Token);
     }
 
     public BatterySnapshot Battery => _battery;
     public SystemTelemetrySnapshot Telemetry => _telemetry;
-
-    // Battery properties
-    public int BatteryPercent => _battery.Percentage;
-    public bool IsCharging => _battery.IsCharging;
+    public int BatteryPercent => _battery.HasPercentage ? _battery.Percentage : 0;
+    public bool IsCharging => _battery.IsAvailable && _battery.IsCharging;
     public bool IsDesktopAC => _battery.IsDesktopAC;
     public string BatteryStatusText => _battery.Description;
+    public string BatteryHeadline => !_battery.IsAvailable ? "Power unavailable"
+        : _battery.IsDesktopAC ? "AC power" : _battery.HasPercentage ? $"{_battery.Percentage}%" : "Battery";
+    public string BatteryDetail => _battery.DetailedDescription;
 
-    public string BatteryGlyph
-    {
-        get
-        {
-            if (_battery.IsDesktopAC) return "\uE703"; // Power plug glyph
-            if (_battery.IsCharging) return "\uEA93";  // Battery charging
-            if (_battery.Percentage > 80) return "\uEBAA";
-            if (_battery.Percentage > 60) return "\uEBA8";
-            if (_battery.Percentage > 40) return "\uEBA6";
-            if (_battery.Percentage > 20) return "\uEBA4";
-            return "\uEBA0"; // Low battery
-        }
-    }
+    public string BatteryGlyph => !_battery.IsAvailable ? "\uE9CE"
+        : _battery.IsDesktopAC ? "\uE703"
+        : _battery.IsCharging ? "\uEA93"
+        : !_battery.HasPercentage ? "\uE9CE"
+        : _battery.Percentage > 80 ? "\uEBAA"
+        : _battery.Percentage > 60 ? "\uEBA8"
+        : _battery.Percentage > 40 ? "\uEBA6"
+        : _battery.Percentage > 20 ? "\uEBA4" : "\uEBA0";
 
-    public string BatteryFillColor
-    {
-        get
-        {
-            if (_battery.IsDesktopAC) return "#52CCFF";
-            if (_battery.IsCharging) return "#30D158"; // Green
-            if (_battery.Percentage <= 15) return "#FF453A"; // Red
-            if (_battery.Percentage <= 30) return "#FF9F0A"; // Amber
-            return "#52CCFF"; // Cyan
-        }
-    }
+    public string BatteryFillColor => !_battery.IsAvailable ? "#707E94"
+        : _battery.IsDesktopAC ? "#52CCFF"
+        : _battery.IsCharging ? "#30D158"
+        : !_battery.HasPercentage ? "#707E94"
+        : _battery.Percentage <= 15 ? "#FF453A"
+        : _battery.Percentage <= 30 ? "#FF9F0A" : "#52CCFF";
 
-    // Telemetry properties
-    public double CpuPercent => _telemetry.CpuUsagePercent;
-    public string CpuFormatted => $"{Math.Round(_telemetry.CpuUsagePercent)}%";
-
-    public double RamPercent => _telemetry.MemoryUsagePercent;
-    public string RamFormatted => $"{Math.Round(_telemetry.MemoryUsagePercent)}%";
-    public string RamUsageDetail => $"{_telemetry.UsedRamGb:F1} / {_telemetry.TotalRamGb:F1} GB";
-
+    public double CpuPercent => _telemetry.HasCpuSample ? _telemetry.CpuUsagePercent : 0;
+    public string CpuFormatted => _telemetry.CpuDisplayText;
+    public double RamPercent => _telemetry.HasMemorySample ? _telemetry.MemoryUsagePercent : 0;
+    public string RamFormatted => _telemetry.MemoryDisplayText;
+    public string RamUsageDetail => _telemetry.MemoryDetailedText;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public void RefreshNow()
     {
-        _battery = _batteryService.GetSnapshot();
-        _telemetry = _telemetryService.GetSnapshot();
-
-        OnPropertyChanged(nameof(Battery));
-        OnPropertyChanged(nameof(Telemetry));
-        OnPropertyChanged(nameof(BatteryPercent));
-        OnPropertyChanged(nameof(IsCharging));
-        OnPropertyChanged(nameof(IsDesktopAC));
-        OnPropertyChanged(nameof(BatteryStatusText));
-        OnPropertyChanged(nameof(BatteryGlyph));
-        OnPropertyChanged(nameof(BatteryFillColor));
-        OnPropertyChanged(nameof(CpuPercent));
-        OnPropertyChanged(nameof(CpuFormatted));
-        OnPropertyChanged(nameof(RamPercent));
-        OnPropertyChanged(nameof(RamFormatted));
-        OnPropertyChanged(nameof(RamUsageDetail));
+        lock (_refreshLock)
+        {
+            if (_disposed) return;
+            BatterySnapshot battery;
+            SystemTelemetrySnapshot telemetry;
+            // Read fresh OS samples, not the initial cached snapshots.
+            try { _batteryService.Refresh(); battery = _batteryService.GetSnapshot(); }
+            catch { battery = BatterySnapshot.Unavailable; }
+            try { _telemetryService.Refresh(); telemetry = _telemetryService.GetSnapshot(); }
+            catch { telemetry = SystemTelemetrySnapshot.Empty; }
+            _dispatch(() => Publish(battery, telemetry));
+        }
     }
 
-    private void StartRefreshLoop()
+    private void Publish(BatterySnapshot battery, SystemTelemetrySnapshot telemetry)
     {
-        var token = _refreshCts.Token;
-        _ = Task.Run(async () =>
+        if (_disposed) return;
+        _battery = battery;
+        _telemetry = telemetry;
+        foreach (var name in new[] { nameof(Battery), nameof(Telemetry), nameof(BatteryPercent), nameof(IsCharging),
+            nameof(IsDesktopAC), nameof(BatteryStatusText), nameof(BatteryHeadline), nameof(BatteryDetail),
+            nameof(BatteryGlyph), nameof(BatteryFillColor), nameof(CpuPercent), nameof(CpuFormatted),
+            nameof(RamPercent), nameof(RamFormatted), nameof(RamUsageDetail) })
+            OnPropertyChanged(name);
+    }
+
+    private async Task RunRefreshLoopAsync(CancellationToken cancellationToken)
+    {
+        try
         {
             using var periodicTimer = new PeriodicTimer(TimeSpan.FromSeconds(2));
-            while (!token.IsCancellationRequested && await periodicTimer.WaitForNextTickAsync(token))
-            {
+            while (await periodicTimer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
                 RefreshNow();
-            }
-        }, token);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal shutdown; never an unobserved task failure.
+        }
     }
 
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
 
     public void Dispose()
     {
-        _refreshCts.Cancel();
-        _refreshCts.Dispose();
+        lock (_refreshLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _refreshCts.Cancel();
+            _refreshCts.Dispose();
+        }
+        GC.SuppressFinalize(this);
     }
 }

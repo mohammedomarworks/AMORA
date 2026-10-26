@@ -1,0 +1,32 @@
+<UserControl x:Class="AMORA.Orbit.Views.GitHubPanelView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Grid Padding="8" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+  <StackPanel x:Name="ConnectPanel" Spacing="8">
+   <TextBlock Text="GitHub" FontSize="18" FontWeight="SemiBold"/>
+   <TextBlock Text="Connect a public username, or use your own token for private repositories and the contribution calendar." TextWrapping="Wrap" FontSize="12" Foreground="#ADB3BB"/>
+   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"><TextBox PlaceholderText="GitHub username" AutomationProperties.Name="GitHub username" Text="{Binding Username, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/><Button Grid.Column="1" Content="Connect" Style="{StaticResource OrbitPrimaryActionButtonStyle}" Click="OnConnect" IsEnabled="{Binding CanConnect}"/></Grid>
+   <PasswordBox x:Name="TokenBox" PlaceholderText="Optional personal access token · stored with Windows DPAPI" PasswordChanged="OnTokenChanged" AutomationProperties.Name="GitHub token"/>
+   <StackPanel Orientation="Horizontal" Spacing="10"><CheckBox Content="Remember token securely" IsChecked="{Binding RememberToken, Mode=TwoWay}"/><Button Content="Use saved token" Click="OnSaved" Visibility="{Binding HasSavedToken, Converter={StaticResource BoolToVis}}" Style="{StaticResource OrbitGhostButtonStyle}"/></StackPanel>
+  </StackPanel>
+  <Grid x:Name="ProfilePanel" Visibility="Collapsed" ColumnDefinitions="*,Auto,Auto,Auto">
+   <StackPanel><TextBlock Text="{Binding ProfileName}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding Login}" FontSize="11" Foreground="#ADB3BB"/></StackPanel>
+   <Button Grid.Column="1" Content="↗" AutomationProperties.Name="Open GitHub profile" Click="OnOpenProfile" Style="{StaticResource OrbitGhostButtonStyle}"/>
+   <Button Grid.Column="2" Content="↻" AutomationProperties.Name="Refresh GitHub" Click="OnRefresh" Style="{StaticResource OrbitGhostButtonStyle}"/>
+   <Button Grid.Column="3" Content="Disconnect" Click="OnDisconnect" Style="{StaticResource OrbitGhostButtonStyle}"/>
+  </Grid>
+  <StackPanel Grid.Row="1" Spacing="4"><ProgressBar IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/><TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" FontSize="11" Foreground="{ThemeResource OrbitCyanAccentBrush}" AutomationProperties.LiveSetting="Polite"/></StackPanel>
+  <Grid x:Name="DataPanel" Grid.Row="2" Visibility="Collapsed" RowDefinitions="Auto,*" RowSpacing="8">
+   <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="ActivityTab" Content="{Binding ActivityHeading}" Click="OnActivity" Style="{StaticResource OrbitActionButtonStyle}"/><Button x:Name="RepositoriesTab" Content="{Binding RepositoryHeading}" Click="OnRepositories" Style="{StaticResource OrbitGhostButtonStyle}"/><Button x:Name="PullRequestsTab" Content="{Binding PullRequestHeading}" Click="OnPullRequests" Style="{StaticResource OrbitGhostButtonStyle}"/></StackPanel>
+   <ScrollViewer Grid.Row="1"><Grid>
+    <StackPanel x:Name="ActivityPanel" Spacing="6">
+     <TextBlock Text="{Binding ContributionSummary}" FontSize="12" TextWrapping="Wrap"/>
+     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Visibility="{Binding HasCalendar, Converter={StaticResource BoolToVis}}">
+      <ItemsControl ItemsSource="{Binding Weeks}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3"/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><ItemsControl ItemsSource="{Binding Days}"><ItemsControl.ItemTemplate><DataTemplate><Button Width="13" Height="13" Padding="0" MinWidth="0" MinHeight="0" Margin="0,0,0,3" Background="{Binding Color}" BorderThickness="0" CornerRadius="3" AutomationProperties.Name="{Binding Label}" ToolTipService.ToolTip="{Binding Label}" Tag="{Binding}" Click="OnDayClicked"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     </ScrollViewer>
+     <ItemsControl ItemsSource="{Binding Activities}"><ItemsControl.ItemTemplate><DataTemplate><Button Style="{StaticResource OrbitGhostButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Tag="{Binding Url}" Click="OnLink"><Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"><StackPanel><TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="12"/><TextBlock Text="{Binding Repository}" FontSize="11" Foreground="#ADB3BB"/></StackPanel><TextBlock Grid.Column="1" Text="{Binding DateText}" FontSize="10" Foreground="#ADB3BB"/></Grid></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel>
+    <ItemsControl x:Name="ReposPanel" Visibility="Collapsed" ItemsSource="{Binding Repositories}"><ItemsControl.ItemTemplate><DataTemplate><Button Style="{StaticResource OrbitGhostButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Tag="{Binding Url}" Click="OnLink"><StackPanel Spacing="3"><TextBlock Text="{Binding FullName}" FontSize="13" Foreground="{ThemeResource OrbitCyanAccentBrush}"/><TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="11" MaxLines="2"/><TextBlock Text="{Binding Details}" FontSize="10" Foreground="#ADB3BB"/></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <ItemsControl x:Name="PrsPanel" Visibility="Collapsed" ItemsSource="{Binding PullRequests}"><ItemsControl.ItemTemplate><DataTemplate><Button Style="{StaticResource OrbitGhostButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Tag="{Binding Url}" Click="OnLink"><StackPanel><TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontSize="12"/><TextBlock Text="{Binding Details}" FontSize="10" Foreground="#ADB3BB"/></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+   </Grid></ScrollViewer>
+  </Grid>
+ </Grid>
+</UserControl>

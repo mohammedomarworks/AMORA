@@ -89,14 +89,14 @@ public class PublicBetaReadinessTests : IDisposable
         var service = new AISettingsService(storage, corruptedFilePath);
 
         Assert.NotNull(service.CurrentSettings);
-        Assert.Equal(AISettings.ProviderGemini, service.CurrentSettings.SelectedProvider);
-        Assert.Equal(AISettings.DefaultGeminiModel, service.CurrentSettings.Model);
+        Assert.Equal(AISettings.ProviderLocalBrain, service.CurrentSettings.SelectedProvider);
+        Assert.Empty(service.CurrentSettings.Model);
         Assert.False(service.CurrentSettings.SendStatusContextToAI);
         Assert.False(service.CurrentSettings.EnableProactiveSuggestions);
     }
 
     [Fact]
-    public async Task LocalAutomationService_WithCorruptedJsonFile_FallsBackToEmptyListCleanly()
+    public async Task LocalAutomationService_WithCorruptedJsonFile_PreservesRecoveryCopyAndReportsFailure()
     {
         string corruptedFilePath = Path.Combine(_testDir, "automations_corrupted.json");
         File.WriteAllText(corruptedFilePath, "<<<< corrupt XML or invalid JSON syntax >>>>");
@@ -104,7 +104,7 @@ public class PublicBetaReadinessTests : IDisposable
         using var timerService = new StandardTimerService();
         var mediaService = new PreviewMediaService();
         var storage = new InMemoryCredentialStorage();
-        var aiSettingsService = new AISettingsService(storage);
+        var aiSettingsService = new AISettingsService(storage, System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AMORA.Tests", System.Guid.NewGuid().ToString("N"), "settings.json"));
         var batteryService = new PreviewBatteryService();
         using var suggestionService = new ProactiveSuggestionService(timerService, batteryService, aiSettingsService);
 
@@ -115,10 +115,13 @@ public class PublicBetaReadinessTests : IDisposable
             corruptedFilePath
         );
 
-        await service.LoadAutomationsAsync();
+        var failure = await Assert.ThrowsAsync<AutomationPersistenceException>(() => service.LoadAutomationsAsync());
 
         Assert.NotNull(service.Automations);
         Assert.Empty(service.Automations);
+        Assert.Contains("recovery copy", failure.Message);
+        var recovery = Assert.Single(Directory.GetFiles(_testDir, "automations_corrupted.json.corrupt-*"));
+        Assert.Equal(File.ReadAllText(corruptedFilePath), File.ReadAllText(recovery));
     }
 
     [Fact]

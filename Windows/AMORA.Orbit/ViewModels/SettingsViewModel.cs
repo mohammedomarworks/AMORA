@@ -8,16 +8,23 @@ using AMORA.Orbit.Services.Implementations;
 
 namespace AMORA.Orbit.ViewModels;
 
-public class SettingsViewModel : INotifyPropertyChanged
+public class SettingsViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IAISettingsService _settingsService;
     private readonly IAIProvider _aiProvider;
+    private readonly Action<Action> _dispatch;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly CancellationToken _lifetimeToken;
+    private bool _disposed;
+    private int _keyRequestGeneration;
 
     private bool _isOpen;
     private string _selectedProvider;
     private string _modelName;
     private bool _sendStatusContextToAI;
     private bool _enableProactiveSuggestions;
+    private bool _memoryEnabled;
+    private bool _enableClipboardHistory;
     private string _apiKeyInput = string.Empty;
     private string _maskedApiKey = string.Empty;
     private bool _hasSavedKey;
@@ -25,19 +32,28 @@ public class SettingsViewModel : INotifyPropertyChanged
     private string? _testStatusMessage;
     private string? _testStatusColor;
     private string? _testStatusGlyph;
+    public IReadOnlyList<string> Providers { get; } = new[] { AISettings.ProviderLocalBrain, AISettings.ProviderGemini, AISettings.ProviderOpenAI, AISettings.ProviderAnthropic };
+    public string CredentialLabel => IsLocalBrainSelected ? "Local Brain uses no API key" : $"{_selectedProvider} API key";
+    public bool IsLocalBrainSelected => _selectedProvider == AISettings.ProviderLocalBrain;
+    public bool IsCloudSelected => !IsLocalBrainSelected;
 
-    public SettingsViewModel(IAISettingsService settingsService, IAIProvider aiProvider)
+    public SettingsViewModel(IAISettingsService settingsService, IAIProvider aiProvider, Action<Action>? dispatch = null)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _aiProvider = aiProvider ?? throw new ArgumentNullException(nameof(aiProvider));
+        _dispatch = dispatch ?? (action => action());
+        _lifetimeToken = _lifetime.Token;
 
         var settings = _settingsService.CurrentSettings;
         _selectedProvider = settings.SelectedProvider;
         _modelName = settings.Model;
         _sendStatusContextToAI = settings.SendStatusContextToAI;
         _enableProactiveSuggestions = settings.EnableProactiveSuggestions;
+        _memoryEnabled = settings.MemoryEnabled;
+        _enableClipboardHistory = settings.EnableClipboardHistory;
 
         _ = RefreshKeyStatusAsync();
+        _settingsService.SettingsChanged += OnSavedSettingsChanged;
     }
 
     public bool IsOpen
@@ -65,14 +81,29 @@ public class SettingsViewModel : INotifyPropertyChanged
             if (_selectedProvider != value)
             {
                 _selectedProvider = value;
+                ApiKeyInput = string.Empty;
+                ModelName = value == AISettings.ProviderGemini ? AISettings.DefaultGeminiModel : string.Empty;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsGeminiSelected));
+                OnPropertyChanged(nameof(CredentialLabel));
+                OnPropertyChanged(nameof(IsLocalBrainSelected));
+                OnPropertyChanged(nameof(IsCloudSelected));
                 _ = RefreshKeyStatusAsync();
             }
         }
     }
 
     public bool IsGeminiSelected => _selectedProvider == AISettings.ProviderGemini;
+    public bool MemoryEnabled
+    {
+        get => _memoryEnabled;
+        set { if (_memoryEnabled != value) { _memoryEnabled = value; OnPropertyChanged(); } }
+    }
+    public bool EnableClipboardHistory
+    {
+        get => _enableClipboardHistory;
+        set { if (_enableClipboardHistory != value) { _enableClipboardHistory = value; OnPropertyChanged(); } }
+    }
 
     public string ModelName
     {
@@ -169,7 +200,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool CanTest => !_isTesting;
+    public bool CanTest => !_disposed && !_isTesting;
 
     public string? TestStatusMessage
     {
@@ -222,94 +253,162 @@ public class SettingsViewModel : INotifyPropertyChanged
 
     public async Task RefreshKeyStatusAsync()
     {
-        string? key = await _settingsService.GetApiKeyAsync(_selectedProvider);
-        HasSavedKey = !string.IsNullOrWhiteSpace(key);
-        MaskedApiKey = WindowsCredentialStorage.MaskSecret(key);
+        if (_disposed) return;
+        var provider = _selectedProvider;
+        int generation = ++_keyRequestGeneration;
+        if (IsLocalBrainSelected) { HasSavedKey = false; MaskedApiKey = string.Empty; return; }
+        try
+        {
+            string? key = await _settingsService.GetApiKeyAsync(provider);
+            bool hasKey = !string.IsNullOrWhiteSpace(key);
+            string masked = WindowsCredentialStorage.MaskSecret(key);
+            OnUi(() =>
+            {
+                if (provider != _selectedProvider || generation != _keyRequestGeneration) return;
+                HasSavedKey = hasKey;
+                MaskedApiKey = masked;
+            });
+        }
+        catch
+        {
+            OnUi(() =>
+            {
+                if (provider != _selectedProvider || generation != _keyRequestGeneration) return;
+                HasSavedKey = false;
+                MaskedApiKey = string.Empty;
+                SetStatus("Secure credential storage could not be read. Check storage access and try again.", "#FF453A", "\uEA39");
+            });
+        }
     }
 
     public async Task SaveAsync()
     {
-        var updated = _settingsService.CurrentSettings with
+        if (_disposed) return;
+        // Capture the submitted provider and key together. A later UI selection must not receive this key.
+        string provider = _selectedProvider;
+        string keyInput = _apiKeyInput;
+        try
         {
-            SelectedProvider = _selectedProvider,
-            Model = !string.IsNullOrWhiteSpace(_modelName) ? _modelName.Trim() : AISettings.DefaultGeminiModel,
-            SendStatusContextToAI = _sendStatusContextToAI,
-            EnableProactiveSuggestions = _enableProactiveSuggestions
-        };
+            if (!Providers.Contains(provider) || (string.IsNullOrWhiteSpace(_modelName) && !IsGeminiSelected && !IsLocalBrainSelected))
+            {
+                SetStatus("Choose a supported provider and enter a model ID from your account.", "#FF9F0A", "\uE7BA");
+                return;
+            }
+            var updated = _settingsService.CurrentSettings with
+            {
+                SelectedProvider = provider,
+                Model = !string.IsNullOrWhiteSpace(_modelName) ? _modelName.Trim() : AISettings.DefaultGeminiModel,
+                SendStatusContextToAI = _sendStatusContextToAI,
+                EnableProactiveSuggestions = _enableProactiveSuggestions,
+                MemoryEnabled = _memoryEnabled,
+                EnableClipboardHistory = _enableClipboardHistory
+            };
 
-        await _settingsService.SaveSettingsAsync(updated);
-
-        if (!string.IsNullOrWhiteSpace(_apiKeyInput))
-        {
-            await _settingsService.SetApiKeyAsync(_selectedProvider, _apiKeyInput.Trim());
-            ApiKeyInput = string.Empty;
+            await _settingsService.SaveSettingsAsync(updated);
+            if (!string.IsNullOrWhiteSpace(keyInput) && provider != AISettings.ProviderLocalBrain)
+            {
+                await _settingsService.SetApiKeyAsync(provider, keyInput.Trim());
+                OnUi(() => { if (_selectedProvider == provider && _apiKeyInput == keyInput) ApiKeyInput = string.Empty; });
+            }
+            await RefreshKeyStatusAsync();
+            SetStatus(IsLocalBrainSelected ? "Local Brain selected. Install a model below to chat offline." : "Settings saved. API keys use protected Windows storage.", "#30D158", "\uE73E");
         }
-
-        await RefreshKeyStatusAsync();
-
-        TestStatusGlyph = "\uE73E"; // Checkmark
-        TestStatusColor = "#30D158"; // Green
-        TestStatusMessage = "Settings saved securely via DPAPI.";
+        catch
+        {
+            SetStatus("Settings or credentials could not be fully saved. Check storage access and try again.", "#FF453A", "\uEA39");
+        }
     }
 
     public async Task ClearKeyAsync()
     {
-        await _settingsService.ClearApiKeyAsync(_selectedProvider);
-        ApiKeyInput = string.Empty;
-        await RefreshKeyStatusAsync();
-
-        TestStatusGlyph = "\uE74D"; // Delete/Info
-        TestStatusColor = "#9AA2B2";
-        TestStatusMessage = "API key cleared from secure storage.";
+        if (_disposed) return;
+        string provider = _selectedProvider;
+        try
+        {
+            await _settingsService.ClearApiKeyAsync(provider);
+            OnUi(() => { if (_selectedProvider == provider) ApiKeyInput = string.Empty; });
+            await RefreshKeyStatusAsync();
+            SetStatus("API key cleared from secure storage.", "#9AA2B2", "\uE74D");
+        }
+        catch
+        {
+            SetStatus("The API key could not be deleted. Check storage access and try again.", "#FF453A", "\uEA39");
+        }
     }
 
     public async Task TestConnectionAsync()
     {
-        if (IsTesting) return;
+        if (_disposed || IsTesting) return;
 
         IsTesting = true;
-        TestStatusGlyph = "\uE895"; // Sync/Loading
-        TestStatusColor = "#52CCFF"; // Cyan
-        TestStatusMessage = "Testing connection to Gemini API...";
+        string provider = _selectedProvider;
+        string model = _modelName;
+        SetStatus($"Testing connection to {provider}...", "#52CCFF", "\uE895");
 
         try
         {
-            // If user typed a new key into input box but hasn't saved yet, temporarily save it
-            if (!string.IsNullOrWhiteSpace(_apiKeyInput))
+            if (!string.IsNullOrWhiteSpace(_apiKeyInput) || _settingsService.CurrentSettings.SelectedProvider != _selectedProvider || _settingsService.CurrentSettings.Model != _modelName)
             {
-                await _settingsService.SetApiKeyAsync(_selectedProvider, _apiKeyInput.Trim());
-                ApiKeyInput = string.Empty;
-                await RefreshKeyStatusAsync();
+                SetStatus("Save your provider, model and key before testing the connection.", "#FF9F0A", "\uE7BA");
+                return;
             }
 
-            var result = await _aiProvider.TestConnectionAsync();
-            if (result.IsSuccessful)
+            var result = await _aiProvider.TestConnectionAsync(_lifetimeToken);
+            OnUi(() =>
             {
-                TestStatusGlyph = "\uE73E"; // Checkmark
-                TestStatusColor = "#30D158"; // Green
+                if (provider != _selectedProvider || model != _modelName) return;
+                TestStatusGlyph = result.IsSuccessful ? "\uE73E" : "\uEA39";
+                TestStatusColor = result.IsSuccessful ? "#30D158" : "#FF453A";
                 TestStatusMessage = result.Message;
-            }
-            else
-            {
-                TestStatusGlyph = "\uEA39"; // Error
-                TestStatusColor = "#FF453A"; // Red
-                TestStatusMessage = result.Message;
-            }
+            });
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested) { }
+        catch
         {
-            TestStatusGlyph = "\uEA39";
-            TestStatusColor = "#FF453A";
-            TestStatusMessage = $"Test failed: {ex.Message}";
+            SetStatus("The connection test failed. Check your provider, model, credentials and network.", "#FF453A", "\uEA39");
         }
         finally
         {
-            IsTesting = false;
+            OnUi(() => IsTesting = false);
         }
     }
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
+        if (_disposed) return;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+
+    private void OnUi(Action action) => _dispatch(() => { if (!_disposed) action(); });
+    private void SetStatus(string message, string color, string glyph) => OnUi(() =>
+    {
+        TestStatusMessage = message;
+        TestStatusColor = color;
+        TestStatusGlyph = glyph;
+    });
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _settingsService.SettingsChanged -= OnSavedSettingsChanged;
+        _keyRequestGeneration++;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        _apiKeyInput = string.Empty;
+        _maskedApiKey = string.Empty;
+    }
+    private void OnSavedSettingsChanged(object? sender, AISettings settings) => OnUi(() =>
+    {
+        // A separate Local Brain setup action can change the active provider.
+        // Do not overwrite an unsaved model edit when saving the same provider.
+        if (settings.SelectedProvider == AISettings.ProviderLocalBrain && _selectedProvider != settings.SelectedProvider)
+        {
+            _selectedProvider = settings.SelectedProvider;
+            _modelName = settings.Model;
+            ApiKeyInput = string.Empty;
+            foreach (var name in new[] { nameof(SelectedProvider), nameof(ModelName), nameof(CredentialLabel), nameof(IsLocalBrainSelected), nameof(IsCloudSelected), nameof(IsGeminiSelected) }) OnPropertyChanged(name);
+            _ = RefreshKeyStatusAsync();
+        }
+    });
 }

@@ -9,9 +9,12 @@ public class TimerControlViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly ITimerService _timerService;
     private TimerSnapshot _snapshot;
+    private readonly Action<Action> _dispatch;
+    private bool _disposed;
 
-    public TimerControlViewModel(ITimerService timerService)
+    public TimerControlViewModel(ITimerService timerService, Action<Action>? dispatch = null)
     {
+        _dispatch = dispatch ?? (action => action());
         _timerService = timerService ?? throw new ArgumentNullException(nameof(timerService));
         _snapshot = _timerService.CurrentTimer;
 
@@ -26,16 +29,17 @@ public class TimerControlViewModel : INotifyPropertyChanged, IDisposable
     public TimerStatus Status => _snapshot.Status;
     public string Label => _snapshot.Label;
 
-    public bool HasActiveTimer => _snapshot.Status != TimerStatus.None;
+    public bool HasActiveTimer => _snapshot.IsActive;
+    public string PauseResumeGlyph => IsRunning ? "\uE769" : "\uE768";
     public bool IsRunning => _snapshot.Status == TimerStatus.Running;
     public bool IsPaused => _snapshot.Status == TimerStatus.Paused;
 
     public string StatusText => _snapshot.Status switch
     {
-        TimerStatus.Running => "Focus Timer Active",
-        TimerStatus.Paused => "Timer Paused",
-        TimerStatus.Completed => "Time's up! Great job.",
-        _ => "Quick Focus Presets"
+        TimerStatus.Running => "Focusing",
+        TimerStatus.Paused => "Paused",
+        TimerStatus.Completed => "Time's up!",
+        _ => "Timer off"
     };
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -76,14 +80,12 @@ public class TimerControlViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnTimerUpdated(object? sender, TimerSnapshot snapshot)
     {
-        _snapshot = snapshot;
-        NotifyProperties();
+        _dispatch(() => { if (!_disposed) { _snapshot = snapshot; NotifyProperties(); } });
     }
 
     private void OnTimerFinished(object? sender, TimerSnapshot snapshot)
     {
-        _snapshot = snapshot;
-        NotifyProperties();
+        OnTimerUpdated(sender, snapshot);
     }
 
     private void NotifyProperties()
@@ -97,6 +99,7 @@ public class TimerControlViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsPaused));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(PauseResumeGlyph));
     }
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -106,6 +109,7 @@ public class TimerControlViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _timerService.TimerUpdated -= OnTimerUpdated;
         _timerService.TimerFinished -= OnTimerFinished;
     }

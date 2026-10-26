@@ -1,92 +1,48 @@
-<UserControl
-    x:Class="AMORA.Orbit.Views.RobotMascotView"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:vm="using:AMORA.Orbit.ViewModels"
-    mc:Ignorable="d"
-    d:DataContext="{d:DesignInstance Type=vm:RobotMascotViewModel}">
-
-    <Grid Width="96" Height="96" HorizontalAlignment="Center" VerticalAlignment="Center" Tapped="OnTapped">
-        <!-- Ambient Visor Glow -->
-        <Ellipse Width="82" Height="74" Margin="0,16,0,0">
-            <Ellipse.Fill>
-                <RadialGradientBrush Center="0.5,0.5" RadiusX="0.5" RadiusY="0.5">
-                    <GradientStop Color="#3352CCFF" Offset="0" />
-                    <GradientStop Color="#000D0F17" Offset="1" />
-                </RadialGradientBrush>
-            </Ellipse.Fill>
-        </Ellipse>
-
-        <!-- Antenna -->
-        <Canvas Width="96" Height="96" IsHitTestVisible="False">
-            <!-- Antenna Stem -->
-            <Path Data="M 48,22 C 48,16 54,12 56,8"
-                  Stroke="#475269"
-                  StrokeThickness="2.5"
-                  StrokeStartLineCap="Round"
-                  StrokeEndLineCap="Round" />
-            <!-- Antenna Bulb -->
-            <Ellipse Canvas.Left="53" Canvas.Top="4" Width="8" Height="8" Fill="#52CCFF" />
-            <!-- Antenna Glow -->
-            <Ellipse Canvas.Left="51" Canvas.Top="2" Width="12" Height="12" Fill="#448CE8FF" />
-        </Canvas>
-
-        <!-- Robot Head Capsule -->
-        <Border Margin="0,18,0,0" Width="80" Height="68"
-                CornerRadius="24"
-                Background="#161822"
-                BorderBrush="#2A2E3D"
-                BorderThickness="1.5">
-            <Grid>
-                <!-- Visor Screen -->
-                <Border Margin="6,6,6,6"
-                        CornerRadius="18"
-                        Background="#08090E"
-                        BorderBrush="#1F2433"
-                        BorderThickness="1">
-                    <Grid>
-                        <!-- Visor Top Glare Highlight -->
-                        <Path Data="M 12,6 Q 34,2 56,6"
-                              Stroke="#22FFFFFF"
-                              StrokeThickness="1.5"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round"
-                              VerticalAlignment="Top"
-                              HorizontalAlignment="Center" />
-
-                        <!-- Eyes Container -->
-                        <StackPanel Orientation="Horizontal"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Spacing="16"
-                                    Margin="0,0,0,4">
-                            <!-- Left Eye -->
-                            <Grid Width="14" Height="14">
-                                <Ellipse Fill="#52CCFF" Width="12" Height="12" />
-                                <Ellipse Fill="#8CE8FF" Width="5" Height="5" Margin="0,0,3,3" />
-                            </Grid>
-
-                            <!-- Right Eye -->
-                            <Grid Width="14" Height="14">
-                                <Ellipse Fill="#52CCFF" Width="12" Height="12" />
-                                <Ellipse Fill="#8CE8FF" Width="5" Height="5" Margin="0,0,3,3" />
-                            </Grid>
-                        </StackPanel>
-
-                        <!-- Gentle Smile Arc -->
-                        <Path Data="M 0,0 Q 6,6 12,0"
-                              Stroke="#52CCFF"
-                              StrokeThickness="2"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round"
-                              HorizontalAlignment="Center"
-                              VerticalAlignment="Bottom"
-                              Margin="0,0,0,9" />
-                    </Grid>
-                </Border>
-            </Grid>
-        </Border>
-    </Grid>
+<UserControl x:Class="AMORA.Orbit.Views.RobotMascotView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Button x:Name="MascotButton" Background="Transparent" BorderThickness="0" Padding="0" HorizontalAlignment="Center"
+  AutomationProperties.Name="AMORA mascot" AutomationProperties.HelpText="Click to interact with AMORA" Click="OnMascotClicked"
+  PointerEntered="OnMascotPointerEntered" PointerMoved="OnMascotPointerMoved" PointerExited="OnMascotPointerExited">
+  <Button.Resources>
+   <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="Transparent"/>
+   <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="Transparent"/>
+  </Button.Resources>
+  <!-- 100x96 vector coordinates preserve the Mac pod/antenna and reference's wave face. -->
+  <Viewbox Width="58" Height="56" Stretch="Uniform">
+   <Grid x:Name="CharacterCanvas" Width="100" Height="96" RenderTransformOrigin="0.5,0.65">
+    <Grid.RenderTransform><CompositeTransform x:Name="HeadTransform"/></Grid.RenderTransform>
+    <Rectangle Width="2" Height="17" Fill="#6D7D87" VerticalAlignment="Top" Margin="0,7,0,0"/>
+    <Ellipse x:Name="AntennaBloom" Width="19" Height="19" Fill="{ThemeResource OrbitCyanAccentBrush}" Opacity="0.10" VerticalAlignment="Top" Margin="0,-3,0,0"/>
+    <Ellipse Width="12" Height="12" Fill="{ThemeResource OrbitCyanAccentBrush}" Opacity="0.18" VerticalAlignment="Top"/>
+    <Ellipse x:Name="Antenna" Width="7" Height="7" Fill="{ThemeResource OrbitCyanAccentBrush}" VerticalAlignment="Top" Margin="0,2,0,0"/>
+    <Ellipse x:Name="AntennaReaction" Width="7" Height="7" VerticalAlignment="Top" Margin="0,2,0,0" Visibility="Collapsed"/>
+    <Border Width="96" Height="75" VerticalAlignment="Bottom" CornerRadius="29" Background="#78000000" Margin="0,0,0,-1"/>
+    <Border Width="94" Height="74" VerticalAlignment="Bottom" CornerRadius="29" BorderThickness="1.5">
+     <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#344252" Offset="0"/><GradientStop Color="#192432" Offset="0.48"/><GradientStop Color="#101823" Offset="1"/></LinearGradientBrush></Border.Background>
+     <Border.BorderBrush><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#87909A" Offset="0"/><GradientStop Color="#445365" Offset="0.45"/><GradientStop Color="#273442" Offset="1"/></LinearGradientBrush></Border.BorderBrush>
+     <Border Margin="3" CornerRadius="25" BorderThickness="1" BorderBrush="#182738">
+      <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#101D2C"/><GradientStop Color="#060C15" Offset="1"/></LinearGradientBrush></Border.Background>
+      <Border Margin="3" CornerRadius="21" BorderThickness="0.8" BorderBrush="#1D3447">
+       <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0.7,1"><GradientStop Color="#061320"/><GradientStop Color="#040A12" Offset="0.72"/><GradientStop Color="#091621" Offset="1"/></LinearGradientBrush></Border.Background>
+      </Border>
+     </Border>
+    </Border>
+    <Canvas Width="100" Height="96">
+     <Path Data="M 21,29 C 35,24 65,24 79,29" Stroke="#637180" StrokeThickness="1" Opacity="0.36"/>
+     <Path Data="M 15,36 C 12,45 12,64 16,74" Stroke="#52687A" StrokeThickness="0.8" Opacity="0.22"/>
+    </Canvas>
+    <Canvas Width="100" Height="96">
+     <Canvas.RenderTransform><TranslateTransform x:Name="GazeTransform"/></Canvas.RenderTransform>
+     <Path x:Name="LeftEyeBloom" Stroke="{ThemeResource OrbitCyanAccentBrush}" StrokeThickness="14" Opacity="0.06" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+     <Path x:Name="RightEyeBloom" Stroke="{ThemeResource OrbitCyanAccentBrush}" StrokeThickness="14" Opacity="0.06" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+     <Path x:Name="LeftEyeGlow" Stroke="{ThemeResource OrbitCyanAccentBrush}" StrokeThickness="8" Opacity="0.24" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+     <Path x:Name="RightEyeGlow" Stroke="{ThemeResource OrbitCyanAccentBrush}" StrokeThickness="8" Opacity="0.24" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+     <Path x:Name="LeftEye" Stroke="#EDFCFF" StrokeThickness="4.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+     <Path x:Name="RightEye" Stroke="#EDFCFF" StrokeThickness="4.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+     <Path x:Name="MouthBloom" Stroke="{ThemeResource OrbitCyanAccentBrush}" StrokeThickness="9" Opacity="0.14" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+     <Path x:Name="Mouth" Stroke="{ThemeResource OrbitCyanAccentBrush}" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+    </Canvas>
+   </Grid>
+  </Viewbox>
+ </Button>
 </UserControl>

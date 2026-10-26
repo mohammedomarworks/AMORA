@@ -52,16 +52,21 @@ public class WindowsCredentialStorage : ISecureCredentialStorage
 
         byte[] plainBytes = Encoding.UTF8.GetBytes(secret.Trim());
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        try
         {
+            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Secure credentials require Windows DPAPI.");
             byte[] cipherBytes = ProtectedData.Protect(plainBytes, Entropy, DataProtectionScope.CurrentUser);
-            File.WriteAllBytes(filePath, cipherBytes);
+            string temporaryPath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllBytes(temporaryPath, cipherBytes);
+                File.Move(temporaryPath, filePath, overwrite: true);
+            }
+            finally { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
         }
-        else
+        finally
         {
-            // Fallback for non-Windows host environments / testing
-            string base64 = Convert.ToBase64String(plainBytes);
-            File.WriteAllText(filePath, base64);
+            CryptographicOperations.ZeroMemory(plainBytes);
         }
 
         return Task.CompletedTask;
@@ -86,13 +91,12 @@ public class WindowsCredentialStorage : ISecureCredentialStorage
             {
                 byte[] cipherBytes = File.ReadAllBytes(filePath);
                 byte[] plainBytes = ProtectedData.Unprotect(cipherBytes, Entropy, DataProtectionScope.CurrentUser);
-                return Task.FromResult<string?>(Encoding.UTF8.GetString(plainBytes));
+                try { return Task.FromResult<string?>(Encoding.UTF8.GetString(plainBytes)); }
+                finally { CryptographicOperations.ZeroMemory(plainBytes); }
             }
             else
             {
-                string base64 = File.ReadAllText(filePath);
-                byte[] plainBytes = Convert.FromBase64String(base64);
-                return Task.FromResult<string?>(Encoding.UTF8.GetString(plainBytes));
+                return Task.FromResult<string?>(null);
             }
         }
         catch
@@ -112,13 +116,7 @@ public class WindowsCredentialStorage : ISecureCredentialStorage
         string filePath = GetFilePath(target);
         if (File.Exists(filePath))
         {
-            try
-            {
-                File.Delete(filePath);
-            }
-            catch
-            {
-            }
+            File.Delete(filePath);
         }
 
         return Task.CompletedTask;

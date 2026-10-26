@@ -5,10 +5,13 @@ public record BatterySnapshot(
     bool IsCharging,
     bool IsPluggedIn,
     bool HasBattery,
-    TimeSpan? EstimatedRemaining
+    TimeSpan? EstimatedRemaining,
+    bool IsAvailable = true
 )
 {
-    public bool IsDesktopAC => !HasBattery;
+    public bool IsDesktopAC => IsAvailable && !HasBattery;
+    public bool HasPercentage => IsAvailable && HasBattery && Percentage is >= 0 and <= 100;
+    public static BatterySnapshot Unavailable => new(-1, false, false, false, null, IsAvailable: false);
     public TimeSpan? EstimatedTimeRemaining => EstimatedRemaining;
 
     public static BatterySnapshot DesktopAC => new(
@@ -41,7 +44,9 @@ public record BatterySnapshot(
     {
         get
         {
+            if (!IsAvailable) return "Power status unavailable";
             if (IsDesktopAC) return "Desktop PC (Direct AC)";
+            if (!HasPercentage) return "Battery level unavailable";
             if (IsCharging) return $"{Percentage}% (Charging)";
             if (EstimatedRemaining.HasValue && EstimatedRemaining.Value.TotalMinutes > 0)
             {
@@ -60,6 +65,7 @@ public record BatterySnapshot(
     {
         get
         {
+            if (!IsAvailable) return "Windows could not read power status";
             if (IsDesktopAC) return "No battery detected (Direct AC Power)";
             if (IsCharging) return "Charging power connected";
             if (EstimatedRemaining.HasValue && EstimatedRemaining.Value.TotalMinutes > 0)
@@ -68,7 +74,7 @@ public record BatterySnapshot(
                 var m = EstimatedRemaining.Value.Minutes;
                 return $"{h}h {m}m estimated remaining";
             }
-            return "Calculating battery time...";
+            return IsPluggedIn ? "Power connected" : "Time remaining unavailable";
         }
     }
 }

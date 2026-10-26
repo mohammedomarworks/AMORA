@@ -14,10 +14,10 @@
             <converters:BooleanToVisibilityConverter x:Key="BoolToVis" />
 
             <!-- AMORA Orbit Theme Colors -->
-            <Color x:Key="OrbitSurfaceColor">#0D0F17</Color>
-            <Color x:Key="OrbitCardColor">#161822</Color>
-            <Color x:Key="OrbitCardSubtleColor">#1C202E</Color>
-            <Color x:Key="OrbitBorderColor">#2A2E3D</Color>
+            <Color x:Key="OrbitSurfaceColor">#0B0D10</Color>
+            <Color x:Key="OrbitCardColor">#202226</Color>
+            <Color x:Key="OrbitCardSubtleColor">#292D32</Color>
+            <Color x:Key="OrbitBorderColor">#35434D</Color>
             <Color x:Key="OrbitCyanAccentColor">#52CCFF</Color>
             <Color x:Key="OrbitCyanGlowColor">#8CE8FF</Color>
             <Color x:Key="OrbitTextPrimaryColor">#F0F3F8</Color>
@@ -34,10 +34,22 @@
             <SolidColorBrush x:Key="OrbitTextPrimaryBrush" Color="{StaticResource OrbitTextPrimaryColor}" />
             <SolidColorBrush x:Key="OrbitTextSecondaryBrush" Color="{StaticResource OrbitTextSecondaryColor}" />
             <SolidColorBrush x:Key="OrbitTextMutedBrush" Color="{StaticResource OrbitTextMutedColor}" />
+            <!-- App-owned accent overrides use the same mutable brand brush.
+                 Standard WinUI templates still come from XamlControlsResources. -->
+            <StaticResource x:Key="SliderThumbBackground" ResourceKey="OrbitCyanAccentBrush" />
+            <StaticResource x:Key="SliderThumbBackgroundPointerOver" ResourceKey="OrbitCyanAccentBrush" />
+            <StaticResource x:Key="SliderTrackValueFill" ResourceKey="OrbitCyanAccentBrush" />
+            <StaticResource x:Key="SliderTrackValueFillPointerOver" ResourceKey="OrbitCyanAccentBrush" />
+            <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="OrbitCyanAccentBrush" />
+            <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="OrbitCyanAccentBrush" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="OrbitCyanAccentBrush" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeChecked" ResourceKey="OrbitCyanAccentBrush" />
+            <SolidColorBrush x:Key="ListBoxItemBackgroundSelected" Color="#354C58" />
+            <SolidColorBrush x:Key="ListBoxItemBackgroundSelectedPointerOver" Color="#405763" />
 
             <!-- Standard Capsule Button Style -->
             <Style x:Key="OrbitActionButtonStyle" TargetType="Button">
-                <Setter Property="Background" Value="#1F2433" />
+                <Setter Property="Background" Value="#2C3035" />
                 <Setter Property="Foreground" Value="{StaticResource OrbitTextPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{StaticResource OrbitBorderBrush}" />
                 <Setter Property="BorderThickness" Value="1" />

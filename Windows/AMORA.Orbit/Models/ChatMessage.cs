@@ -14,7 +14,7 @@ public enum ChatRole
 /// Ephemeral, in-memory chat message turn.
 /// Never written to persistent storage, configuration files, or logs.
 /// </summary>
-public record ChatMessage(ChatRole Role, string Content)
+public record ChatMessage(ChatRole Role, string Content, bool IsMemoryDerived = false)
 {
     public string RoleString => Role switch
     {

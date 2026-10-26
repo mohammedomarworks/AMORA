@@ -188,9 +188,9 @@ public class AssistantEngineTests : IDisposable
         var result = await _engine.ExecuteAsync("explain quantum electrodynamics");
 
         Assert.Equal(AssistantResultStatus.Unsupported, result.Status);
-        Assert.Contains("Local AI engine is currently offline", result.FeedbackMessage);
-        Assert.Contains("configure an API key in Settings", result.FeedbackMessage);
-        Assert.Equal(MascotMood.Thinking, result.Mood);
+        Assert.Contains("selected AI provider is not ready", result.FeedbackMessage);
+        Assert.Contains("Local Brain", result.FeedbackMessage);
+        Assert.Equal(MascotMood.Curious, result.Mood);
     }
 
     [Fact]

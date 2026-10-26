@@ -80,14 +80,31 @@ public partial class App : Application
     private void LaunchCore()
     {
         CrashLogger.SetStartupStage("service-construction");
+        var uiDispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        Action<Action> dispatch = action =>
+        {
+            if (uiDispatcher.HasThreadAccess) action();
+            else uiDispatcher.TryEnqueue(() => action());
+        };
         // 1. Instantiate Core & Secure Settings Services
         ISecureCredentialStorage credentialStorage = new WindowsCredentialStorage();
         IAISettingsService aiSettingsService = new AISettingsService(credentialStorage);
+        var presentationVm = new PresentationViewModel(new PresentationPreferencesStore());
+        var localBrainService = new LocalBrainService();
+        var localBrainVm = new LocalBrainViewModel(localBrainService, aiSettingsService, dispatch);
+        _ = localBrainVm.InitializeAsync();
+        var gitHubVm = new GitHubActivityViewModel(new GitHubActivityService(credentialStorage), dispatch);
+        _ = gitHubVm.InitializeAsync();
+        var sounds = new WindowsFeedbackSoundService(presentationVm);
 
         IWindowPositioningService positioningService = new WindowsWindowPositioningService();
         IBatteryService batteryService = new WindowsBatteryService();
         ISystemTelemetryService telemetryService = new WindowsSystemTelemetryService();
-        IMediaService mediaService = new PreviewMediaService(); // Falls back to interactive preview
+        var browserBridge = new BrowserMediaBridgeService(() => presentationVm.BrowserBridgeEnabled);
+        var browserVm = new BrowserBridgeViewModel(browserBridge, dispatch);
+        EventHandler browserPreferenceChanged = (_, _) => browserVm.SetEnabled(presentationVm.BrowserBridgeEnabled);
+        presentationVm.PreviewChanged += browserPreferenceChanged;
+        IMediaService mediaService = new MediaCoordinatorService(new WindowsMediaService(), browserBridge);
         ITimerService timerService = new StandardTimerService();
         ISuggestionService suggestionService = new ProactiveSuggestionService(
             timerService,
@@ -100,20 +117,28 @@ public partial class App : Application
             mediaService,
             suggestionService
         );
-        _ = LoadAutomationsSafelyAsync(automationService);
 
         var hotKeyService = new WindowsHotKeyService();
         var trayService = new TaskbarTrayService();
 
         // 2. Instantiate AI Provider & ViewModels
 
-        IAIProvider aiProvider = new GeminiAIProvider(
-            () => aiSettingsService.GetApiKeyAsync(AISettings.ProviderGemini),
-            () => aiSettingsService.CurrentSettings
+        IAIProvider aiProvider = new RoutingAIProvider(
+            aiSettingsService.GetApiKeyAsync,
+            () => aiSettingsService.CurrentSettings,
+            localBrainProvider: new LocalBrainAIProvider(localBrainService, () => aiSettingsService.CurrentSettings)
         );
 
-        var settingsVm = new SettingsViewModel(aiSettingsService, aiProvider);
-        var automationsVm = new AutomationsViewModel(automationService);
+        var settingsVm = new SettingsViewModel(aiSettingsService, aiProvider, dispatch);
+        var clipboardService = new ClipboardHistoryService(new WindowsClipboardSource(dispatch));
+        clipboardService.SetEnabled(aiSettingsService.CurrentSettings.EnableClipboardHistory);
+        EventHandler<AISettings> clipboardSettingsChanged = (_, settings) => clipboardService.SetEnabled(settings.EnableClipboardHistory);
+        aiSettingsService.SettingsChanged += clipboardSettingsChanged;
+        var clipboardVm = new ClipboardViewModel(clipboardService, dispatch);
+        var workspaceVm = new WorkspaceToolsViewModel(new WorkspaceToolsService(new JsonWorkspaceStorage(), new WindowsWorkspaceLauncher()), dispatch);
+        _ = workspaceVm.InitializeAsync();
+        var automationsVm = new AutomationsViewModel(automationService, dispatch);
+        _ = automationsVm.LoadAsync();
 
         var conversationSession = new ConversationSession(
             () => aiSettingsService.CurrentSettings.MaxHistoryTurns
@@ -128,15 +153,17 @@ public partial class App : Application
             telemetryService,
             aiProvider,
             conversationSession,
-            () => aiSettingsService.CurrentSettings
+            () => aiSettingsService.CurrentSettings,
+            new ExplicitMemoryService(isEnabled: () => aiSettingsService.CurrentSettings.MemoryEnabled),
+            new SafeNavigationService()
         );
-        var assistantVm = new AssistantCommandViewModel(assistantEngine);
+        var assistantVm = new AssistantCommandViewModel(assistantEngine, dispatch);
 
         var mascotVm = new RobotMascotViewModel();
-        var mediaVm = new MediaControlViewModel(mediaService);
-        var timerVm = new TimerControlViewModel(timerService);
-        var suggestionVm = new SuggestionViewModel(suggestionService);
-        var systemStatusVm = new SystemStatusViewModel(batteryService, telemetryService);
+        var mediaVm = new MediaControlViewModel(mediaService, dispatch);
+        var timerVm = new TimerControlViewModel(timerService, dispatch);
+        var suggestionVm = new SuggestionViewModel(suggestionService, dispatch);
+        var systemStatusVm = new SystemStatusViewModel(batteryService, telemetryService, dispatch);
 
         _orbitViewModel = new OrbitViewModel(
             positioningService,
@@ -149,13 +176,21 @@ public partial class App : Application
             hotKeyService,
             trayService,
             settingsVm,
-            automationsVm
+            automationsVm,
+            clipboardVm,
+            workspaceVm,
+            presentationVm,
+            gitHubVm,
+            localBrainVm,
+            browserVm
         );
 
         // 3. Create and activate Window
         CrashLogger.SetStartupStage("window-and-xaml-construction");
-        _mainWindow = new MainWindow(_orbitViewModel, hotKeyService, trayService);
+        _mainWindow = new MainWindow(_orbitViewModel, hotKeyService, trayService, sounds);
         var servicesDisposed = false;
+        EventHandler timerCompleteSound = (_, _) => dispatch(async () => { if (!servicesDisposed) await sounds.PlayAsync(); });
+        timerService.TimerCompleted += timerCompleteSound;
         _mainWindow.Closed += (_, _) =>
         {
             if (servicesDisposed)
@@ -164,6 +199,17 @@ public partial class App : Application
             }
 
             servicesDisposed = true;
+            presentationVm.PreviewChanged -= browserPreferenceChanged;
+            timerService.TimerCompleted -= timerCompleteSound;
+            (automationService as IDisposable)?.Dispose();
+            localBrainService.Dispose();
+            sounds.Dispose();
+            aiSettingsService.SettingsChanged -= clipboardSettingsChanged;
+            clipboardService.Dispose();
+            (mediaService as IDisposable)?.Dispose();
+            (timerService as IDisposable)?.Dispose();
+            (batteryService as IDisposable)?.Dispose();
+            (telemetryService as IDisposable)?.Dispose();
             if (aiProvider is IDisposable disposableProvider)
             {
                 disposableProvider.Dispose();
@@ -171,10 +217,6 @@ public partial class App : Application
             if (suggestionService is IDisposable disposableSuggestion)
             {
                 disposableSuggestion.Dispose();
-            }
-            if (automationService is IDisposable disposableAutomation)
-            {
-                disposableAutomation.Dispose();
             }
         };
         CrashLogger.SetStartupStage("window-activation");

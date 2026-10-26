@@ -201,7 +201,8 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
         }
 
         var match = AddTimeRegex.Match(norm);
-        if (match.Success && int.TryParse(match.Groups[1].Value, out int minutes))
+        if (match.Success && int.TryParse(match.Groups[1].Value, out int minutes) &&
+            minutes > 0 && (long)minutes * 60 <= int.MaxValue)
         {
             duration = TimeSpan.FromMinutes(minutes);
             return true;
@@ -230,7 +231,8 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
             if (cdMatch.Success && int.TryParse(cdMatch.Groups[1].Value, out int cdVal))
             {
                 string cdUnit = cdMatch.Groups[2].Value;
-                int secs = cdUnit.StartsWith("m", StringComparison.OrdinalIgnoreCase) ? cdVal * 60 : cdVal;
+                long secs = cdUnit.StartsWith("m", StringComparison.OrdinalIgnoreCase) ? (long)cdVal * 60 : cdVal;
+                if (secs <= 0 || secs > int.MaxValue) return false;
                 duration = TimeSpan.FromSeconds(secs);
                 label = cdMatch.Groups[3].Success && !string.IsNullOrWhiteSpace(cdMatch.Groups[3].Value)
                     ? cdMatch.Groups[3].Value.Trim()
@@ -246,20 +248,21 @@ public class DeterministicCommandRouter : IAssistantCommandRouter
         }
 
         string unit1 = match.Groups[2].Value;
-        int val2 = match.Groups[3].Success && int.TryParse(match.Groups[3].Value, out int p2) ? p2 : 0;
+        int val2 = 0;
+        if (match.Groups[3].Success && !int.TryParse(match.Groups[3].Value, out val2)) return false;
         string unit2 = match.Groups[4].Success ? match.Groups[4].Value : string.Empty;
         string rawLabel = match.Groups[5].Success ? match.Groups[5].Value : string.Empty;
 
-        int totalSeconds = 0;
+        long totalSeconds = 0;
         foreach (var (v, u) in new[] { (val1, unit1), (val2, unit2) })
         {
             if (string.IsNullOrEmpty(u)) continue;
-            if (u.StartsWith("h", StringComparison.OrdinalIgnoreCase)) totalSeconds += v * 3600;
-            else if (u.StartsWith("m", StringComparison.OrdinalIgnoreCase)) totalSeconds += v * 60;
+            if (u.StartsWith("h", StringComparison.OrdinalIgnoreCase)) totalSeconds += (long)v * 3600;
+            else if (u.StartsWith("m", StringComparison.OrdinalIgnoreCase)) totalSeconds += (long)v * 60;
             else if (u.StartsWith("s", StringComparison.OrdinalIgnoreCase)) totalSeconds += v;
         }
 
-        if (totalSeconds <= 0)
+        if (totalSeconds <= 0 || totalSeconds > int.MaxValue)
         {
             return false;
         }

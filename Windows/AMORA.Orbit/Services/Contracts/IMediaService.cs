@@ -8,6 +8,11 @@ public interface IMediaService
     bool IsConnected { get; }
     string ProviderName { get; }
     bool IsPlaying => CurrentTrack.IsPlaying;
+    string StatusText => IsConnected ? string.Empty : "No active Windows media session.";
+    bool CanTogglePlayPause => IsConnected && CurrentTrack.IsAvailable;
+    bool CanGoNext => IsConnected && CurrentTrack.IsAvailable;
+    bool CanGoPrevious => IsConnected && CurrentTrack.IsAvailable;
+    bool CanSeek => IsConnected && CurrentTrack.IsAvailable && CurrentTrack.Duration > TimeSpan.Zero;
 
     event EventHandler<MediaTrack>? TrackChanged;
 

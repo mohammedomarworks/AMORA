@@ -93,6 +93,52 @@ public class AutomationsViewModelTests
     }
 
     [Fact]
+    public async Task AutomationsViewModel_OverlongNameReportsValidationWithoutCreatingSchedule()
+    {
+        var (service, vm, path) = CreateTestContext();
+        try
+        {
+            vm.NewName = new string('x', 121);
+            await vm.CreateAutomationAsync();
+            Assert.Empty(service.Automations);
+            Assert.Empty(vm.Items);
+            Assert.False(File.Exists(path));
+            Assert.Contains("120 characters", vm.StatusMessage);
+            Assert.DoesNotContain(vm.NewName, vm.StatusMessage);
+        }
+        finally
+        {
+            vm.Dispose();
+            service.Dispose();
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task AutomationsViewModel_FailedToggleRebindsPersistedStateAndReportsFailure()
+    {
+        var (service, vm, path) = CreateTestContext();
+        try
+        {
+            await vm.CreateAutomationAsync();
+            var originalRow = Assert.Single(vm.Items);
+            using (var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                await vm.ToggleEnabledAsync(originalRow.Id);
+            var restoredRow = Assert.Single(vm.Items);
+            Assert.NotSame(originalRow, restoredRow);
+            Assert.True(restoredRow.IsEnabled);
+            Assert.Contains("unchanged", vm.StatusMessage);
+            Assert.True(Assert.Single(service.Automations).IsEnabled);
+        }
+        finally
+        {
+            vm.Dispose();
+            service.Dispose();
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task AutomationsViewModel_ToggleAndRunNowAndLifecycle()
     {
         var (service, vm, path) = CreateTestContext();

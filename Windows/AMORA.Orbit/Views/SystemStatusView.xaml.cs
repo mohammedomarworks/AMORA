@@ -8,4 +8,9 @@ public sealed partial class SystemStatusView : UserControl
     {
         InitializeComponent();
     }
+    public void SetModuleVisibility(bool battery, bool telemetry)
+    {
+        BatteryCard.Visibility = battery ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+        TelemetryCard.Visibility = telemetry ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+    }
 }

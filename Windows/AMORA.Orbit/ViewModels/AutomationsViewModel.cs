@@ -55,6 +55,8 @@ public class AutomationItemViewModel : INotifyPropertyChanged
 public class AutomationsViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IAutomationService _automationService;
+    private readonly Action<Action> _dispatch;
+    private bool _disposed;
     private bool _isOpen;
     private string _newName = "Daily Focus";
     private int _newTriggerTypeIndex = 0; // 0: Daily, 1: Every 30m, 2: Every 60m
@@ -68,8 +70,9 @@ public class AutomationsViewModel : INotifyPropertyChanged, IDisposable
 
     public ObservableCollection<AutomationItemViewModel> Items { get; } = new();
 
-    public AutomationsViewModel(IAutomationService automationService)
+    public AutomationsViewModel(IAutomationService automationService, Action<Action>? dispatch = null)
     {
+        _dispatch = dispatch ?? (action => action());
         _automationService = automationService ?? throw new ArgumentNullException(nameof(automationService));
 
         _automationService.AutomationsChanged += OnAutomationsChanged;
@@ -223,65 +226,117 @@ public class AutomationsViewModel : INotifyPropertyChanged, IDisposable
 
     public void ToggleOpen() => IsOpen = !IsOpen;
 
+    public async Task LoadAsync()
+    {
+        if (_disposed) return;
+        try { await _automationService.LoadAutomationsAsync(); }
+        catch (System.IO.IOException)
+        {
+            ShowStorageFailure("Automation data could not be loaded safely. No schedules were activated; check the recovery file.");
+        }
+        catch (ObjectDisposedException) when (_disposed) { }
+    }
+
     public async Task CreateAutomationAsync()
     {
-        if (string.IsNullOrWhiteSpace(_newName))
+        if (_disposed) return;
+        try
         {
-            StatusGlyph = "\uE7BA"; // Warning
-            StatusColor = "#FF453A";
-            StatusMessage = "Please provide an automation name.";
-            return;
+            if (string.IsNullOrWhiteSpace(_newName))
+            {
+                PublishStatus("Please provide an automation name.", "#FF453A", "\uE7BA");
+                return;
+            }
+
+            AutomationTrigger trigger = _newTriggerTypeIndex switch
+            {
+                1 => AutomationTrigger.IntervalTrigger(TimeSpan.FromMinutes(30)),
+                2 => AutomationTrigger.IntervalTrigger(TimeSpan.FromMinutes(60)),
+                _ => AutomationTrigger.Daily(_newHour, _newMinute)
+            };
+
+            AutomationAction action = _newActionTypeIndex switch
+            {
+                1 => AutomationAction.Timer(TimeSpan.FromMinutes(25), "Focus"),
+                2 => AutomationAction.PauseMedia(),
+                _ => AutomationAction.Reminder(!string.IsNullOrWhiteSpace(_newReminderMessage) ? _newReminderMessage.Trim() : "Scheduled reminder")
+            };
+
+            var created = await _automationService.CreateAutomationAsync(_newName.Trim(), trigger, action, isEnabled: true);
+            PublishStatus($"Created '{created.Name}'. Next: {created.NextRunAt?.ToLocalTime():g}", "#30D158", "\uE73E");
         }
-
-        AutomationTrigger trigger = _newTriggerTypeIndex switch
+        catch (System.IO.IOException)
         {
-            1 => AutomationTrigger.IntervalTrigger(TimeSpan.FromMinutes(30)),
-            2 => AutomationTrigger.IntervalTrigger(TimeSpan.FromMinutes(60)),
-            _ => AutomationTrigger.Daily(_newHour, _newMinute)
-        };
-
-        AutomationAction action = _newActionTypeIndex switch
+            ShowStorageFailure();
+        }
+        catch (ArgumentException)
         {
-            1 => AutomationAction.Timer(TimeSpan.FromMinutes(25), "Focus"),
-            2 => AutomationAction.PauseMedia(),
-            _ => AutomationAction.Reminder(!string.IsNullOrWhiteSpace(_newReminderMessage) ? _newReminderMessage.Trim() : "Scheduled reminder")
-        };
-
-        var created = await _automationService.CreateAutomationAsync(_newName.Trim(), trigger, action, isEnabled: true);
-
-        StatusGlyph = "\uE73E"; // Checkmark
-        StatusColor = "#30D158";
-        StatusMessage = $"Created '{created.Name}'. Next: {created.NextRunAt?.ToLocalTime():g}";
+            PublishStatus("Check the schedule and use an automation name of 120 characters or fewer. Nothing was created.", "#FF453A", "\uE7BA");
+        }
+        catch (InvalidOperationException)
+        {
+            PublishStatus("The automation could not be created. Check the automation limit and try again.", "#FF453A", "\uE7BA");
+        }
     }
 
     public async Task ToggleEnabledAsync(string id)
     {
-        bool success = await _automationService.ToggleEnabledAsync(id);
-        if (success)
+        if (_disposed) return;
+        try
         {
-            StatusGlyph = "\uE895";
-            StatusColor = "#52CCFF";
-            StatusMessage = "Automation toggled.";
+            bool success = await _automationService.ToggleEnabledAsync(id);
+            if (success) PublishStatus("Automation toggled.", "#52CCFF", "\uE895");
         }
+        catch (System.IO.IOException) { ShowStorageFailure(); }
+        catch (ObjectDisposedException) when (_disposed) { }
     }
 
     public async Task DeleteAsync(string id)
     {
-        bool success = await _automationService.DeleteAutomationAsync(id);
-        if (success)
+        if (_disposed) return;
+        try
         {
-            StatusGlyph = "\uE74D";
-            StatusColor = "#9AA2B2";
-            StatusMessage = "Automation deleted.";
+            bool success = await _automationService.DeleteAutomationAsync(id);
+            if (success) PublishStatus("Automation deleted.", "#9AA2B2", "\uE74D");
         }
+        catch (System.IO.IOException) { ShowStorageFailure(); }
+        catch (ObjectDisposedException) when (_disposed) { }
     }
 
     public async Task RunNowAsync(string id)
     {
-        var result = await _automationService.RunManuallyAsync(id);
-        StatusGlyph = result.IsSuccess ? "\uE73E" : "\uE7BA";
-        StatusColor = result.IsSuccess ? "#30D158" : "#FF453A";
-        StatusMessage = result.Message;
+        if (_disposed) return;
+        try
+        {
+            var result = await _automationService.RunManuallyAsync(id);
+            PublishStatus(result.Message, result.IsSuccess ? "#30D158" : "#FF453A", result.IsSuccess ? "\uE73E" : "\uE7BA");
+        }
+        catch (System.IO.IOException) { ShowStorageFailure(); }
+        catch (ObjectDisposedException) when (_disposed) { }
+    }
+
+    private void ShowStorageFailure(string message = "Automation could not be saved safely. Existing schedules are unchanged.")
+    {
+        _dispatch(() =>
+        {
+            if (_disposed) return;
+            // Rebind any toggle that the native control optimistically changed before the failed save.
+            ReloadItems();
+            StatusGlyph = "\uEA39";
+            StatusColor = "#FF453A";
+            StatusMessage = message;
+        });
+    }
+
+    private void PublishStatus(string message, string color, string glyph)
+    {
+        _dispatch(() =>
+        {
+            if (_disposed) return;
+            StatusGlyph = glyph;
+            StatusColor = color;
+            StatusMessage = message;
+        });
     }
 
     private void ReloadItems()
@@ -297,14 +352,12 @@ public class AutomationsViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnAutomationsChanged(object? sender, IReadOnlyList<AmoraAutomation> automations)
     {
-        ReloadItems();
+        _dispatch(() => { if (!_disposed) ReloadItems(); });
     }
 
     private void OnAutomationFired(object? sender, AutomationExecutionResult result)
     {
-        StatusGlyph = result.IsSuccess ? "\uE73E" : "\uE7BA";
-        StatusColor = result.IsSuccess ? "#30D158" : "#FF453A";
-        StatusMessage = $"Automation: {result.Message}";
+        PublishStatus($"Automation: {result.Message}", result.IsSuccess ? "#30D158" : "#FF453A", result.IsSuccess ? "\uE73E" : "\uE7BA");
     }
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
@@ -312,6 +365,7 @@ public class AutomationsViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _automationService.AutomationsChanged -= OnAutomationsChanged;
         _automationService.AutomationFired -= OnAutomationFired;
     }

@@ -57,13 +57,18 @@ public record AmoraContextSnapshot(
         }
 
         // Battery / Power context
-        if (Battery.HasBattery)
+        if (!Battery.IsAvailable)
+        {
+            facts.Add("Power: Unavailable");
+        }
+        else if (Battery.HasBattery)
         {
             string chargeState = Battery.IsCharging ? "charging" : (Battery.IsPluggedIn ? "plugged in" : "on battery");
             string estimateStr = Battery.EstimatedRemaining.HasValue && Battery.EstimatedRemaining.Value > TimeSpan.Zero
                 ? $", ~{(int)Battery.EstimatedRemaining.Value.TotalHours}h {Battery.EstimatedRemaining.Value.Minutes}m remaining"
                 : "";
-            facts.Add($"Power: {Battery.Percentage}% [{chargeState}{estimateStr}]");
+            string level = Battery.HasPercentage ? $"{Battery.Percentage}%" : "Battery level unavailable";
+            facts.Add($"Power: {level} [{chargeState}{estimateStr}]");
         }
         else
         {

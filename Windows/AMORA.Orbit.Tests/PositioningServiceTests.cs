@@ -1,5 +1,4 @@
 using AMORA.Orbit.Interop;
-using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Implementations;
 using Xunit;
 
@@ -7,168 +6,126 @@ namespace AMORA.Orbit.Tests;
 
 public class PositioningServiceTests
 {
-    // Work area: 1920×1080 at origin, DPI scale 1.0
-    private const int WorkAreaX = 0;
-    private const int WorkAreaY = 0;
-    private const int WorkAreaWidth = 1920;
-    private const int WorkAreaHeight = 1080;
-
-    [Fact]
-    public void CalculateCapsuleBoundsFromWorkArea_Collapsed_CentersHorizontallyWithTopMargin()
+    [Theory]
+    [InlineData(false, 176, 34)]
+    [InlineData(true, 860, 300)]
+    public void Island_UsesCompactTopCenteredGeometry(bool expanded, int width, int height)
     {
         var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
-            WorkAreaX, WorkAreaY, WorkAreaWidth, WorkAreaHeight,
-            dpiScale: 1.0,
-            isExpanded: false);
-
-        // Collapsed: 240×38 DIPs at scale 1.0 = 240×38 physical
-        Assert.Equal(240, bounds.Width);
-        Assert.Equal(38, bounds.Height);
-        // Top margin: 6px
-        Assert.Equal(6, bounds.Y);
-        // Horizontal center: (1920 - 240) / 2 = 840
-        Assert.Equal(840, bounds.X);
-    }
-
-    [Fact]
-    public void CalculateCapsuleBoundsFromWorkArea_Expanded_CentersHorizontallyWithTopMargin()
-    {
-        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
-            WorkAreaX, WorkAreaY, WorkAreaWidth, WorkAreaHeight,
-            dpiScale: 1.0,
-            isExpanded: true);
-
-        // Expanded: 660×500 DIPs at scale 1.0 = 660×500 physical
-        Assert.Equal(660, bounds.Width);
-        Assert.Equal(500, bounds.Height);
-        Assert.Equal(6, bounds.Y);
-        // Horizontal center: (1920 - 660) / 2 = 630
-        Assert.Equal(630, bounds.X);
-    }
-
-    [Fact]
-    public void CalculateCapsuleBoundsFromWorkArea_TopCenterPlacement()
-    {
-        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
-            WorkAreaX, WorkAreaY, WorkAreaWidth, WorkAreaHeight,
-            dpiScale: 1.0,
-            isExpanded: false);
-
-        // Top-center: Y is at work area top + 6px margin
-        Assert.Equal(WorkAreaY + 6, bounds.Y);
-    }
-
-    [Fact]
-    public void CalculateCapsuleBoundsFromWorkArea_ClampsToWorkArea_WhenWorkAreaIsSmall()
-    {
-        // Very small display: 600×400
-        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
-            0, 0, 600, 400,
-            dpiScale: 1.0,
-            isExpanded: true);
-
-        // Clamped to 95% of 600 = 570
-        Assert.True(bounds.Width <= 570);
-        // Clamped to 90% of 400 = 360
-        Assert.True(bounds.Height <= 360);
-        // Must stay inside work area
-        Assert.True(bounds.X >= 0);
-        Assert.True(bounds.X + bounds.Width <= 600);
-    }
-
-    [Fact]
-    public void CalculateCapsuleBoundsFromWorkArea_OffsetsWorkAreaByX()
-    {
-        // Work area starts at X=200 (e.g., taskbar on left), 1720 wide
-        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
-            200, 0, 1720, 1080,
-            dpiScale: 1.0,
-            isExpanded: false);
-
-        // Centered within offset work area: 200 + (1720 - 240) / 2 = 940
-        Assert.Equal(940, bounds.X);
+            0, 0, 1920, 1080, 1, expanded);
+        Assert.Equal(width, bounds.Width);
+        Assert.Equal(height, bounds.Height);
+        Assert.Equal((1920 - width) / 2, bounds.X);
         Assert.Equal(6, bounds.Y);
     }
 
     [Theory]
-    [InlineData(96, 1.0, 240, 38)]
-    [InlineData(144, 1.5, 360, 57)]
-    [InlineData(192, 2.0, 480, 76)]
-    public void CalculateCapsuleBoundsFromWorkArea_Collapsed_RespectsDpiScale(
-        uint dpi, double expectedScale, int expectedWidth, int expectedHeight)
+    [InlineData(1.0, 176, 34, 6)]
+    [InlineData(1.25, 220, 42, 8)]
+    [InlineData(1.5, 264, 51, 9)]
+    [InlineData(2.0, 352, 68, 12)]
+    public void Capsule_RespectsDpi(double scale, int width, int height, int margin)
     {
         var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
-            WorkAreaX, WorkAreaY, WorkAreaWidth, WorkAreaHeight,
-            dpiScale: expectedScale,
-            isExpanded: false);
+            0, 0, 1920, 1080, scale, false);
+        Assert.Equal(width, bounds.Width);
+        Assert.Equal(height, bounds.Height);
+        Assert.Equal(margin, bounds.Y);
+    }
 
-        // 240 DIP * scale = physical pixels
+    [Fact]
+    public void NegativeSecondaryMonitorAndTopTaskbar_AreRespected()
+    {
+        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
+            -1920, -1080 + 48, 1920, 1032, 1.5, true);
+        Assert.Equal(-1605, bounds.X);
+        Assert.Equal(-1023, bounds.Y);
+        Assert.Equal(1290, bounds.Width);
+        Assert.Equal(450, bounds.Height);
+    }
+
+    [Theory]
+    [InlineData(600, 400, 570, 300)]
+    [InlineData(600, 200, 570, 180)]
+    [InlineData(1, 1, 1, 1)]
+    public void SmallDisplays_ClampBothAxes(int width, int height, int expectedWidth, int expectedHeight)
+    {
+        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
+            200, -100, width, height, 1, true);
         Assert.Equal(expectedWidth, bounds.Width);
         Assert.Equal(expectedHeight, bounds.Height);
+        Assert.InRange(bounds.X, 200, 200 + width - bounds.Width);
+        Assert.InRange(bounds.Y, -100, -100 + height - bounds.Height);
+    }
 
-        // Top margin scales too: 6 DIP * scale
-        int expectedMargin = DpiHelper.DipToPhysical(6, expectedScale);
-        Assert.Equal(expectedMargin, bounds.Y);
+    [Fact]
+    public void WorkspaceHeight_IsIndependentOfHomeHeightAndStillClamped()
+    {
+        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
+            0, 0, 1280, 600, 1.5, true, expandedHeightDip: 520);
+        Assert.Equal(540, bounds.Height);
+        Assert.Equal(1216, bounds.Width);
+        Assert.InRange(bounds.Y + bounds.Height, 1, 600);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void InvalidDpi_RecoversToStandardScale(double scale)
+    {
+        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(0, 0, 1920, 1080, scale, false);
+        Assert.Equal(176, bounds.Width);
+        Assert.Equal(34, bounds.Height);
+    }
+
+    [Fact]
+    public void InvalidWorkArea_IsRejectedInsteadOfGeneratingOffscreenBounds()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(0, 0, 0, 1080, 1, false));
+    }
+
+    [Theory]
+    [InlineData("Progman")]
+    [InlineData("WorkerW")]
+    [InlineData("Shell_TrayWnd")]
+    [InlineData("Shell_SecondaryTrayWnd")]
+    public void DesktopWindows_AreExcludedFromFullscreenSuppression(string className) =>
+        Assert.True(WindowsWindowPositioningService.IsDesktopWindowClass(className));
+
+    [Fact]
+    public void FullscreenDetection_RequiresCoverageOfWholeMonitor()
+    {
+        var monitor = new NativeMethods.RECT { Left = -1920, Top = 0, Right = 0, Bottom = 1080 };
+        Assert.True(WindowsWindowPositioningService.CoversMonitor(monitor, monitor));
+        Assert.False(WindowsWindowPositioningService.CoversMonitor(
+            new NativeMethods.RECT { Left = -1920, Top = 0, Right = 0, Bottom = 1032 }, monitor));
+        Assert.False(WindowsWindowPositioningService.CoversMonitor(default, monitor));
+        Assert.False(WindowsWindowPositioningService.IsDesktopWindowClass("GameWindow"));
+    }
+
+    [Fact]
+    public void MaximizedCaptionedApp_IsNotFullscreenEvenWithAutoHiddenTaskbar()
+    {
+        var monitor = new NativeMethods.RECT { Left = 0, Top = 0, Right = 1920, Bottom = 1080 };
+        Assert.False(WindowsWindowPositioningService.ShouldSuppressForegroundWindow(
+            monitor, monitor, "NormalApplication", NativeMethods.WS_CAPTION | 0x00080000));
+        Assert.True(WindowsWindowPositioningService.ShouldSuppressForegroundWindow(
+            monitor, monitor, "BorderlessPresentation", 0x80000000));
+        Assert.False(WindowsWindowPositioningService.ShouldSuppressForegroundWindow(
+            monitor, monitor, "Progman", 0x80000000));
     }
 
     [Theory]
     [InlineData(96, 1.0)]
     [InlineData(144, 1.5)]
     [InlineData(192, 2.0)]
-    public void DpiHelper_ComputesCorrectScaleFactor(uint dpi, double expectedScale)
-    {
-        double scale = DpiHelper.GetScaleFactor(dpi);
-        Assert.Equal(expectedScale, scale, precision: 2);
-    }
+    public void DpiHelper_ComputesScale(uint dpi, double scale) =>
+        Assert.Equal(scale, DpiHelper.GetScaleFactor(dpi));
 
     [Fact]
-    public void DpiHelper_ConvertsDipToPhysicalPixels()
-    {
-        int physical = DpiHelper.DipToPhysical(100, 1.5);
-        Assert.Equal(150, physical);
-    }
-
-    [Fact]
-    public void DpiHelper_ConvertsPhysicalToDip()
-    {
-        double dip = DpiHelper.PhysicalToDip(150, 1.5);
-        Assert.Equal(100.0, dip, precision: 2);
-    }
-
-    [Fact]
-    public void DpiHelper_RoundTrip_PreservesValue()
-    {
-        int original = 480;
-        double scale = 1.5;
-        int physical = DpiHelper.DipToPhysical(original, scale);
-        double backToDip = DpiHelper.PhysicalToDip(physical, scale);
-        Assert.Equal((double)original, backToDip, precision: 1);
-    }
-
-    [Fact]
-    public void CapsuleBounds_RecordEqualsByValue()
-    {
-        var a = new CapsuleBounds(10, 20, 100, 50);
-        var b = new CapsuleBounds(10, 20, 100, 50);
-        var c = new CapsuleBounds(11, 20, 100, 50);
-
-        Assert.Equal(a, b);
-        Assert.NotEqual(a, c);
-    }
-
-    [Fact]
-    public void CalculateCapsuleBoundsFromWorkArea_Expanded_ClampedOnSmallDisplay()
-    {
-        // Small display 600×400: expanded 660×500 should clamp to 570×360
-        var bounds = WindowsWindowPositioningService.CalculateCapsuleBoundsFromWorkArea(
-            0, 0, 600, 400,
-            dpiScale: 1.0,
-            isExpanded: true);
-
-        Assert.Equal(570, bounds.Width); // 95% of 600
-        Assert.Equal(360, bounds.Height); // 90% of 400
-        Assert.True(bounds.X >= 0);
-        Assert.True(bounds.X + bounds.Width <= 600);
-        Assert.True(bounds.Y >= 0);
-    }
+    public void DpiHelper_RoundTrip_PreservesValue() =>
+        Assert.Equal(480, DpiHelper.PhysicalToDip(DpiHelper.DipToPhysical(480, 1.5), 1.5));
 }

@@ -12,6 +12,10 @@ public class ProactiveSuggestionService : ISuggestionService, IDisposable
     private readonly ConcurrentDictionary<string, DateTimeOffset> _cooldownUntil = new();
     private readonly ConcurrentBag<string> _dismissedIds = new();
     private CancellationTokenSource? _snoozeCts;
+    private readonly Queue<ProactiveSuggestion> _reminderQueue = new();
+    private readonly Dictionary<string, CancellationTokenSource> _reminderSnoozes = new();
+    private bool _activeIsReminder;
+    private bool _disposed;
 
     private readonly ITimerService? _timerService;
     private readonly IBatteryService? _batteryService;
@@ -60,7 +64,7 @@ public class ProactiveSuggestionService : ISuggestionService, IDisposable
             _localEnabled = value;
             if (!value)
             {
-                ClearActive();
+                ClearProactive();
             }
         }
     }
@@ -87,6 +91,29 @@ public class ProactiveSuggestionService : ISuggestionService, IDisposable
 
     public event EventHandler<ProactiveSuggestion?>? ActiveSuggestionChanged;
 
+    public bool PresentReminder(ProactiveSuggestion reminder)
+    {
+        ArgumentNullException.ThrowIfNull(reminder);
+        ProactiveSuggestion? active;
+        lock (_lock)
+        {
+            if (_disposed) return false;
+            if (_activeSuggestion?.Id == reminder.Id || _reminderQueue.Any(r => r.Id == reminder.Id)) return true;
+            if (_reminderQueue.Count >= 32) return false;
+            if (_activeSuggestion != null && _activeIsReminder)
+                _reminderQueue.Enqueue(reminder);
+            else
+            {
+                // An explicitly scheduled reminder takes precedence over an unsolicited insight.
+                _activeSuggestion = reminder;
+                _activeIsReminder = true;
+            }
+            active = _activeSuggestion;
+        }
+        ActiveSuggestionChanged?.Invoke(this, active);
+        return true;
+    }
+
     public void PresentSuggestion(ProactiveSuggestion suggestion)
     {
         ArgumentNullException.ThrowIfNull(suggestion);
@@ -98,6 +125,7 @@ public class ProactiveSuggestionService : ISuggestionService, IDisposable
 
         lock (_lock)
         {
+            if (_disposed) return;
             // At most one suggestion at a time; do not interrupt active suggestion
             if (_activeSuggestion != null)
             {
@@ -137,6 +165,7 @@ public class ProactiveSuggestionService : ISuggestionService, IDisposable
             }
 
             _activeSuggestion = suggestion;
+            _activeIsReminder = false;
         }
 
         ActiveSuggestionChanged?.Invoke(this, suggestion);
@@ -150,92 +179,151 @@ public class ProactiveSuggestionService : ISuggestionService, IDisposable
             current = _activeSuggestion;
         }
 
-        if (current?.OnAction != null)
+        if (current == null) return;
+        if (current.OnAction != null)
         {
             try
             {
                 await current.OnAction();
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to execute suggestion action: {ex.Message}");
+                lock (_lock)
+                {
+                    if (_activeSuggestion?.Id != current.Id) return;
+                    _activeSuggestion = current with { Message = "That action could not be completed. Check the service and try again.", ActionLabel = "Try again" };
+                }
+                ActiveSuggestionChanged?.Invoke(this, ActiveSuggestion);
+                return;
             }
         }
 
-        DismissActive();
+        DismissActive(current?.Id);
     }
 
     public void SnoozeActive(TimeSpan duration)
     {
+        if (duration <= TimeSpan.Zero || duration > TimeSpan.FromDays(1)) throw new ArgumentOutOfRangeException(nameof(duration));
         ProactiveSuggestion? current;
+        bool isReminder;
+        CancellationTokenSource wake;
+        CancellationToken token;
+        ProactiveSuggestion? next;
         lock (_lock)
         {
             current = _activeSuggestion;
-            if (current == null) return;
+            if (current == null || _disposed) return;
+            isReminder = _activeIsReminder;
             _snoozedUntil[current.Id] = DateTimeOffset.UtcNow.Add(duration);
-            _activeSuggestion = null;
+            next = PromoteReminder();
+            wake = new CancellationTokenSource();
+            token = wake.Token;
+            if (isReminder)
+            {
+                if (_reminderSnoozes.Remove(current.Id, out var previous)) { previous.Cancel(); previous.Dispose(); }
+                _reminderSnoozes[current.Id] = wake;
+            }
+            else
+            {
+                _snoozeCts?.Cancel();
+                _snoozeCts?.Dispose();
+                _snoozeCts = wake;
+            }
         }
 
-        ActiveSuggestionChanged?.Invoke(this, null);
-
-        // Schedule wake-up
-        _snoozeCts?.Cancel();
-        _snoozeCts = new CancellationTokenSource();
-        var token = _snoozeCts.Token;
+        ActiveSuggestionChanged?.Invoke(this, next);
 
         _ = Task.Run(async () =>
         {
             try
             {
                 await Task.Delay(duration, token);
-                if (!token.IsCancellationRequested && IsEnabled && !_dismissedIds.Contains(current.Id))
+                if (!token.IsCancellationRequested && !_dismissedIds.Contains(current.Id))
                 {
-                    PresentSuggestion(current);
+                    if (isReminder) PresentReminder(current);
+                    else if (IsEnabled) PresentSuggestion(current);
                 }
             }
             catch (TaskCanceledException)
             {
                 // Snooze was cancelled or renewed
             }
-        }, token);
+            finally
+            {
+                if (isReminder)
+                {
+                    lock (_lock)
+                    {
+                        if (_reminderSnoozes.TryGetValue(current.Id, out var pending) && ReferenceEquals(pending, wake))
+                            _reminderSnoozes.Remove(current.Id);
+                    }
+                    wake.Dispose();
+                }
+            }
+        });
     }
 
-    public void DismissActive()
+    public void DismissActive() => DismissActive(null);
+
+    private void DismissActive(string? expectedId)
     {
         ProactiveSuggestion? current;
+        ProactiveSuggestion? next;
         lock (_lock)
         {
             current = _activeSuggestion;
             if (current == null) return;
+            if (expectedId != null && current.Id != expectedId) return;
             _dismissedIds.Add(current.Id);
             if (current.CooldownDuration.HasValue)
             {
                 _cooldownUntil[current.Id] = DateTimeOffset.UtcNow.Add(current.CooldownDuration.Value);
             }
-            _activeSuggestion = null;
+            next = PromoteReminder();
         }
 
-        ActiveSuggestionChanged?.Invoke(this, null);
+        ActiveSuggestionChanged?.Invoke(this, next);
     }
 
     public void ClearActive()
     {
         ProactiveSuggestion? current;
+        ProactiveSuggestion? next;
         lock (_lock)
         {
             current = _activeSuggestion;
             if (current == null) return;
-            _activeSuggestion = null;
+            next = PromoteReminder();
         }
 
-        ActiveSuggestionChanged?.Invoke(this, null);
+        ActiveSuggestionChanged?.Invoke(this, next);
+    }
+
+    // Called while holding _lock. Does not turn on proactive suggestions.
+    private ProactiveSuggestion? PromoteReminder()
+    {
+        _activeSuggestion = _reminderQueue.Count > 0 ? _reminderQueue.Dequeue() : null;
+        _activeIsReminder = _activeSuggestion != null;
+        return _activeSuggestion;
+    }
+
+    private void ClearProactive()
+    {
+        ProactiveSuggestion? next;
+        lock (_lock)
+        {
+            if (_activeIsReminder) return;
+            if (_activeSuggestion == null) return;
+            next = PromoteReminder();
+        }
+        ActiveSuggestionChanged?.Invoke(this, next);
     }
 
     private void OnSettingsChanged(object? sender, AISettings settings)
     {
         if (!settings.EnableProactiveSuggestions)
         {
-            ClearActive();
+            ClearProactive();
         }
     }
 
@@ -347,6 +435,14 @@ public class ProactiveSuggestionService : ISuggestionService, IDisposable
 
     public void Dispose()
     {
+        lock (_lock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _reminderQueue.Clear();
+            foreach (var pending in _reminderSnoozes.Values) { pending.Cancel(); pending.Dispose(); }
+            _reminderSnoozes.Clear();
+        }
         _snoozeCts?.Cancel();
         _snoozeCts?.Dispose();
 

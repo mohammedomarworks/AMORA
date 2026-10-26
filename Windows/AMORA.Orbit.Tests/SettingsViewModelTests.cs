@@ -31,7 +31,7 @@ public class SettingsViewModelTests
     public async Task SettingsViewModel_SaveAndClearLifecycle()
     {
         var credStorage = new InMemoryCredentialStorage();
-        var settingsService = new AISettingsService(credStorage);
+        var settingsService = new AISettingsService(credStorage, System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AMORA.Tests", System.Guid.NewGuid().ToString("N"), "settings.json"));
         var mockProvider = new MockAIProvider();
 
         var vm = new SettingsViewModel(settingsService, mockProvider);
@@ -42,6 +42,7 @@ public class SettingsViewModelTests
 
         Assert.False(vm.HasSavedKey);
 
+        vm.SelectedProvider = AISettings.ProviderGemini;
         vm.ApiKeyInput = "AIzaSy_Secret_NewKey_4567";
         vm.ModelName = "gemini-2.5-flash";
 
@@ -67,7 +68,7 @@ public class SettingsViewModelTests
     public async Task SettingsViewModel_TestConnection_ReportsFailureAccurately()
     {
         var credStorage = new InMemoryCredentialStorage();
-        var settingsService = new AISettingsService(credStorage);
+        var settingsService = new AISettingsService(credStorage, System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AMORA.Tests", System.Guid.NewGuid().ToString("N"), "settings.json"));
         var mockProvider = new MockAIProvider { TestShouldSucceed = false };
 
         var vm = new SettingsViewModel(settingsService, mockProvider);
@@ -82,7 +83,7 @@ public class SettingsViewModelTests
     public async Task SettingsViewModel_SendStatusContextToAI_DefaultsFalseAndPersists()
     {
         var credStorage = new InMemoryCredentialStorage();
-        var settingsService = new AISettingsService(credStorage);
+        var settingsService = new AISettingsService(credStorage, System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AMORA.Tests", System.Guid.NewGuid().ToString("N"), "settings.json"));
         var mockProvider = new MockAIProvider();
 
         var vm = new SettingsViewModel(settingsService, mockProvider);
@@ -105,7 +106,7 @@ public class SettingsViewModelTests
     public async Task SettingsViewModel_EnableProactiveSuggestions_DefaultsFalseAndPersists()
     {
         var credStorage = new InMemoryCredentialStorage();
-        var settingsService = new AISettingsService(credStorage);
+        var settingsService = new AISettingsService(credStorage, System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AMORA.Tests", System.Guid.NewGuid().ToString("N"), "settings.json"));
         var mockProvider = new MockAIProvider();
 
         var vm = new SettingsViewModel(settingsService, mockProvider);

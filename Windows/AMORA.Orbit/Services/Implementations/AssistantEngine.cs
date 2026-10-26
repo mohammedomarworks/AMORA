@@ -22,6 +22,8 @@ public class AssistantEngine : IAssistantEngine
     private readonly IAIProvider? _aiProvider;
     private readonly IConversationSession _conversationSession;
     private readonly Func<AISettings> _settingsProvider;
+    private readonly IExplicitMemoryService? _memory;
+    private readonly ISafeNavigationService? _navigation;
     private readonly SemaphoreSlim _executionLock = new(1, 1);
 
     private Func<Task<AssistantExecutionResult>>? _pendingAction;
@@ -43,7 +45,9 @@ public class AssistantEngine : IAssistantEngine
         ISystemTelemetryService telemetryService,
         IAIProvider? aiProvider = null,
         IConversationSession? conversationSession = null,
-        Func<AISettings>? settingsProvider = null)
+        Func<AISettings>? settingsProvider = null,
+        IExplicitMemoryService? memory = null,
+        ISafeNavigationService? navigation = null)
     {
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _timerService = timerService ?? throw new ArgumentNullException(nameof(timerService));
@@ -53,6 +57,8 @@ public class AssistantEngine : IAssistantEngine
         _aiProvider = aiProvider;
         _conversationSession = conversationSession ?? new ConversationSession();
         _settingsProvider = settingsProvider ?? (() => AISettings.Default);
+        _memory = memory;
+        _navigation = navigation;
     }
 
     public async Task<AssistantExecutionResult> ExecuteAsync(string input, CancellationToken cancellationToken = default)
@@ -68,8 +74,38 @@ public class AssistantEngine : IAssistantEngine
             // Cancel any previous pending action if user inputs a new command
             _pendingAction = null;
             _pendingPrompt = null;
+            _navigation?.CancelPending();
+
+            // Only explicit user input enters memory; provider actions never do.
+            // Memory commands/results stay out of cloud conversation history.
+            if (_memory != null)
+            {
+                var memoryResult = await _memory.TryExecuteAsync(input, cancellationToken);
+                if (memoryResult != null)
+                {
+                    if (memoryResult.RequiresConfirmation)
+                    {
+                        _pendingPrompt = memoryResult.Message;
+                        _pendingAction = () => _memory.ConfirmClearAsync();
+                    }
+                    return memoryResult;
+                }
+            }
 
             var context = BuildCommandContext();
+            if (_navigation != null)
+            {
+                var navigationResult = await _navigation.TryExecuteAsync(input, cancellationToken);
+                if (navigationResult != null)
+                {
+                    if (navigationResult.RequiresConfirmation)
+                    {
+                        _pendingPrompt = navigationResult.Message;
+                        _pendingAction = () => _navigation.ConfirmAsync();
+                    }
+                    return navigationResult;
+                }
+            }
             var command = _router.Route(input, context);
 
             return await DispatchCommandAsync(command, input, context, cancellationToken);
@@ -78,9 +114,9 @@ public class AssistantEngine : IAssistantEngine
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return AssistantExecutionResult.Failed($"Action failed: {ex.Message}");
+            return AssistantExecutionResult.Failed("The local action could not be completed. Check the relevant module and try again.");
         }
         finally
         {
@@ -104,9 +140,9 @@ public class AssistantEngine : IAssistantEngine
 
             return await action();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return AssistantExecutionResult.Failed($"Execution failed: {ex.Message}");
+            return AssistantExecutionResult.Failed("The confirmed action could not be completed. Check the target and try again.");
         }
         finally
         {
@@ -116,12 +152,15 @@ public class AssistantEngine : IAssistantEngine
 
     public void CancelPendingAction()
     {
+        _memory?.CancelPendingClear();
+        _navigation?.CancelPending();
         _pendingAction = null;
         _pendingPrompt = null;
     }
 
     public void ResetConversation()
     {
+        CancelPendingAction();
         _conversationSession.Clear();
     }
 
@@ -240,11 +279,9 @@ public class AssistantEngine : IAssistantEngine
             return AssistantExecutionResult.Failed("No active timer to add time to.");
         }
 
-        int minutes = Math.Max(1, (int)add.Duration.TotalMinutes);
-        for (int i = 0; i < minutes; i++)
-        {
-            _timerService.AddMinute();
-        }
+        if (add.Duration <= TimeSpan.Zero || add.Duration.TotalSeconds > int.MaxValue)
+            return AssistantExecutionResult.Failed("The requested timer adjustment is outside the supported range.");
+        _timerService.AddTime((int)add.Duration.TotalSeconds);
 
         return AssistantExecutionResult.Success($"Added {FormatDuration(add.Duration)} to timer.", MascotMood.Focused);
     }
@@ -384,7 +421,7 @@ public class AssistantEngine : IAssistantEngine
         CommandContext context,
         CancellationToken cancellationToken)
     {
-        if (_aiProvider != null && _aiProvider.IsConfigured)
+        if (_aiProvider != null && (_aiProvider.IsConfigured || _aiProvider.ProviderId == AISettings.ProviderLocalBrain))
         {
             try
             {
@@ -440,29 +477,25 @@ public class AssistantEngine : IAssistantEngine
             {
                 throw;
             }
+            catch (LocalBrainException ex) { return AssistantExecutionResult.Failed(ex.Message, MascotMood.Curious); }
             catch (Exception ex)
             {
-                string userFriendlyError = ex.Message;
-                if (ex.Message.Contains("429") || ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase))
-                {
-                    userFriendlyError = "rate limit reached. Please wait a moment before trying again.";
-                }
-                else if (ex.Message.Contains("401") || ex.Message.Contains("403") || ex.Message.Contains("API key", StringComparison.OrdinalIgnoreCase))
-                {
-                    userFriendlyError = "invalid Gemini API key. Please check your credentials in Settings.";
-                }
-                else if (ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
-                {
-                    userFriendlyError = "connection timed out. Please check your internet connection.";
-                }
-
-                return AssistantExecutionResult.Failed($"AI request failed: {userFriendlyError}");
+                // Classify transport failures without echoing provider bodies or secrets.
+                string reason = ex is TimeoutException || ex.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                    ? "connection timed out. Please check your connection."
+                    : ex.Message.Contains("429") || ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase)
+                    ? "rate limit reached. Please wait before trying again."
+                    : ex.Message.Contains("503") ? "provider unavailable (503). Try again later."
+                    : ex.Message.Contains("401") || ex.Message.Contains("403") || ex.Message.Contains("API key", StringComparison.OrdinalIgnoreCase)
+                    ? "credentials were rejected. Check your selected provider in Settings."
+                    : "the selected provider could not complete the request. Check its setup, model and connection.";
+                return AssistantExecutionResult.Failed($"AI request failed: {reason}");
             }
         }
 
         return AssistantExecutionResult.Unsupported(
-            "Local AI engine is currently offline. You can control timers, media, and system status directly, or configure an API key in Settings.",
-            MascotMood.Thinking
+            "Your selected AI provider is not ready. Open Settings to install Local Brain for offline chat or configure your chosen cloud provider. Timers, media, memory and system controls remain available locally.",
+            MascotMood.Curious
         );
     }
 

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using AMORA.Orbit.Interop;
 using AMORA.Orbit.Models;
 using AMORA.Orbit.Services.Contracts;
@@ -9,133 +10,100 @@ public class WindowsWindowPositioningService : IWindowPositioningService
 {
     public DisplayWorkArea GetCurrentWorkArea(IntPtr windowHandle)
     {
-        if (windowHandle == IntPtr.Zero)
-        {
-            return new DisplayWorkArea(0, 0, 1920, 1080, 96, 1.0);
-        }
+        // Before the HWND exists, use the display containing the pointer. Once it
+        // exists, retain its display instead of jumping to a fictitious 1080p screen.
+        var monitor = GetTargetMonitor(windowHandle);
+        var info = new NativeMethods.MONITORINFO { cbSize = Marshal.SizeOf<NativeMethods.MONITORINFO>() };
+        var dpi = windowHandle == IntPtr.Zero ? 0 : NativeMethods.GetDpiForWindow(windowHandle);
+        if (dpi == 0 && NativeMethods.GetDpiForMonitor(monitor, 0, out var monitorDpi, out _) == 0)
+            dpi = monitorDpi;
+        if (dpi == 0) dpi = DpiHelper.StandardDpi;
 
-        var hMonitor = NativeMethods.MonitorFromWindow(windowHandle, NativeMethods.MONITOR_DEFAULTTONEAREST);
-        var monitorInfo = new NativeMethods.MONITORINFO
-        {
-            cbSize = Marshal.SizeOf<NativeMethods.MONITORINFO>()
-        };
+        if (NativeMethods.GetMonitorInfo(monitor, ref info) && info.rcWork.Width > 0 && info.rcWork.Height > 0)
+            return new DisplayWorkArea(info.rcWork.Left, info.rcWork.Top, info.rcWork.Width,
+                info.rcWork.Height, dpi, DpiHelper.GetScaleFactor(dpi));
 
-        if (NativeMethods.GetMonitorInfo(hMonitor, ref monitorInfo))
-        {
-            var dpi = NativeMethods.GetDpiForWindow(windowHandle);
-            if (dpi == 0) dpi = DpiHelper.StandardDpi;
-            var scale = (double)dpi / DpiHelper.StandardDpi;
+        // Display removal can race the lookup. Recover to the real primary work
+        // area, respecting taskbars, instead of retaining off-screen coordinates.
+        if (NativeMethods.SystemParametersInfo(NativeMethods.SPI_GETWORKAREA, 0, out var work, 0)
+            && work.Width > 0 && work.Height > 0)
+            return new DisplayWorkArea(work.Left, work.Top, work.Width, work.Height, dpi, DpiHelper.GetScaleFactor(dpi));
 
-            return new DisplayWorkArea(
-                monitorInfo.rcWork.Left,
-                monitorInfo.rcWork.Top,
-                monitorInfo.rcWork.Width,
-                monitorInfo.rcWork.Height,
-                dpi,
-                scale
-            );
-        }
-
-        return new DisplayWorkArea(0, 0, 1920, 1080, 96, 1.0);
+        return new DisplayWorkArea(0, 0, Math.Max(1, NativeMethods.GetSystemMetrics(0)),
+            Math.Max(1, NativeMethods.GetSystemMetrics(1)), dpi, DpiHelper.GetScaleFactor(dpi));
     }
 
-    public CapsuleBounds CalculateCapsuleBounds(
-        IntPtr windowHandle,
-        bool isExpanded,
-        int collapsedWidth = 240,
-        int collapsedHeight = 38,
-        int expandedWidth = 660,
-        int expandedHeight = 500
-    )
+    private static IntPtr GetTargetMonitor(IntPtr windowHandle)
     {
-        var workArea = GetCurrentWorkArea(windowHandle);
-
-        return CalculateCapsuleBoundsFromWorkArea(
-            workArea.X,
-            workArea.Y,
-            workArea.Width,
-            workArea.Height,
-            workArea.DpiScaleFactor,
-            isExpanded,
-            collapsedWidth,
-            collapsedHeight,
-            expandedWidth,
-            expandedHeight
-        );
+        if (windowHandle != IntPtr.Zero)
+            return NativeMethods.MonitorFromWindow(windowHandle, NativeMethods.MONITOR_DEFAULTTONEAREST);
+        NativeMethods.GetCursorPos(out var pointer);
+        return NativeMethods.MonitorFromPoint(pointer, NativeMethods.MONITOR_DEFAULTTONEAREST);
     }
 
-    /// <summary>
-    /// Pure geometry helper: computes top-center capsule bounds from explicit work-area
-    /// coordinates (in physical pixels) and a DPI scale factor. The width/height parameters
-    /// are in DIPs (device-independent pixels).
-    /// </summary>
-    public static CapsuleBounds CalculateCapsuleBoundsFromWorkArea(
-        int workAreaX,
-        int workAreaY,
-        int workAreaWidth,
-        int workAreaHeight,
-        double dpiScale,
-        bool isExpanded,
-        int collapsedWidthDip = 240,
-        int collapsedHeightDip = 38,
-        int expandedWidthDip = 660,
-        int expandedHeightDip = 500
-    )
+    public CapsuleBounds CalculateCapsuleBounds(IntPtr windowHandle, bool isExpanded,
+        int collapsedWidth = 176, int collapsedHeight = 34, int expandedWidth = 860, int expandedHeight = 300)
     {
-        int targetWidthDip = isExpanded ? expandedWidthDip : collapsedWidthDip;
-        int targetHeightDip = isExpanded ? expandedHeightDip : collapsedHeightDip;
+        var work = GetCurrentWorkArea(windowHandle);
+        return CalculateCapsuleBoundsFromWorkArea(work.X, work.Y, work.Width, work.Height,
+            work.DpiScaleFactor, isExpanded, collapsedWidth, collapsedHeight, expandedWidth, expandedHeight);
+    }
 
-        // Scale DIPs to physical pixels
-        int physicalWidth = DpiHelper.DipToPhysical(targetWidthDip, dpiScale);
-        int physicalHeight = DpiHelper.DipToPhysical(targetHeightDip, dpiScale);
+    /// <summary>Top-centered physical bounds from a physical work area and DIP dimensions.</summary>
+    public static CapsuleBounds CalculateCapsuleBoundsFromWorkArea(int workAreaX, int workAreaY,
+        int workAreaWidth, int workAreaHeight, double dpiScale, bool isExpanded,
+        int collapsedWidthDip = 176, int collapsedHeightDip = 34,
+        int expandedWidthDip = 860, int expandedHeightDip = 300)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(workAreaWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(workAreaHeight);
+        var widthDip = isExpanded ? expandedWidthDip : collapsedWidthDip;
+        var heightDip = isExpanded ? expandedHeightDip : collapsedHeightDip;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(widthDip);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(heightDip);
+        if (!double.IsFinite(dpiScale) || dpiScale <= 0) dpiScale = 1;
 
-        // Max bound safety: never let the expanded panel exceed 95% of work area width or 90% of height
-        int maxWidth = (int)(workAreaWidth * 0.95);
-        int maxHeight = (int)(workAreaHeight * 0.90);
-
-        physicalWidth = Math.Min(physicalWidth, maxWidth);
-        physicalHeight = Math.Min(physicalHeight, maxHeight);
-
-        // Center horizontally on active work area (in physical pixels)
-        int x = workAreaX + (workAreaWidth - physicalWidth) / 2;
-
-        // Position at the very top of the active display's work area with a 6px margin (scaled)
-        int topMarginPhysical = DpiHelper.DipToPhysical(6, dpiScale);
-        int y = workAreaY + topMarginPhysical;
-
-        // Bounds clamp
-        if (x < workAreaX) x = workAreaX;
-        if (x + physicalWidth > workAreaX + workAreaWidth)
-        {
-            x = workAreaX + workAreaWidth - physicalWidth;
-        }
-
-        return new CapsuleBounds(x, y, physicalWidth, physicalHeight);
+        var maxWidth = Math.Max(1, (int)(workAreaWidth * 0.95));
+        var maxHeight = Math.Max(1, (int)(workAreaHeight * 0.90));
+        // Clamp before conversion to int, including malformed/extreme scale values.
+        var width = (int)Math.Clamp(Math.Round(widthDip * dpiScale), 1, maxWidth);
+        var height = (int)Math.Clamp(Math.Round(heightDip * dpiScale), 1, maxHeight);
+        var margin = (int)Math.Clamp(Math.Round(6 * dpiScale), 0, workAreaHeight - height);
+        return new CapsuleBounds(workAreaX + (workAreaWidth - width) / 2,
+            workAreaY + margin, width, height);
     }
 
     public bool IsForegroundAppFullscreen(IntPtr windowHandle)
     {
-        var fgHwnd = NativeMethods.GetForegroundWindow();
-        if (fgHwnd == IntPtr.Zero || fgHwnd == windowHandle) return false;
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (foreground == IntPtr.Zero || foreground == windowHandle || NativeMethods.IsIconic(foreground)) return false;
 
-        var hMonitor = NativeMethods.MonitorFromWindow(fgHwnd, NativeMethods.MONITOR_DEFAULTTONEAREST);
-        var monitorInfo = new NativeMethods.MONITORINFO
-        {
-            cbSize = Marshal.SizeOf<NativeMethods.MONITORINFO>()
-        };
+        var monitor = NativeMethods.MonitorFromWindow(foreground, NativeMethods.MONITOR_DEFAULTTONEAREST);
+        if (monitor != GetTargetMonitor(windowHandle)) return false;
 
-        if (NativeMethods.GetMonitorInfo(hMonitor, ref monitorInfo))
-        {
-            if (NativeMethods.GetWindowRect(fgHwnd, out var fgRect))
-            {
-                // Fullscreen detection: window covers or exceeds the entire monitor rectangle
-                return fgRect.Left <= monitorInfo.rcMonitor.Left &&
-                       fgRect.Top <= monitorInfo.rcMonitor.Top &&
-                       fgRect.Right >= monitorInfo.rcMonitor.Right &&
-                       fgRect.Bottom >= monitorInfo.rcMonitor.Bottom;
-            }
-        }
-
-        return false;
+        // The desktop is also a monitor-sized window; it must not hide AMORA.
+        var className = new StringBuilder(256);
+        NativeMethods.GetClassName(foreground, className, className.Capacity);
+        var info = new NativeMethods.MONITORINFO { cbSize = Marshal.SizeOf<NativeMethods.MONITORINFO>() };
+        return NativeMethods.GetMonitorInfo(monitor, ref info)
+            && NativeMethods.GetWindowRect(foreground, out var bounds)
+            && ShouldSuppressForegroundWindow(bounds, info.rcMonitor, className.ToString(),
+                NativeMethods.GetWindowLongPtr(foreground, NativeMethods.GWL_STYLE).ToInt64());
     }
+
+    public static bool ShouldSuppressForegroundWindow(NativeMethods.RECT window, NativeMethods.RECT monitor,
+        string className, long windowStyle) =>
+        // With an auto-hidden taskbar, maximized ordinary apps can cover every
+        // monitor pixel. Their caption style distinguishes them from a borderless
+        // fullscreen game/presentation, avoiding an unexpected disappearing island.
+        !IsDesktopWindowClass(className) && (windowStyle & NativeMethods.WS_CAPTION) != NativeMethods.WS_CAPTION &&
+        CoversMonitor(window, monitor);
+
+    public static bool IsDesktopWindowClass(string className) =>
+        className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
+
+    public static bool CoversMonitor(NativeMethods.RECT window, NativeMethods.RECT monitor) =>
+        monitor.Width > 0 && monitor.Height > 0 && window.Width > 0 && window.Height > 0 &&
+        window.Left <= monitor.Left && window.Top <= monitor.Top &&
+        window.Right >= monitor.Right && window.Bottom >= monitor.Bottom;
 }

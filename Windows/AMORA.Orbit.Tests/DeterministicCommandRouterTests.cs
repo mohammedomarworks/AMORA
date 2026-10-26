@@ -10,6 +10,22 @@ public class DeterministicCommandRouterTests
 {
     private readonly DeterministicCommandRouter _router = new();
 
+    [Theory]
+    [InlineData("start 2147483647h timer")]
+    [InlineData("start 2147483647m timer")]
+    [InlineData("countdown 2147483647m")]
+    [InlineData("start 1h and 999999999999999999999m timer")]
+    [InlineData("start 0s timer")]
+    [InlineData("countdown 0s")]
+    public void Route_RejectsOutOfRangeDurationInsteadOfWrapping(string input) =>
+        Assert.IsNotType<AssistantCommand.StartTimer>(_router.Route(input, DefaultContext));
+
+    [Theory]
+    [InlineData("add 2147483647m")]
+    [InlineData("add 0m")]
+    public void Route_RejectsOutOfRangeAdjustment(string input) =>
+        Assert.IsNotType<AssistantCommand.AddTimerTime>(_router.Route(input, DefaultContext));
+
     private static CommandContext DefaultContext => new(
         IsTimerActive: false,
         IsTimerRunning: false,

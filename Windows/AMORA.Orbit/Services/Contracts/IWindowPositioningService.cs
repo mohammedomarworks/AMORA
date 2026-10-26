@@ -22,10 +22,10 @@ public interface IWindowPositioningService
     CapsuleBounds CalculateCapsuleBounds(
         IntPtr windowHandle,
         bool isExpanded,
-        int collapsedWidth = 240,
-        int collapsedHeight = 38,
-        int expandedWidth = 660,
-        int expandedHeight = 500
+        int collapsedWidth = 176,
+        int collapsedHeight = 34,
+        int expandedWidth = 860,
+        int expandedHeight = 300
     );
 
     /// <summary>

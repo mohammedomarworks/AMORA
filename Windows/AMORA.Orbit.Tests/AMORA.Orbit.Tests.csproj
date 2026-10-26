@@ -7,6 +7,13 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Use the NuGet-supplied Windows App SDK build tasks, as the app does,
+         instead of legacy tasks that require a Visual Studio installation. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- These are non-UI xUnit tests, with XAML inspected as source fixtures.
+         The referenced WinUI application still generates its normal resources.pri. -->
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Version>0.6.0-beta.2</Version>
@@ -31,5 +38,7 @@
 
   <ItemGroup>
     <None Include="..\AMORA.Orbit\App.xaml" Link="Fixtures\App.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\AMORA.Orbit\MainWindow.xaml" Link="Fixtures\MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\AMORA.Orbit\Views\*.xaml" Link="Fixtures\Views\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

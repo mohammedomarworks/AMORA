@@ -1,0 +1,5 @@
+# Generated .NET / WinUI build and local verification output.
+**/bin/
+**/obj/
+**/TestResults/
+*.binlog

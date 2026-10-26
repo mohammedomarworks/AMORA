@@ -1,113 +1,20 @@
-<UserControl
-    x:Class="AMORA.Orbit.Views.MediaControlView"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:vm="using:AMORA.Orbit.ViewModels"
-    mc:Ignorable="d"
-    d:DataContext="{d:DesignInstance Type=vm:MediaControlViewModel}">
-
-    <Border Background="{StaticResource OrbitCardBrush}"
-            BorderBrush="{StaticResource OrbitBorderBrush}"
-            BorderThickness="1"
-            CornerRadius="16"
-            Padding="14,12">
-        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
-            <!-- Header & Track Info -->
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                <!-- Album Art / Source Icon -->
-                <Border Grid.Column="0"
-                        Width="44" Height="44"
-                        CornerRadius="10"
-                        Background="#1E2333"
-                        BorderBrush="#2D3449"
-                        BorderThickness="1">
-                    <FontIcon Glyph="&#xE8D6;"
-                              FontSize="20"
-                              Foreground="{StaticResource OrbitCyanAccentBrush}"
-                              HorizontalAlignment="Center"
-                              VerticalAlignment="Center" />
-                </Border>
-
-                <!-- Track Details -->
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                    <TextBlock Text="{Binding Title}"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource OrbitTextPrimaryBrush}"
-                               TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding Artist}"
-                               FontSize="11"
-                               Foreground="{StaticResource OrbitTextSecondaryBrush}"
-                               TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-
-                <!-- Source Badge -->
-                <Border Grid.Column="2"
-                        Background="#1C2130"
-                        CornerRadius="6"
-                        Padding="6,3"
-                        VerticalAlignment="Top">
-                    <TextBlock Text="{Binding SourceName}"
-                               FontSize="10"
-                               FontWeight="Medium"
-                               Foreground="{StaticResource OrbitCyanGlowBrush}" />
-                </Border>
-            </Grid>
-
-            <!-- Progress Bar & Timestamps -->
-            <Grid Grid.Row="1" RowDefinitions="Auto,Auto" RowSpacing="4">
-                <ProgressBar Grid.Row="0"
-                             Value="{Binding ProgressRatio, Mode=OneWay}"
-                             Maximum="1.0"
-                             Height="4"
-                             CornerRadius="2"
-                             Foreground="{StaticResource OrbitCyanAccentBrush}"
-                             Background="#1F2433" />
-
-                <TextBlock Grid.Row="1"
-                           Text="{Binding FormattedProgress}"
-                           FontSize="10"
-                           Foreground="{StaticResource OrbitTextMutedBrush}"
-                           HorizontalAlignment="Right" />
-            </Grid>
-
-            <!-- Playback Controls -->
-            <Grid Grid.Row="2">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16">
-                    <!-- Previous Track -->
-                    <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                            AutomationProperties.Name="Previous Track"
-                            Click="OnPreviousClicked"
-                            ToolTipService.ToolTip="Previous Track">
-                        <FontIcon Glyph="&#xE892;" FontSize="14" />
-                    </Button>
-
-                    <!-- Play / Pause -->
-                    <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
-                            Width="36" Height="36"
-                            Padding="0"
-                            CornerRadius="18"
-                            AutomationProperties.Name="Play or Pause Media"
-                            Click="OnPlayPauseClicked"
-                            ToolTipService.ToolTip="Play / Pause">
-                        <FontIcon Glyph="{Binding PlayPauseIconGlyph}"
-                                  FontSize="14"
-                                  Foreground="#0D0F17"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center" />
-                    </Button>
-
-                    <!-- Next Track -->
-                    <Button Style="{StaticResource OrbitGhostButtonStyle}"
-                            AutomationProperties.Name="Next Track"
-                            Click="OnNextClicked"
-                            ToolTipService.ToolTip="Next Track">
-                        <FontIcon Glyph="&#xE893;" FontSize="14" />
-                    </Button>
-                </StackPanel>
-            </Grid>
-        </Grid>
-    </Border>
+<UserControl x:Class="AMORA.Orbit.Views.MediaControlView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Border Background="{ThemeResource OrbitCardBrush}" BorderBrush="#3D535D" BorderThickness="1" CornerRadius="12" Padding="10,8">
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="4">
+   <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8"><FontIcon Glyph="&#xE8D6;" FontSize="13" Foreground="{ThemeResource OrbitCyanAccentBrush}"/>
+    <StackPanel Grid.Column="1"><TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Artist}" FontSize="11" Foreground="#A6ABB2" TextTrimming="CharacterEllipsis"/></StackPanel></Grid>
+   <Grid Grid.Row="1" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+    <TextBlock Text="{Binding SourceName}" FontSize="11" Foreground="{ThemeResource OrbitCyanAccentBrush}" VerticalAlignment="Center"/>
+    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+     <Button Style="{StaticResource OrbitGhostButtonStyle}" Padding="8,5" IsEnabled="{Binding CanPrevious}" AutomationProperties.Name="Previous Track" Click="OnPreviousClicked"><FontIcon Glyph="&#xE892;" FontSize="11"/></Button>
+     <Button Style="{StaticResource OrbitActionButtonStyle}" Padding="8,5" IsEnabled="{Binding CanPlayPause}" AutomationProperties.Name="Play or Pause Media" Click="OnPlayPauseClicked"><FontIcon Glyph="{Binding PlayPauseIconGlyph}" FontSize="11"/></Button>
+     <Button Style="{StaticResource OrbitGhostButtonStyle}" Padding="8,5" IsEnabled="{Binding CanNext}" AutomationProperties.Name="Next Track" Click="OnNextClicked"><FontIcon Glyph="&#xE893;" FontSize="11"/></Button>
+    </StackPanel>
+   </Grid>
+   <StackPanel Grid.Row="2" Spacing="2">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Visibility="{Binding HasProgress, Converter={StaticResource BoolToVis}}"><ProgressBar Value="{Binding ProgressRatio}" Maximum="1" Height="2" VerticalAlignment="Center" Foreground="{ThemeResource OrbitCyanAccentBrush}"/><TextBlock Grid.Column="1" Text="{Binding FormattedProgress}" FontSize="9" Foreground="#A6ABB2"/></Grid>
+    <TextBlock Text="{Binding StatusText}" Visibility="{Binding HasActionStatus, Converter={StaticResource BoolToVis}}" FontSize="10" Foreground="#F3B365" TextTrimming="CharacterEllipsis"/>
+   </StackPanel>
+  </Grid>
+ </Border>
 </UserControl>

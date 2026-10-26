@@ -36,5 +36,6 @@
 
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
+    <EmbeddedResource Include="Assets\Licenses\*.txt" />
   </ItemGroup>
 </Project>

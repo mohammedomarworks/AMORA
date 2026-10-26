@@ -193,7 +193,8 @@ public class AssistantEngineAIToolExecutionTests : IDisposable
 
         Assert.Equal(AssistantResultStatus.Failed, result.Status);
         Assert.Contains("AI request failed", result.Message);
-        Assert.Contains("invalid Gemini API key", result.Message);
+        Assert.Contains("credentials were rejected", result.Message);
+        Assert.DoesNotContain("invalid Gemini API key", result.Message);
         Assert.Equal(MascotMood.Alert, result.Mood);
     }
 

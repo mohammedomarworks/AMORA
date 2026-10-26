@@ -10,7 +10,7 @@ public class MascotExpressionTests
     {
         var idle = MascotExpression.Idle();
         Assert.Equal(MascotMood.Idle, idle.Mood);
-        Assert.Equal(EyeShape.Circle, idle.Eye);
+        Assert.Equal(EyeShape.HappyArcs, idle.Eye);
         Assert.Equal(MouthShape.GentleSmile, idle.Mouth);
 
         var focused = MascotExpression.Focused();
@@ -20,7 +20,7 @@ public class MascotExpressionTests
         var happy = MascotExpression.Happy();
         Assert.Equal(MascotMood.Happy, happy.Mood);
         Assert.Equal(EyeShape.HappyArcs, happy.Eye);
-        Assert.Equal(MouthShape.BigSmile, happy.Mouth);
+        Assert.Equal(MouthShape.GentleSmile, happy.Mouth);
 
         var thinking = MascotExpression.Thinking();
         Assert.Equal(MascotMood.Thinking, thinking.Mood);

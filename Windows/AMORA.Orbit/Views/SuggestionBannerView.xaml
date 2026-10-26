@@ -11,12 +11,12 @@
     <Border Background="{StaticResource OrbitCardBrush}"
             BorderBrush="{StaticResource OrbitBorderBrush}"
             BorderThickness="1"
-            CornerRadius="16"
-            Padding="14,10">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+            CornerRadius="12"
+            Padding="10,8">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
             <!-- Icon Badge -->
             <Border Grid.Column="0"
-                    Width="32" Height="32"
+                    Width="24" Height="24"
                     CornerRadius="10"
                     Background="#1F2538"
                     HorizontalAlignment="Center"

@@ -9,9 +9,12 @@ public class SuggestionViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly ISuggestionService _suggestionService;
     private ProactiveSuggestion? _suggestion;
+    private readonly Action<Action> _dispatch;
+    private bool _disposed;
 
-    public SuggestionViewModel(ISuggestionService suggestionService)
+    public SuggestionViewModel(ISuggestionService suggestionService, Action<Action>? dispatch = null)
     {
+        _dispatch = dispatch ?? (action => action());
         _suggestionService = suggestionService ?? throw new ArgumentNullException(nameof(suggestionService));
         _suggestion = _suggestionService.ActiveSuggestion;
 
@@ -27,7 +30,7 @@ public class SuggestionViewModel : INotifyPropertyChanged, IDisposable
 
     public string Message => _suggestion != null
         ? _suggestion.Message
-        : (_suggestionService.IsEnabled ? "AMORA Orbit is monitoring your workspace." : "Turn on proactive suggestions in Settings for smart workspace insights.");
+        : (_suggestionService.IsEnabled ? "No suggestions right now. Enjoy your flow." : "Optional local suggestions are off. Enable them in Settings.");
 
     public string ActionLabel => _suggestion?.ActionLabel ?? string.Empty;
     public string Category => _suggestion?.Category ?? "Insights";
@@ -66,6 +69,12 @@ public class SuggestionViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnSuggestionChanged(object? sender, ProactiveSuggestion? suggestion)
     {
+        _dispatch(() => ApplySuggestion(suggestion));
+    }
+
+    private void ApplySuggestion(ProactiveSuggestion? suggestion)
+    {
+        if (_disposed) return;
         _suggestion = suggestion;
         OnPropertyChanged(nameof(CurrentSuggestion));
         OnPropertyChanged(nameof(HasSuggestion));
@@ -84,6 +93,7 @@ public class SuggestionViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _suggestionService.ActiveSuggestionChanged -= OnSuggestionChanged;
     }
 }
