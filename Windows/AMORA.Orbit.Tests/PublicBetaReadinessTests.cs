@@ -47,7 +47,7 @@ public class PublicBetaReadinessTests : IDisposable
         Assert.True(File.Exists(logFile));
 
         string content = File.ReadAllText(logFile);
-        Assert.Contains("v0.6.0-beta", content);
+        Assert.Contains("v0.6.0-beta.2", content);
         Assert.Contains("InvalidOperationException", content);
         Assert.Contains("Timestamp:", content);
         Assert.Contains("StartupStage: window-activation", content);

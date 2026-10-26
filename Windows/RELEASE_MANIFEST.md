@@ -1,7 +1,7 @@
 # AMORA Orbit — Windows Public Beta Release Manifest
 
-**Package:** `AMORA.Orbit-v0.6.0-beta-win-x64.zip`
-**Version:** `0.6.0-beta`
+**Package:** `AMORA.Orbit-v0.6.0-beta.2-win-x64.zip`
+**Version:** `0.6.0-beta.2`
 **Release Channel:** Controlled Public Beta
 **Target Architecture:** Windows x64 (`win-x64`)
 **Target Framework:** .NET 8 (`net8.0-windows10.0.19041.0`)
@@ -60,7 +60,7 @@ The Actions artifact uploaded for CI debugging expires after 30 days. It is not 
 ## 4. Installation & First Launch
 
 ### Installation
-1. Open the [AMORA GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases), select the `AMORA Orbit v0.6.0-beta` pre-release, and download `AMORA.Orbit-v0.6.0-beta-win-x64.zip`.
+1. Open the [AMORA GitHub Releases page](https://github.com/mohammedomarworks/AMORA/releases), select the `AMORA Orbit v0.6.0-beta.2` pre-release, and download `AMORA.Orbit-v0.6.0-beta.2-win-x64.zip`.
 2. Extract the archive into a dedicated folder (recommended: `%LocalAppData%\Programs\AMORA.Orbit` or any portable folder).
 3. Run `AMORA.Orbit.exe`.
 4. *(Optional)* Right-click `AMORA.Orbit.exe` -> **Pin to Start** or **Show more options -> Create shortcut** on Desktop.

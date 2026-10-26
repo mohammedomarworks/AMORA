@@ -52,6 +52,8 @@ jobs:
           [xml]$project = Get-Content Windows/AMORA.Orbit/AMORA.Orbit.csproj -Raw
           [xml]$testProject = Get-Content Windows/AMORA.Orbit.Tests/AMORA.Orbit.Tests.csproj -Raw
           $version = $project.SelectSingleNode('/Project/PropertyGroup/Version').InnerText.Trim()
+          $assemblyVersion = $project.SelectSingleNode('/Project/PropertyGroup/AssemblyVersion').InnerText.Trim()
+          $fileVersion = $project.SelectSingleNode('/Project/PropertyGroup/FileVersion').InnerText.Trim()
           $informationalVersion = $project.SelectSingleNode('/Project/PropertyGroup/InformationalVersion').InnerText.Trim()
           $testVersion = $testProject.SelectSingleNode('/Project/PropertyGroup/Version').InnerText.Trim()
           if ($version -ne $testVersion -or $version -ne $informationalVersion) {
@@ -59,6 +61,12 @@ jobs:
           }
           if ($version -notmatch '^\d+\.\d+\.\d+-beta(?:\.\d+)?$') {
             throw "Expected a beta version in AMORA.Orbit.csproj; found '$version'."
+          }
+          if ($assemblyVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or $fileVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+            throw "AssemblyVersion '$assemblyVersion' and FileVersion '$fileVersion' must use four-part numeric versions."
+          }
+          if ($assemblyVersion -ne $fileVersion) {
+            throw "AssemblyVersion '$assemblyVersion' and FileVersion '$fileVersion' must agree."
           }
 
           $archiveName = "AMORA.Orbit-v$version-win-x64.zip"
