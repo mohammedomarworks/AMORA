@@ -100,4 +100,27 @@ public class SettingsViewModelTests
         var vm2 = new SettingsViewModel(settingsService, mockProvider);
         Assert.True(vm2.SendStatusContextToAI);
     }
+
+    [Fact]
+    public async Task SettingsViewModel_EnableProactiveSuggestions_DefaultsFalseAndPersists()
+    {
+        var credStorage = new InMemoryCredentialStorage();
+        var settingsService = new AISettingsService(credStorage);
+        var mockProvider = new MockAIProvider();
+
+        var vm = new SettingsViewModel(settingsService, mockProvider);
+
+        // Opt-in check: must default to false!
+        Assert.False(vm.EnableProactiveSuggestions);
+
+        // Toggle on and save
+        vm.EnableProactiveSuggestions = true;
+        await vm.SaveAsync();
+
+        Assert.True(settingsService.CurrentSettings.EnableProactiveSuggestions);
+
+        // Verify newly constructed ViewModel reads persisted setting
+        var vm2 = new SettingsViewModel(settingsService, mockProvider);
+        Assert.True(vm2.EnableProactiveSuggestions);
+    }
 }

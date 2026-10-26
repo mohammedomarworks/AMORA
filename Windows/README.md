@@ -126,6 +126,7 @@ Windows/
     ├── MascotExpressionTests.cs                  # Expression factory state tests
     ├── MediaTrackTests.cs                        # Duration formatting & progress percent tests
     ├── PositioningServiceTests.cs                # Work area centering, DPI & clamping tests
+    ├── ProactiveSuggestionEngineTests.cs        # Opt-in defaults, triggers, cooldowns, duplicate suppression & safety tests
     ├── SecureCredentialStorageTests.cs           # DPAPI / in-memory credential storage & masking tests
     ├── SettingsViewModelTests.cs                 # Settings lifecycle, key save/clear & connection testing
     ├── SuggestionServiceTests.cs                 # Action execution, snooze, and dismiss tests
@@ -147,6 +148,7 @@ Phase 6E connects AMORA Orbit to an end-to-end assistant command execution engin
 7. **Allowlisted Consequential Actions**: Consequential or destructive operations (e.g., "reset settings", "clear all memories") require a mandatory two-step confirmation workflow before any mutation is permitted.
 8. **Bounded Session-Only Conversational Context (`ConversationSession`)**: Implements multi-turn conversational follow-up understanding using Gemini's native alternating `user`/`model` content history. Context is held strictly in memory with configurable turn limits (default: 6 turns) and predictable FIFO trimming that guarantees history always starts with a user turn. Never persists conversation content to disk or logs sensitive prompts. Failed requests and cancellations are safely omitted, and conversation can be reset via UI button or deterministic commands.
 9. **Privacy-First Context Awareness V1 (`AmoraContextSnapshot`)**: Synthesizes a compact, read-only context snapshot exclusively from AMORA-owned services (`ITimerService`, `IMediaService`, `IBatteryService`, `ISystemTelemetryService`). Resolves contextual follow-ups ("pause it", "how much time is left?", "am I charging?") deterministically without cloud AI when possible. Never captures screenshots, clipboard contents, keystrokes, window titles, or file systems. Status context is never sent to the AI provider unless the user explicitly opts in via a dedicated Settings toggle (`SendStatusContextToAI`, default: off). Snapshots are ephemeral and strictly excluded from conversation history turns.
+10. **Proactive AMORA V1 (`ProactiveSuggestionService`)**: Implements a lightweight, privacy-first proactive suggestion engine generating deterministic local insights strictly from AMORA-owned state (timer completions and low battery while unplugged). Opt-in by default (`EnableProactiveSuggestions`, default: off). Displays at most one suggestion at a time inside the existing Orbit UI, with duplicate suppression, cooldowns, and dismissal respect. Resolves obsolete alerts automatically (e.g. plugging in power clears low battery alerts; starting a new timer clears completion alerts). Never calls cloud AI, captures screenshots, or spams notifications. Offers safe actions without ever auto-executing.
 
 ---
 

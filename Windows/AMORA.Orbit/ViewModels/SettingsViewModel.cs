@@ -17,6 +17,7 @@ public class SettingsViewModel : INotifyPropertyChanged
     private string _selectedProvider;
     private string _modelName;
     private bool _sendStatusContextToAI;
+    private bool _enableProactiveSuggestions;
     private string _apiKeyInput = string.Empty;
     private string _maskedApiKey = string.Empty;
     private bool _hasSavedKey;
@@ -34,6 +35,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         _selectedProvider = settings.SelectedProvider;
         _modelName = settings.Model;
         _sendStatusContextToAI = settings.SendStatusContextToAI;
+        _enableProactiveSuggestions = settings.EnableProactiveSuggestions;
 
         _ = RefreshKeyStatusAsync();
     }
@@ -93,6 +95,19 @@ public class SettingsViewModel : INotifyPropertyChanged
             if (_sendStatusContextToAI != value)
             {
                 _sendStatusContextToAI = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool EnableProactiveSuggestions
+    {
+        get => _enableProactiveSuggestions;
+        set
+        {
+            if (_enableProactiveSuggestions != value)
+            {
+                _enableProactiveSuggestions = value;
                 OnPropertyChanged();
             }
         }
@@ -218,7 +233,8 @@ public class SettingsViewModel : INotifyPropertyChanged
         {
             SelectedProvider = _selectedProvider,
             Model = !string.IsNullOrWhiteSpace(_modelName) ? _modelName.Trim() : AISettings.DefaultGeminiModel,
-            SendStatusContextToAI = _sendStatusContextToAI
+            SendStatusContextToAI = _sendStatusContextToAI,
+            EnableProactiveSuggestions = _enableProactiveSuggestions
         };
 
         await _settingsService.SaveSettingsAsync(updated);

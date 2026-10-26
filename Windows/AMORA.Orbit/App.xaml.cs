@@ -19,34 +19,25 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        // 1. Instantiate Services
+        // 1. Instantiate Core & Secure Settings Services
+        ISecureCredentialStorage credentialStorage = new WindowsCredentialStorage();
+        IAISettingsService aiSettingsService = new AISettingsService(credentialStorage);
+
         IWindowPositioningService positioningService = new WindowsWindowPositioningService();
         IBatteryService batteryService = new WindowsBatteryService();
         ISystemTelemetryService telemetryService = new WindowsSystemTelemetryService();
         IMediaService mediaService = new PreviewMediaService(); // Falls back to interactive preview
         ITimerService timerService = new StandardTimerService();
-        ISuggestionService suggestionService = new ProactiveSuggestionService();
+        ISuggestionService suggestionService = new ProactiveSuggestionService(
+            timerService,
+            batteryService,
+            aiSettingsService,
+            () => aiSettingsService.CurrentSettings
+        );
         var hotKeyService = new WindowsHotKeyService();
         var trayService = new TaskbarTrayService();
 
-        // Seed an initial demo suggestion matching the design concept
-        suggestionService.PresentSuggestion(new Models.ProactiveSuggestion(
-            Id: "sug-init-1",
-            Title: "High Focus Session Recommended",
-            Message: "You have 45 minutes of uninterrupted calendar time. Start 25m Pomodoro focus?",
-            ActionLabel: "Start Focus",
-            Category: "Productivity",
-            Priority: Models.SuggestionPriority.Medium,
-            OnAction: () =>
-            {
-                timerService.Start(TimeSpan.FromMinutes(25), "Pomodoro Focus");
-                return Task.CompletedTask;
-            }
-        ));
-
-        // 2. Instantiate Secure Storage, AI Provider & ViewModels
-        ISecureCredentialStorage credentialStorage = new WindowsCredentialStorage();
-        IAISettingsService aiSettingsService = new AISettingsService(credentialStorage);
+        // 2. Instantiate AI Provider & ViewModels
 
         IAIProvider aiProvider = new GeminiAIProvider(
             () => aiSettingsService.GetApiKeyAsync(AISettings.ProviderGemini),
@@ -93,18 +84,22 @@ public partial class App : Application
 
         // 3. Create and activate Window
         _mainWindow = new MainWindow(_orbitViewModel, hotKeyService, trayService);
-        var aiProviderDisposed = false;
+        var servicesDisposed = false;
         _mainWindow.Closed += (_, _) =>
         {
-            if (aiProviderDisposed)
+            if (servicesDisposed)
             {
                 return;
             }
 
-            aiProviderDisposed = true;
+            servicesDisposed = true;
             if (aiProvider is IDisposable disposableProvider)
             {
                 disposableProvider.Dispose();
+            }
+            if (suggestionService is IDisposable disposableSuggestion)
+            {
+                disposableSuggestion.Dispose();
             }
         };
         _mainWindow.Activate();

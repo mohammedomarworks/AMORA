@@ -21,10 +21,16 @@ public class SuggestionViewModel : INotifyPropertyChanged, IDisposable
     public ProactiveSuggestion? CurrentSuggestion => _suggestion;
     public bool HasSuggestion => _suggestion != null;
 
-    public string Title => _suggestion?.Title ?? "No active alerts";
-    public string Message => _suggestion?.Message ?? "AMORA Orbit is monitoring your workspace.";
-    public string ActionLabel => _suggestion?.ActionLabel ?? "Review";
-    public string Category => _suggestion?.Category ?? "General";
+    public string Title => _suggestion != null
+        ? _suggestion.Title
+        : (_suggestionService.IsEnabled ? "All caught up" : "Suggestions Disabled");
+
+    public string Message => _suggestion != null
+        ? _suggestion.Message
+        : (_suggestionService.IsEnabled ? "AMORA Orbit is monitoring your workspace." : "Turn on proactive suggestions in Settings for smart workspace insights.");
+
+    public string ActionLabel => _suggestion?.ActionLabel ?? string.Empty;
+    public string Category => _suggestion?.Category ?? "Insights";
 
     public string PriorityBadgeColor => _suggestion?.Priority switch
     {

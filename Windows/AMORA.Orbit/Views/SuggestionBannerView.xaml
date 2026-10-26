@@ -50,7 +50,8 @@
             </StackPanel>
 
             <!-- Action Controls -->
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                        Visibility="{Binding HasSuggestion, Converter={StaticResource BoolToVis}}">
                 <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
                         Padding="10,4"
                         FontSize="11"

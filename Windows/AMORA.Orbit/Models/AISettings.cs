@@ -12,7 +12,8 @@ public record AISettings(
     int MaxOutputTokens = 1024,
     string? CustomEndpoint = null,
     int MaxHistoryTurns = AISettings.DefaultMaxHistoryTurns,
-    bool SendStatusContextToAI = false
+    bool SendStatusContextToAI = false,
+    bool EnableProactiveSuggestions = false
 )
 {
     public const string ProviderGemini = "gemini";

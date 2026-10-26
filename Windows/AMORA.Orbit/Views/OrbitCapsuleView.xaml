@@ -189,6 +189,13 @@
                                        FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" VerticalAlignment="Center" />
                         </CheckBox>
 
+                        <!-- Proactive Suggestions Opt-In Toggle -->
+                        <CheckBox IsChecked="{Binding Settings.EnableProactiveSuggestions, Mode=TwoWay}"
+                                  Margin="0,2,0,2">
+                            <TextBlock Text="Enable proactive suggestions (local, deterministic smart insights; default: Off)"
+                                       FontSize="10" Foreground="{StaticResource OrbitTextMutedBrush}" VerticalAlignment="Center" />
+                        </CheckBox>
+
                         <!-- Action Buttons & Status -->
                         <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
                             <Button Grid.Column="0" Style="{StaticResource OrbitPrimaryActionButtonStyle}"
@@ -363,7 +370,8 @@
                             </Border>
 
                             <!-- Action Buttons -->
-                            <StackPanel Grid.Row="3" Spacing="6">
+                            <StackPanel Grid.Row="3" Spacing="6"
+                                        Visibility="{Binding Suggestion.HasSuggestion, Converter={StaticResource BoolToVis}}">
                                 <Button Style="{StaticResource OrbitPrimaryActionButtonStyle}"
                                         HorizontalAlignment="Stretch"
                                         Click="OnLeftPrimaryActionClicked">

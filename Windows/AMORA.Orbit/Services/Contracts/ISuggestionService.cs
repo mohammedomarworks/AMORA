@@ -5,6 +5,7 @@ namespace AMORA.Orbit.Services.Contracts;
 public interface ISuggestionService
 {
     ProactiveSuggestion? ActiveSuggestion { get; }
+    bool IsEnabled => true;
 
     event EventHandler<ProactiveSuggestion?>? ActiveSuggestionChanged;
 
@@ -12,4 +13,5 @@ public interface ISuggestionService
     Task ExecuteActiveActionAsync();
     void SnoozeActive(TimeSpan duration);
     void DismissActive();
+    void ClearActive() => DismissActive();
 }
