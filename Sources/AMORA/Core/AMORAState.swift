@@ -40,9 +40,11 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
         case .grumpy: return 66
         case .sad: return 65
         case .affection: return 64
+        // Music must remain visible while the cursor is over the collapsed
+        // notch. Thinking, focused work, and expanded content still outrank it.
+        case .music: return 62
         case .hover: return 60
         case .concerned: return 56
-        case .music: return 50
         case .excited: return 46
         case .happy: return 40
         case .curious: return 35
@@ -83,6 +85,11 @@ final class AMORAStateManager {
     }
 
     func transition(to newState: AMORAState) {
+        if MusicService.shared.isPlaying,
+           currentState == .music,
+           newState.priority < AMORAState.music.priority {
+            return
+        }
         guard currentState.canTransition(to: newState) || newState.priority > currentState.priority else { return }
         currentState = newState
     }
