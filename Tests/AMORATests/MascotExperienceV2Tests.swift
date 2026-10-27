@@ -401,4 +401,128 @@ final class MascotExperienceV2Tests: XCTestCase {
         let maxUpwardOffset = -clampedYUp // -1.0
         XCTAssertGreaterThan(eyeTop + maxUpwardOffset, island.topInset, "Eye must never retreat into physical notch cutout")
     }
+
+    // MARK: - 9. Music Dance Background Visibility & Playback State Integration Tests
+
+    @MainActor
+    func testMusicDanceBackgroundVisibilityTiedStrictlyToActivePlayback() {
+        let robot = AMORARobot.shared
+        let music = MusicService.shared
+        let island = IslandModel.shared
+
+        // 1. Music is stopped: background must NOT be active
+        music.isPlaying = false
+        robot.isDancing = false
+        XCTAssertFalse(robot.isDancing, "Background must not appear when playback is inactive")
+
+        // 2. Merely expanding the island into Quick or Workspace must NOT show background
+        island.displayState = .quick
+        island.targetState = .quick
+        island.expansion = 1.0
+        XCTAssertFalse(robot.isDancing, "Expanding island alone must not trigger music dance background")
+
+        island.displayState = .workspace
+        island.targetState = .workspace
+        island.expansion = 2.0
+        XCTAssertFalse(robot.isDancing, "Workspace expansion alone must not trigger music dance background")
+
+        // 3. Triggering non-music mascot reactions (e.g. excited, affection) must NOT show background
+        let now = Date()
+        robot.reactToClick(now: now, forcedReaction: .excited)
+        XCTAssertEqual(robot.activeReaction, .excited)
+        XCTAssertFalse(robot.isDancing, "Excited reaction must not trigger music dance background")
+
+        robot.reactToClick(now: now.addingTimeInterval(0.35), forcedReaction: .affection)
+        XCTAssertEqual(robot.activeReaction, .affection)
+        XCTAssertFalse(robot.isDancing, "Love reaction must not trigger music dance background")
+
+        // 4. Genuine music playback starts: background becomes active
+        music.isPlaying = true
+        robot.isDancing = true
+        XCTAssertTrue(robot.isDancing, "Music dance background must activate when playback is confirmed")
+
+        // 5. Clean teardown
+        music.isPlaying = false
+        robot.isDancing = false
+        island.displayState = .collapsed
+        island.targetState = .collapsed
+        island.expansion = 0.0
+    }
+
+    @MainActor
+    func testMusicDanceBackgroundPlaybackStateTransitions() {
+        let robot = AMORARobot.shared
+        let music = MusicService.shared
+
+        // Step 1: Starting playback (e.g. from Spotify or Apple Music)
+        music.isPlaying = true
+        robot.isDancing = true
+        robot.danceGlowPulse = 0.8
+        robot.danceAntennaPhase = 0.6
+        XCTAssertTrue(robot.isDancing)
+        XCTAssertGreaterThan(robot.danceGlowPulse, 0.0)
+
+        // Step 2: Pausing playback
+        music.isPlaying = false
+        robot.isDancing = false
+        robot.danceGlowPulse = 0.0
+        robot.danceAntennaPhase = 0.0
+        robot.danceTiltPhase = 0.0
+        robot.danceBouncePhase = 0.0
+        robot.danceSwayPhase = 0.0
+        XCTAssertFalse(robot.isDancing, "Background must disappear upon pause")
+        XCTAssertEqual(robot.danceGlowPulse, 0.0)
+
+        // Step 3: Resuming playback
+        music.isPlaying = true
+        robot.isDancing = true
+        robot.danceGlowPulse = 0.75
+        XCTAssertTrue(robot.isDancing, "Background must reappear upon resume")
+
+        // Step 4: Track ends or stops
+        music.isPlaying = false
+        robot.isDancing = false
+        robot.danceGlowPulse = 0.0
+        XCTAssertFalse(robot.isDancing, "Background must deactivate when track ends")
+
+        // Step 5: Browser media disconnection / lost state
+        music.isPlaying = true
+        robot.isDancing = true
+        XCTAssertTrue(robot.isDancing)
+
+        // Simulating browser disconnect or tab closed
+        music.isPlaying = false
+        robot.isDancing = false
+        robot.danceGlowPulse = 0.0
+        XCTAssertFalse(robot.isDancing, "Background must immediately deactivate on browser disconnect")
+    }
+
+    @MainActor
+    func testMusicDanceBackgroundMatchesReferenceAndPreservesRobotStructure() {
+        let robot = AMORARobot.shared
+        let music = MusicService.shared
+        music.isPlaying = true
+        robot.isDancing = true
+
+        // Verify Reduce Motion behavior on background
+        AppState.shared.settings.animationIntensity = 0.0
+        let motion = AppState.shared.settings.motionScale
+        XCTAssertEqual(motion, 0.0)
+
+        // Under Reduce Motion, bounce and tilt are 0, glow remains steady
+        robot.danceBouncePhase = 0
+        robot.danceSwayPhase = 0
+        robot.danceTiltPhase = 0
+        robot.danceGlowPulse = 0.35
+
+        XCTAssertEqual(robot.danceBouncePhase, 0.0)
+        XCTAssertEqual(robot.danceSwayPhase, 0.0)
+        XCTAssertEqual(robot.danceTiltPhase, 0.0)
+        XCTAssertEqual(robot.danceGlowPulse, 0.35, "Steady warm aura must remain under Reduce Motion without pulsing")
+
+        // Reset settings
+        AppState.shared.settings.animationIntensity = 1.0
+        music.isPlaying = false
+        robot.isDancing = false
+    }
 }

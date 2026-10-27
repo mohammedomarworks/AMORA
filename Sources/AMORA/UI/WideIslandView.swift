@@ -198,6 +198,8 @@ struct AmoraCompanionPanel: View {
             AMORARobotView(robot: robot, compact: false)
                 .frame(width: 56, height: 48)
                 .padding(.top, 4)
+                .padding(.bottom, robot.isDancing ? 12 : 0)
+                .animation(.easeInOut(duration: 0.35), value: robot.isDancing)
 
             // Contextual status badge
             if let reaction = robot.activeReaction {

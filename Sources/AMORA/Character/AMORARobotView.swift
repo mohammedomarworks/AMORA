@@ -76,6 +76,11 @@ struct AMORARobotView: View {
             .radians(robot.headMovementPhase * (compact ? 0.04 : 0.08) + robot.wigglePhase + (robot.isDancing ? robot.danceTiltPhase : 0)),
             anchor: .bottom
         )
+        .background {
+            MusicDanceBackgroundView(robot: robot, compact: compact)
+                .opacity(robot.isDancing ? 1.0 : 0.0)
+                .animation(.easeInOut(duration: 0.35), value: robot.isDancing)
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             robot.reactToClick()
