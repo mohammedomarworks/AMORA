@@ -607,6 +607,14 @@ final class AmoraAgentLoop {
             return ToolExecutionResult(isSuccess: true, output: msg, deniedConfirmation: false)
         }
 
+        // 2b. Priority Tool: get_system_status
+        if normalized == "get_system_status" || normalized == "getsystemstatus" || normalized == "system.read" || normalized == "read_system" || normalized == "system_status" {
+            SystemMonitorService.shared.refresh()
+            let s = SystemMonitorService.shared
+            let msg = String(format: "CPU is at %.0f%%, with %.1f GB of memory in use.", s.cpuUsagePercent, s.memoryUsedGB)
+            return ToolExecutionResult(isSuccess: true, output: msg, deniedConfirmation: false)
+        }
+
         // 3. Initial Priority Tool: create_timer
         if normalized == "create_timer" || normalized == "createtimer" || normalized == "timer.start" || normalized == "start_timer" {
             // Unit-explicit duration handling. `minutes`/`hours` are converted here;
@@ -1144,6 +1152,7 @@ Approved tools:
 - search_notes: {"query": "text to search"} (search user's saved notes)
 - create_timer: {"minutes": integer} for minute-based requests, or {"seconds": integer} for second-based ones (focus countdown, 1s–86400s). Always put the user's minutes in "minutes"; never pass a number of minutes as seconds.
 - get_battery_status: {} (get current battery level, charging status, and time remaining)
+- get_system_status: {} (get current macOS CPU and memory usage)
 - app.open: {"name": "app name"} (open installed macOS apps like Spotify, VS Code, Safari)
 - folder.open: {"location": "downloads"|"documents"|"desktop"} (open a standard folder)
 - workspace.open: {"section": "Notes"|"Clipboard"|"File Shelf"} (open AMORA workspace)

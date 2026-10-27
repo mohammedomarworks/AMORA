@@ -117,7 +117,7 @@ final class PersonalityEngine {
 
             // Context-driven physical movement (respects Reduce Motion inside robot helpers)
             // Guarded so routine background events do not interrupt an active user click reaction
-            if AMORARobot.shared.activeReaction == nil || r.state.priority >= 80 {
+            if AMORARobot.shared.activeReaction == nil || r.state.priority >= 75 {
                 switch event {
                 case .timerCompleted:
                     AMORARobot.shared.playBounce()
@@ -134,7 +134,7 @@ final class PersonalityEngine {
         // Text + sound are the "loud" channel — gated hard so they stay special.
         // Also guarded so routine background events do not speak over an active user click reaction.
         if due(r.key + ".msg", every: r.messageCooldown, now: now) {
-            let isClickReactionActive = (AMORARobot.shared.activeReaction != nil && r.state.priority < 80)
+            let isClickReactionActive = (AMORARobot.shared.activeReaction != nil && r.state.priority < 75)
             if !isClickReactionActive {
                 if let m = r.message { showMessage(m) }
                 if let s = r.sound { playSound(s, for: r.state, now: now) }
