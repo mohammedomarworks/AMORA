@@ -151,7 +151,11 @@ struct NotchEyesView: View {
             eye
             eye
         }
-        .contentShape(Rectangle().inset(by: -12))
+        // Give the tiny eyes a practical target across the entire visible chin.
+        // The parent keeps this hit region clipped to the collapsed chin, so it
+        // cannot intercept clicks elsewhere on the screen.
+        .frame(width: 56, height: 10)
+        .contentShape(Rectangle())
         .onTapGesture {
             robot.reactToClick()
         }

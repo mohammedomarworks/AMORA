@@ -202,7 +202,7 @@ final class AMORARobot {
         let musicPlaying = MusicService.shared.isPlaying
         if musicPlaying {
             isDancing = true
-            if state == .idle && activeReaction == nil {
+            if state.priority < AMORAState.music.priority && activeReaction == nil {
                 AppState.shared.stateManager.transition(to: .music)
                 updateExpression(for: .music)
             }
@@ -336,6 +336,16 @@ final class AMORARobot {
     }
 
     func updateExpression(for newState: AMORAState) {
+        // Cursor hover is temporary presentation state. Keep the active dance
+        // expression when view callbacks report hover or idle while music plays.
+        // Higher-priority states (thinking, alerts, errors, expanded content)
+        // are still allowed through this guard.
+        if MusicService.shared.isPlaying,
+           state == .music,
+           newState.priority < AMORAState.music.priority {
+            return
+        }
+
         if let active = activeReaction {
             // High-priority system and assistant states (priority >= 75, e.g. speaking, thinking, aiThinking, alert, error) override click reactions.
             if newState.priority >= 75 {

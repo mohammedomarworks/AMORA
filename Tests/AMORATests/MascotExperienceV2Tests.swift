@@ -580,6 +580,48 @@ final class MascotExperienceV2Tests: XCTestCase {
     }
 
     @MainActor
+    func testMusicDanceExpressionSurvivesCollapsedNotchHover() {
+        let robot = AMORARobot.shared
+        let music = MusicService.shared
+        let stateManager = AppState.shared.stateManager
+        let personality = PersonalityEngine.shared
+
+        personality.resetForTesting()
+        robot.clearActiveReaction()
+        music.isPlaying = false
+        stateManager.resetToIdle()
+
+        // Playback begins while the pointer is already over the collapsed notch.
+        stateManager.transition(to: .hover)
+        robot.updateExpression(for: .hover)
+        music.isPlaying = true
+        personality.react(to: .musicStarted)
+
+        XCTAssertEqual(stateManager.currentState, .music)
+        XCTAssertEqual(robot.expression.eyes, .happy)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+
+        // The hover callback must not overwrite the music expression on entry or
+        // while the cursor continues to sit over the eye.
+        stateManager.transition(to: .hover)
+        robot.updateExpression(for: .hover)
+        XCTAssertEqual(stateManager.currentState, .music)
+        XCTAssertEqual(robot.state, .music)
+        XCTAssertEqual(robot.expression.eyes, .happy)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+
+        // Active thinking remains higher priority than the dance.
+        stateManager.transition(to: .aiThinking)
+        robot.updateExpression(for: .aiThinking)
+        XCTAssertEqual(stateManager.currentState, .aiThinking)
+        XCTAssertEqual(robot.expression.eyes, .narrow)
+
+        music.isPlaying = false
+        stateManager.resetToIdle()
+        robot.updateExpression(for: .idle)
+    }
+
+    @MainActor
     func testPettingDuringMusicDancingRevertsBackToDancingState() {
         let robot = AMORARobot.shared
         let music = MusicService.shared
