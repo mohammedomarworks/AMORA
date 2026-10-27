@@ -178,11 +178,12 @@ struct DynamicIslandView: View {
                 guard !island.isExpanded && island.targetState == .collapsed else { return }
                 robot.isHovering = hovering
                 if hovering {
-                    appState.stateManager.transition(to: .hover)
-                    robot.updateExpression(for: .hover)
+                    if assistant.state != .thinking && coordinator.state == .idle {
+                        appState.stateManager.transition(to: .hover)
+                        robot.updateExpression(for: .hover)
+                    }
                 } else {
-                    appState.stateManager.transition(to: .idle)
-                    robot.updateExpression(for: .idle)
+                    PersonalityEngine.shared.restoreAmbientState()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .cursorMoved)) { notification in

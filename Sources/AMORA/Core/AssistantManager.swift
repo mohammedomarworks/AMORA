@@ -8,7 +8,7 @@ final class AssistantManager {
     static let shared = AssistantManager(provider: UnavailableAIProvider(kind: .local), providerIsInjected: false)
 
     private var provider: any AIProvider
-    private let providerIsInjected: Bool
+    private var providerIsInjected: Bool
     private(set) var memoryStore: any AmoraMemoryStoring
     private let memoryStoreIsInjected: Bool
     var providerAvailability: AIAvailability { provider.availability }
@@ -19,6 +19,8 @@ final class AssistantManager {
     private(set) var lastError: AIProviderError?
     private(set) var conversation = AIConversation()
     private var requestTask: Task<String, Never>?
+    private var lastSubmittedInput: String?
+    private var lastSubmittedTime: Date = .distantPast
     private let actionEngine: AmoraActionEngine
     public var eventSink: any AmoraEventSinking
     private(set) var lastLoopResult: AmoraAgentLoop.LoopResult?
@@ -49,16 +51,31 @@ final class AssistantManager {
         conversation.append(AIMessage(role: .assistant, content: assistantResponse))
     }
 
-    func configure(provider: any AIProvider) { self.provider = provider }
+    func configure(provider: any AIProvider) {
+        self.provider = provider
+        self.providerIsInjected = true
+    }
+
+    func resetProviderToFactory() {
+        self.providerIsInjected = false
+    }
+
     func configure(memoryStore: any AmoraMemoryStoring) { self.memoryStore = memoryStore }
 
     func submit(_ input: String, settings: AISettingsSnapshot) async -> String {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if state == .thinking, trimmed == lastSubmittedInput, Date().timeIntervalSince(lastSubmittedTime) < 0.5, let active = requestTask {
+            return await active.value
+        }
+        lastSubmittedInput = trimmed
+        lastSubmittedTime = Date()
+
         cancel()
         lastLoopResult = nil
         AmoraActionExecutionCoordinator.shared.reset()
         let task = Task { @MainActor [weak self] in
             guard let self else { return "I don't know how to help with that yet." }
-            return await self.performSubmit(input, settings: settings)
+            return await self.performSubmit(trimmed, settings: settings)
         }
         requestTask = task
         let result = await task.value
@@ -67,6 +84,13 @@ final class AssistantManager {
     }
 
     private func performSubmit(_ input: String, settings: AISettingsSnapshot) async -> String {
+        guard !input.isEmpty else {
+            state = .idle
+            let fallback = "I'm listening! Ask me a question or tell me what to do."
+            response = fallback
+            AMORAContext.shared.setAIResponse(fallback)
+            return fallback
+        }
         // Explicit memory commands intercept before general AI processing
         if let memoryCommand = AmoraMemoryCommandParser.shared.parse(input) {
             let outcome = await handleMemoryCommand(input, command: memoryCommand, settings: settings)
@@ -176,10 +200,17 @@ final class AssistantManager {
         }
 
         guard provider.isAvailable else {
-            // Deterministic single or compound actions fallback when offline model is unavailable
+            // 1. Check deterministic-first shortcut (timer, media, battery, system status, workspace open)
+            if let deterministic = await runDeterministicShortcut(input, settings: settings) {
+                return deterministic
+            }
+
+            // 2. Deterministic multi-action compound requests fallback when offline model is unavailable
             if let directActions = AMORACommandGateway.parseDeterministicActions(from: input) {
                 return await executeDeterministicCompoundSequence(directActions, input: input, settings: settings)
             }
+
+            // 3. Deterministic single action fallback
             if let singleAction = AMORACommandGateway.parseSingleAction(from: input) {
                 WindowManager.shared.showQuickPanel()
                 let convContext = settings.contextAwarenessEnabled ? AmoraConversationContextManager.shared.validContext() : nil
@@ -192,6 +223,7 @@ final class AssistantManager {
                     AmoraConversationContextManager.shared.recordAction(singleAction, date: Date())
                 }
                 let answer = AmoraActionResult.combineMessages(from: results)
+                conversation.append(AIMessage(role: .user, content: input))
                 let assistantMessage = AIMessage(role: .assistant, content: answer)
                 conversation.append(assistantMessage)
                 let userCancelled = Task.isCancelled
@@ -212,6 +244,30 @@ final class AssistantManager {
                 AMORAContext.shared.setAIResponse(answer)
                 let allSucceeded = results.allSatisfy { $0.status == .success }
                 if allSucceeded {
+                    eventSink.emit(.aiSucceeded)
+                } else {
+                    eventSink.emit(.aiFailed)
+                }
+                return answer
+            }
+
+            // 4. Local natural-language commands via AMORACommandParser (battery, notes, folders, apps)
+            let localCmd = AMORACommandParser().parse(input)
+            if case .unknown = localCmd {
+                // Not recognized as a local offline command — fall through to provider unavailable error
+            } else {
+                let result = AMORACommandRouter.shared.execute(localCmd)
+                if settings.contextAwarenessEnabled {
+                    AmoraConversationContextManager.shared.recordCommand(localCmd, date: Date())
+                    AmoraConversationContextManager.shared.clearClarification()
+                }
+                let answer = result.message
+                conversation.append(AIMessage(role: .user, content: input))
+                conversation.append(AIMessage(role: .assistant, content: answer))
+                state = .responding
+                response = answer
+                AMORAContext.shared.setAIResponse(answer)
+                if case .success = result {
                     eventSink.emit(.aiSucceeded)
                 } else {
                     eventSink.emit(.aiFailed)
@@ -840,6 +896,17 @@ final class AssistantManager {
         state = .idle
         AMORAContext.shared.dismissAIResponse()
     }
+
+    #if DEBUG
+    func setResponseForTesting(_ value: String?) {
+        self.response = value
+        AMORAContext.shared.setAIResponse(value)
+    }
+
+    func setStateForTesting(_ value: AssistantState) {
+        self.state = value
+    }
+    #endif
 }
 
 /// The single routing seam between deterministic commands and optional AI.
@@ -878,6 +945,7 @@ final class AMORACommandGateway {
                 .confirmTest(actionName: "Test Action", prompt: "Are you sure you want to run this test action?")
             ])
             let answer = AmoraActionResult.combineMessages(from: results)
+            assistant.recordExchange(userMessage: input, assistantResponse: answer)
             let allSucceeded = results.allSatisfy { $0.status == .success }
             return allSucceeded ? .success(message: answer) : .failure(message: answer)
         }
@@ -897,6 +965,7 @@ final class AMORACommandGateway {
                 }
             }
             let answer = AmoraActionResult.combineMessages(from: results)
+            assistant.recordExchange(userMessage: input, assistantResponse: answer)
             let allSucceeded = results.allSatisfy { $0.status == .success }
             return allSucceeded ? .success(message: answer) : .failure(message: answer)
         }

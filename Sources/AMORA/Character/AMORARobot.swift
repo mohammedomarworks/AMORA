@@ -271,8 +271,8 @@ final class AMORARobot {
 
     func updateExpression(for newState: AMORAState) {
         if let active = activeReaction {
-            // High-priority system states (priority >= 80, e.g. alert, speaking, error) override click reactions.
-            if newState.priority >= 80 {
+            // High-priority system and assistant states (priority >= 75, e.g. speaking, thinking, aiThinking, alert, error) override click reactions.
+            if newState.priority >= 75 {
                 activeReaction = nil
                 activeReactionMessage = nil
                 reactionRevertToken &+= 1

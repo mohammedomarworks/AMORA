@@ -485,9 +485,10 @@ public final class AmoraActionEngine: Sendable {
                 let section: String?
                 if case .openWorkspace(let sec) = action { section = sec } else { section = nil }
                 workspaceController.showWorkspace(section: section)
+                let message = section.map { "Opened AMORA \($0)." } ?? "Opened AMORA Workspace."
                 return .success(
                     actionId: "workspace.open",
-                    message: "Opened AMORA Workspace.",
+                    message: message,
                     data: section.map { ["section": $0] } ?? [:]
                 )
             }

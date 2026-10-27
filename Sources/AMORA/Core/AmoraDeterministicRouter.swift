@@ -61,6 +61,16 @@ enum AmoraDeterministicRouter {
             return .toolCall(name: "get_battery_status", arguments: [:])
         }
 
+        // 3b. System status question.
+        if isSystemStatusRequest(n) {
+            return .toolCall(name: "get_system_status", arguments: [:])
+        }
+
+        // 3c. Workspace section navigation.
+        if let section = workspaceSection(n) {
+            return .toolCall(name: "workspace.open", arguments: ["section": section])
+        }
+
         // 4. Known folder open ("open my downloads folder").
         if let location = folderLocation(n) {
             return .toolCall(name: "folder.open", arguments: ["location": location])
@@ -129,6 +139,39 @@ enum AmoraDeterministicRouter {
                     "left", "remaining", "status", "level", "percent",
                     "percentage", "charged", "charging", "power"]
         return cues.contains { n.contains($0) }
+    }
+
+    // MARK: - System Status
+
+    private static func isSystemStatusRequest(_ n: String) -> Bool {
+        if n == "system status" || n == "cpu usage" || n == "system performance" { return true }
+        if n.contains("cpu usage") || n.contains("cpu percent") || n.contains("cpu percentage") || n.contains("memory usage") {
+            return true
+        }
+        guard n.contains("system") else { return false }
+        let cues = ["status", "monitor", "usage", "performance", "load", "stats", "info", "report"]
+        return cues.contains { n.contains($0) }
+    }
+
+    // MARK: - Workspace Section Navigation
+
+    private static func workspaceSection(_ n: String) -> String? {
+        let verbs = ["open", "show", "go to", "reveal", "view", "switch to", "bring up", "display"]
+        let hasVerb = verbs.contains { n.hasPrefix($0 + " ") }
+
+        if n == "show clipboard" || n == "open clipboard" || n == "clipboard" || (hasVerb && n.contains("clipboard")) {
+            return "Clipboard"
+        }
+        if n == "show file shelf" || n == "open file shelf" || n == "file shelf" || n == "pinned files" || (hasVerb && (n.contains("file shelf") || n.contains("fileshelf"))) {
+            return "File Shelf"
+        }
+        if n == "show settings" || n == "open settings" || n == "settings" || (hasVerb && (n.contains("settings") || n.contains("preferences"))) {
+            return "Settings"
+        }
+        if n == "show notes" || n == "open notes" || n == "my notes" {
+            return "Notes"
+        }
+        return nil
     }
 
     // MARK: - Folder (word-boundary matched to avoid "documentation" etc.)

@@ -576,7 +576,10 @@ final class AppleScriptOffloadingTests: XCTestCase {
         XCTAssertEqual(music.source, .none)
 
         // Clean up: wait for script to finish
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        let deadline = Date().addingTimeInterval(2.0)
+        while executor.isQueryOutstanding && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
         XCTAssertFalse(executor.isQueryOutstanding)
     }
 }
