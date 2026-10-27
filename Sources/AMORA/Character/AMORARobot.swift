@@ -115,6 +115,7 @@ final class AMORARobot {
     var isDancing: Bool = false
     var danceTiltPhase: Double = 0
     var danceBouncePhase: Double = 0
+    var danceSwayPhase: Double = 0
     var danceAntennaPhase: Double = 0
     var danceGlowPulse: Double = 0
 
@@ -203,18 +204,21 @@ final class AMORARobot {
             isDancing = true
             if motion > 0 {
                 // Musical tempo ~125 BPM (2.08 Hz)
-                // Head and body tilt sway matching the dance reference pose
-                danceTiltPhase = sin(elapsed * 4.2) * 0.20 * motion
-                // Vertical bouncy groove (bounces on every half-beat)
-                danceBouncePhase = abs(sin(elapsed * 4.2)) * 3.5 * motion
+                // Restrained head and body tilt sway matching the dance groove
+                danceTiltPhase = sin(elapsed * 2.1) * 0.05 * motion
+                // Restrained vertical bouncy groove (bounces on every half-beat)
+                danceBouncePhase = abs(sin(elapsed * 4.2)) * 1.8 * motion
+                // Restrained horizontal side-to-side groove
+                danceSwayPhase = sin(elapsed * 2.1) * 1.5 * motion
                 // Antenna audio pulse
-                danceAntennaPhase = 0.5 + sin(elapsed * 8.4) * 0.5 * motion
-                // Warm coral audio glow pulse
+                danceAntennaPhase = 0.5 + sin(elapsed * 4.2) * 0.5 * motion
+                // Audio glow pulse
                 danceGlowPulse = 0.5 + sin(elapsed * 4.2) * 0.5 * motion
             } else {
-                // Reduce Motion: suppress tilt and bounce, retain gentle steady aura
+                // Reduce Motion: suppress tilt, bounce, and sway, retain calm resting state
                 danceTiltPhase = 0
                 danceBouncePhase = 0
+                danceSwayPhase = 0
                 danceAntennaPhase = 0.5
                 danceGlowPulse = 0.35
             }
@@ -222,6 +226,7 @@ final class AMORARobot {
             isDancing = false
             danceTiltPhase = 0
             danceBouncePhase = 0
+            danceSwayPhase = 0
             danceAntennaPhase = 0
             danceGlowPulse = 0
         }

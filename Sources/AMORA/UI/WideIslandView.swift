@@ -196,7 +196,7 @@ struct AmoraCompanionPanel: View {
         VStack(spacing: 6) {
             // Mascot
             AMORARobotView(robot: robot, compact: false)
-                .frame(width: 50, height: 42)
+                .frame(width: 56, height: 48)
                 .padding(.top, 4)
 
             // Contextual status badge
