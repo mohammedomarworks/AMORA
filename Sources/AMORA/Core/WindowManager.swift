@@ -109,7 +109,7 @@ final class WindowManager {
         /// Minimal downward lip so the collapsed eyes have displayable pixels at the
         /// notch's lower edge. Same width + black as the notch, so it reads as the
         /// notch itself — not a floating pill below it.
-        static let collapsedChinHeight: CGFloat = 6
+        static let collapsedChinHeight: CGFloat = 10
         static let collapsedBottomRadius: CGFloat = 10
         static let quickBottomRadius: CGFloat = 28
         static let workspaceBottomRadius: CGFloat = 36

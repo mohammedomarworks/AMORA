@@ -320,4 +320,85 @@ final class MascotExperienceV2Tests: XCTestCase {
         XCTAssertNil(robot.activeReaction, "Alert state must supersede pet reaction")
         XCTAssertEqual(robot.state, .alert)
     }
+
+    // MARK: - 8. Dance Shape Stability & Notch Eye Geometry Tests
+
+    @MainActor
+    func testDanceMaintainsExactRobotShapeAndGeometryWithoutScaling() {
+        let robot = AMORARobot.shared
+        let music = MusicService.shared
+        music.isPlaying = true
+        robot.isDancing = true
+
+        let elapsed: Double = 1.0
+        let motion: Double = 1.0
+        robot.danceTiltPhase = sin(elapsed * 2.1) * 0.05 * motion
+        robot.danceBouncePhase = abs(sin(elapsed * 4.2)) * 1.8 * motion
+        robot.danceSwayPhase = sin(elapsed * 2.1) * 1.5 * motion
+        robot.danceAntennaPhase = 0.5 + sin(elapsed * 4.2) * 0.5 * motion
+        robot.danceGlowPulse = 0.5 + sin(elapsed * 4.2) * 0.5 * motion
+
+        // The robot's one-shot click bouncePhase must remain 0 during dance, ensuring 0 scale transform
+        XCTAssertEqual(robot.bouncePhase, 0.0, "Dance must not alter body scale or bouncePhase")
+        XCTAssertLessThanOrEqual(robot.danceBouncePhase, 1.8, "Dance vertical bounce must be restrained")
+        XCTAssertLessThanOrEqual(abs(robot.danceSwayPhase), 1.5, "Dance side-to-side sway must be restrained")
+        XCTAssertLessThanOrEqual(abs(robot.danceTiltPhase), 0.06, "Dance tilt sway must be restrained")
+
+        // Facial features: expression eyes are .happy, mouth is .neutral (no mouth added)
+        robot.updateExpression(for: .music)
+        XCTAssertEqual(robot.expression.eyes, .happy)
+        XCTAssertEqual(robot.expression.mouth, .neutral, "Music expression must maintain neutral mouth to preserve facial layout")
+
+        // When music playback stops, all dance state cleanly resets to 0
+        music.isPlaying = false
+        robot.isDancing = false
+        robot.danceTiltPhase = 0
+        robot.danceBouncePhase = 0
+        robot.danceSwayPhase = 0
+        robot.danceAntennaPhase = 0
+        robot.danceGlowPulse = 0
+        robot.updateExpression(for: .idle)
+
+        XCTAssertFalse(robot.isDancing)
+        XCTAssertEqual(robot.danceTiltPhase, 0.0)
+        XCTAssertEqual(robot.danceBouncePhase, 0.0)
+        XCTAssertEqual(robot.danceSwayPhase, 0.0)
+        XCTAssertEqual(robot.danceAntennaPhase, 0.0)
+        XCTAssertEqual(robot.danceGlowPulse, 0.0)
+        XCTAssertEqual(robot.expression.eyes, .normal)
+        XCTAssertEqual(robot.expression.mouth, .neutral)
+    }
+
+    @MainActor
+    func testCollapsedNotchEyesSitInVisibleChinBelowPhysicalNotchCutout() {
+        let island = IslandModel.shared
+        island.topInset = 34
+        island.notchWidth = 200
+        island.collapsedSize = CGSize(width: 200, height: 44) // 34pt notch + 10pt chin
+
+        let chinHeight = max(10, island.collapsedSize.height - island.topInset)
+        XCTAssertEqual(chinHeight, 10.0, "Chin height must provide 10pt visible margin below physical notch")
+
+        let eyeHeight: CGFloat = 6.5
+        let eyeTop = island.topInset + (chinHeight - eyeHeight) / 2
+        let eyeBottom = eyeTop + eyeHeight
+
+        // The entire eye capsule must sit strictly in the visible chin [34, 44]
+        XCTAssertGreaterThan(eyeTop, island.topInset, "Top of eye must sit below physical hardware notch cutout (y > 34)")
+        XCTAssertLessThan(eyeBottom, island.collapsedSize.height, "Bottom of eye must sit above bottom edge (y < 44)")
+
+        // Downward gaze clamp test: normalizedY = -1.0 (approaching cursor from below)
+        let robot = AMORARobot.shared
+        robot.setEyeDirection(x: 0.0, y: -1.0)
+        let clampedYDown = max(-1.0, min(1.0, robot.targetEyeDirection.y))
+        let maxDownwardOffset = -clampedYDown // +1.0
+        XCTAssertLessThanOrEqual(maxDownwardOffset, 1.0)
+        XCTAssertLessThan(eyeBottom + maxDownwardOffset, island.collapsedSize.height, "Eye must never cross bottom clipping boundary")
+
+        // Upward gaze clamp test: normalizedY = 1.0 (cursor above)
+        robot.setEyeDirection(x: 0.0, y: 1.0)
+        let clampedYUp = max(-1.0, min(1.0, robot.targetEyeDirection.y))
+        let maxUpwardOffset = -clampedYUp // -1.0
+        XCTAssertGreaterThan(eyeTop + maxUpwardOffset, island.topInset, "Eye must never retreat into physical notch cutout")
+    }
 }

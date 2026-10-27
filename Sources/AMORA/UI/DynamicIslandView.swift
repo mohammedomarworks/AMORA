@@ -29,7 +29,7 @@ final class IslandModel {
     var quickBottomRadius: CGFloat = 30
     var workspaceBottomRadius: CGFloat = 36
 
-    var collapsedSize: CGSize = CGSize(width: 200, height: 40)
+    var collapsedSize: CGSize = CGSize(width: 200, height: 44)
     var quickSize: CGSize = CGSize(width: 840, height: 230)
     var workspaceSize: CGSize = CGSize(width: 960, height: 680)
 
@@ -142,7 +142,7 @@ struct NotchEyesView: View {
     private var clampedDirection: CGPoint {
         CGPoint(
             x: max(-3.0, min(3.0, robot.eyeDirection.x)),
-            y: max(-1.0, min(3.0, robot.eyeDirection.y))
+            y: max(-1.0, min(1.0, robot.eyeDirection.y))
         )
     }
 
@@ -171,7 +171,7 @@ struct NotchEyesView: View {
             direction: clampedDirection,
             blink: max(robot.blinkPhase, robot.expression.blinkProgress),
             width: 5,
-            height: 7,
+            height: 6.5,
             core: palette.eyeCore,
             glow: palette.eyeGlow,
             lineWidth: 1.6,
@@ -280,6 +280,10 @@ struct DynamicIslandView: View {
         }
     }
 
+    private var chinHeight: CGFloat {
+        max(10, island.collapsedSize.height - island.topInset)
+    }
+
     private func collapsedEyes(expansion e: Double) -> some View {
         // Eyes smoothly fade out as the notch starts expanding downward (0.0 -> 0.22)
         // and fade back in smoothly as the island tucks back into the notch (0.22 -> 0.0)
@@ -288,10 +292,10 @@ struct DynamicIslandView: View {
         let eyeScale = 1.0 - 0.15 * eyeProgress
 
         return NotchEyesView(robot: robot)
-            .padding(.bottom, 7)
-            .frame(width: island.notchWidth, height: island.collapsedSize.height, alignment: .bottom)
             .opacity(eyeOpacity)
-            .scaleEffect(eyeScale, anchor: .bottom)
+            .scaleEffect(eyeScale, anchor: .center)
+            .frame(width: island.notchWidth, height: chinHeight, alignment: .center)
+            .offset(y: island.topInset)
             .allowsHitTesting(e < 0.1)
     }
 
