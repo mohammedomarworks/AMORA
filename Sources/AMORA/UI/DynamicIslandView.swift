@@ -152,6 +152,9 @@ struct NotchEyesView: View {
             eye
         }
         .contentShape(Rectangle().inset(by: -12))
+        .onTapGesture {
+            robot.reactToClick()
+        }
         .onContinuousHover { phase in
             guard IslandModel.shared.displayState == .collapsed else { return }
             switch phase {
@@ -295,7 +298,7 @@ struct DynamicIslandView: View {
             .opacity(eyeOpacity)
             .scaleEffect(eyeScale, anchor: .center)
             .frame(width: island.notchWidth, height: chinHeight, alignment: .center)
-            .offset(y: island.topInset)
+            .frame(width: island.notchWidth, height: island.collapsedSize.height, alignment: .bottom)
             .allowsHitTesting(e < 0.1)
     }
 

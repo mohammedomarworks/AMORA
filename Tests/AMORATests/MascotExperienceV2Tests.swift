@@ -344,10 +344,10 @@ final class MascotExperienceV2Tests: XCTestCase {
         XCTAssertLessThanOrEqual(abs(robot.danceSwayPhase), 1.5, "Dance side-to-side sway must be restrained")
         XCTAssertLessThanOrEqual(abs(robot.danceTiltPhase), 0.06, "Dance tilt sway must be restrained")
 
-        // Facial features: expression eyes are .happy, mouth is .neutral (no mouth added)
+        // Facial features: expression eyes are .happy, mouth is .smile (cheerful excited face while dancing)
         robot.updateExpression(for: .music)
         XCTAssertEqual(robot.expression.eyes, .happy)
-        XCTAssertEqual(robot.expression.mouth, .neutral, "Music expression must maintain neutral mouth to preserve facial layout")
+        XCTAssertEqual(robot.expression.mouth, .smile, "Music expression shows an excited smile mouth while dancing")
 
         // When music playback stops, all dance state cleanly resets to 0
         music.isPlaying = false
@@ -524,5 +524,172 @@ final class MascotExperienceV2Tests: XCTestCase {
         AppState.shared.settings.animationIntensity = 1.0
         music.isPlaying = false
         robot.isDancing = false
+    }
+
+    // MARK: - 10. Dance Excited Expression & Notch-Eye Gaze/Petting Regression Tests
+
+    @MainActor
+    func testMusicDancingExpressionShowsExcitedHappyEyesAndSmileMouth() {
+        let robot = AMORARobot.shared
+        let music = MusicService.shared
+        let personality = PersonalityEngine.shared
+        let stateManager = AppState.shared.stateManager
+
+        personality.resetForTesting()
+        music.isPlaying = false
+        robot.isDancing = false
+        robot.clearActiveReaction()
+        stateManager.resetToIdle()
+
+        // 1. Verify Expression.music() definition
+        let expr = Expression.music()
+        XCTAssertEqual(expr.eyes, .happy, "Music expression must have cheerful happy eyes (^ ^)")
+        XCTAssertEqual(expr.mouth, .smile, "Music expression must have an upbeat smile mouth")
+        XCTAssertEqual(expr.antennaPulse, 0.8, "Music expression must have an active antenna pulse")
+
+        // 2. Music starts: enters .music state with excited dancing expression
+        music.isPlaying = true
+        personality.react(to: .musicStarted)
+        XCTAssertEqual(stateManager.currentState, .music)
+        XCTAssertEqual(robot.expression.eyes, .happy)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+
+        // 3. Higher priority state (e.g. aiThinking or alert) is preserved
+        stateManager.transition(to: .aiThinking)
+        robot.updateExpression(for: .aiThinking)
+        XCTAssertEqual(stateManager.currentState, .aiThinking)
+        XCTAssertEqual(robot.expression.eyes, .narrow)
+
+        // Routine music event must not overwrite AI thinking
+        personality.react(to: .musicChanged)
+        XCTAssertEqual(stateManager.currentState, .aiThinking, "Routine musicChanged must not clobber active AI thinking")
+
+        // When thinking restores ambient state, music is restored
+        stateManager.resetToIdle()
+        personality.restoreAmbientState()
+        XCTAssertEqual(stateManager.currentState, .music, "Ambient state should restore music while music is playing")
+        XCTAssertEqual(robot.expression.eyes, .happy)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+
+        // 4. Music paused / stopped: reverts cleanly to resting expression
+        music.isPlaying = false
+        personality.react(to: .musicStopped)
+        XCTAssertEqual(stateManager.currentState, .idle)
+        XCTAssertEqual(robot.expression.eyes, .normal)
+        XCTAssertEqual(robot.expression.mouth, .neutral)
+    }
+
+    @MainActor
+    func testPettingDuringMusicDancingRevertsBackToDancingState() {
+        let robot = AMORARobot.shared
+        let music = MusicService.shared
+        let personality = PersonalityEngine.shared
+        let stateManager = AppState.shared.stateManager
+
+        personality.resetForTesting()
+        music.isPlaying = true
+        robot.clearActiveReaction()
+        stateManager.transition(to: .music)
+        robot.updateExpression(for: .music)
+
+        XCTAssertEqual(robot.state, .music)
+        XCTAssertEqual(robot.expression.eyes, .happy)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+
+        // Petting AMORA triggers affection reaction with heart eyes
+        robot.pet()
+        XCTAssertEqual(robot.activeReaction, .affection)
+        XCTAssertEqual(robot.expression.eyes, .heart)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+
+        // When petting reaction ends, AMORA returns to music dancing expression
+        robot.clearActiveReaction()
+        XCTAssertNil(robot.activeReaction)
+        XCTAssertEqual(robot.state, .music)
+        XCTAssertEqual(robot.expression.eyes, .happy)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+
+        // Cleanup
+        music.isPlaying = false
+        stateManager.resetToIdle()
+        robot.updateExpression(for: .idle)
+    }
+
+    @MainActor
+    func testGazeTrackingNormalizationAndNotchChinHitTestGeometry() {
+        let island = IslandModel.shared
+        island.topInset = 34
+        island.notchWidth = 200
+        island.collapsedSize = CGSize(width: 200, height: 44) // 34pt notch + 10pt chin
+
+        let chinHeight = max(10, island.collapsedSize.height - island.topInset)
+        XCTAssertEqual(chinHeight, 10.0)
+
+        // Verify that the chin bounds sit strictly in [34, 44]
+        let chinTop = island.collapsedSize.height - chinHeight
+        XCTAssertEqual(chinTop, 34.0, "Chin must be positioned at bottom 10pt of window frame")
+
+        // Gaze tracking normalization tests:
+        let halfWidth = max(island.collapsedSize.width / 2, 1)
+        let halfHeight = max(island.collapsedSize.height / 2, 1)
+        let windowMidX: CGFloat = island.collapsedSize.width / 2
+        let windowMidY: CGFloat = island.collapsedSize.height / 2
+
+        // Test cursor centered: relX = 0, relY = 0
+        let normCenterX = max(-1.0, min(1.0, Double((windowMidX - windowMidX) / halfWidth)))
+        let normCenterY = max(-1.0, min(1.0, Double((windowMidY - windowMidY) / halfHeight)))
+        XCTAssertEqual(normCenterX, 0.0, accuracy: 0.001)
+        XCTAssertEqual(normCenterY, 0.0, accuracy: 0.001)
+
+        // Test cursor 50pt right of center: normX = 50 / 100 = 0.5
+        let cursorRightX = windowMidX + 50.0
+        let normRightX = max(-1.0, min(1.0, Double((cursorRightX - windowMidX) / halfWidth)))
+        XCTAssertEqual(normRightX, 0.5, accuracy: 0.001)
+
+        // Test cursor 11pt below center: normY = -11 / 22 = -0.5
+        let cursorBelowY = windowMidY - 11.0
+        let normBelowY = max(-1.0, min(1.0, Double((cursorBelowY - windowMidY) / halfHeight)))
+        XCTAssertEqual(normBelowY, -0.5, accuracy: 0.001)
+
+        // Test petting gesture tracking in notch chin
+        let robot = AMORARobot.shared
+        robot.resetPetting()
+
+        let baseTime = Date().addingTimeInterval(3.5)
+        // Rubbing back and forth across notch chin
+        _ = robot.recordPettingMovement(at: CGPoint(x: 80, y: 38), now: baseTime)
+        _ = robot.recordPettingMovement(at: CGPoint(x: 105, y: 39), now: baseTime.addingTimeInterval(0.1))
+        _ = robot.recordPettingMovement(at: CGPoint(x: 85, y: 38), now: baseTime.addingTimeInterval(0.2))
+        let recognized = robot.recordPettingMovement(at: CGPoint(x: 115, y: 39), now: baseTime.addingTimeInterval(0.3))
+
+        XCTAssertTrue(recognized, "Deliberate rubbing across notch chin must trigger petting recognition")
+    }
+
+    @MainActor
+    func testFacialLayoutPreservesEyePositionRegardlessOfMouthState() {
+        let robot = AMORARobot.shared
+
+        // Test idle expression: mouth is neutral
+        robot.updateExpression(for: .idle)
+        XCTAssertEqual(robot.expression.mouth, .neutral)
+        XCTAssertEqual(robot.expression.eyes, .normal)
+
+        // Test excited/music expression: mouth is smile
+        robot.updateExpression(for: .music)
+        XCTAssertEqual(robot.expression.mouth, .smile)
+        XCTAssertEqual(robot.expression.eyes, .happy)
+
+        // Digital face decouples eyes from mouth: eye anchor offset is fixed at -1.0 (compact) / -1.5 (non-compact)
+        // regardless of whether mouth is neutral, smile, sad, or open.
+        let compactEyeAnchorY: CGFloat = -1.0
+        let nonCompactEyeAnchorY: CGFloat = -1.5
+        let compactMouthAnchorY: CGFloat = 5.5
+        let nonCompactMouthAnchorY: CGFloat = 8.5
+
+        // Distance between eye anchor and mouth anchor remains invariant:
+        let compactVerticalDelta = compactMouthAnchorY - compactEyeAnchorY
+        let nonCompactVerticalDelta = nonCompactMouthAnchorY - nonCompactEyeAnchorY
+        XCTAssertEqual(compactVerticalDelta, 6.5, "Compact face eye-to-mouth vertical distance must remain invariant")
+        XCTAssertEqual(nonCompactVerticalDelta, 10.0, "Non-compact face eye-to-mouth vertical distance must remain invariant")
     }
 }

@@ -202,6 +202,10 @@ final class AMORARobot {
         let musicPlaying = MusicService.shared.isPlaying
         if musicPlaying {
             isDancing = true
+            if state == .idle && activeReaction == nil {
+                AppState.shared.stateManager.transition(to: .music)
+                updateExpression(for: .music)
+            }
             if motion > 0 {
                 // Musical tempo ~125 BPM (2.08 Hz)
                 // Restrained head and body tilt sway matching the dance groove
@@ -224,6 +228,10 @@ final class AMORARobot {
             }
         } else {
             isDancing = false
+            if state == .music && activeReaction == nil {
+                AppState.shared.stateManager.transition(to: .idle)
+                updateExpression(for: .idle)
+            }
             danceTiltPhase = 0
             danceBouncePhase = 0
             danceSwayPhase = 0
@@ -557,9 +565,16 @@ final class AMORARobot {
         let prev = previousStateBeforeReaction
         previousStateBeforeReaction = nil
 
-        // If pre-reaction state was an explicit non-idle state (e.g. focused, music), restore it.
+        // If pre-reaction state was an explicit non-idle state (e.g. focused, music), restore it
+        // provided its condition remains active (e.g. music is still playing).
         // Otherwise, restore the current live ambient state.
-        let revertState = (prev != nil && prev != .idle) ? prev! : PersonalityEngine.shared.currentAmbientState()
+        let ambient = PersonalityEngine.shared.currentAmbientState()
+        let revertState: AMORAState
+        if let prev = prev, prev != .idle, prev != .music || MusicService.shared.isPlaying {
+            revertState = prev
+        } else {
+            revertState = ambient
+        }
 
         if revertState == .idle {
             AppState.shared.stateManager.resetToIdle()

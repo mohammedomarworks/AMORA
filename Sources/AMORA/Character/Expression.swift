@@ -158,10 +158,10 @@ struct Expression: Equatable {
         Expression(
             eyes: .happy,
             eyeOffset: CGPoint(x: 0, y: 0),
-            mouth: .neutral,
+            mouth: .smile,
             blinkProgress: 0,
             headTilt: 0,
-            antennaPulse: 0.3
+            antennaPulse: 0.8
         )
     }
 

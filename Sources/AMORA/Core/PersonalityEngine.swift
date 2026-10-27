@@ -104,6 +104,12 @@ final class PersonalityEngine {
             return
         }
 
+        // Routine music events must not overwrite higher-priority active states
+        // such as active thinking, assistant execution, critical alerts, or errors.
+        if (event == .musicStarted || event == .musicChanged) && currentState.priority > r.state.priority {
+            return
+        }
+
         // Timer completion is a major user milestone: clears any active click reaction to show celebration
         if event == .timerCompleted {
             AMORARobot.shared.clearActiveReaction()
@@ -305,16 +311,16 @@ final class PersonalityEngine {
                             exprCooldown: 300, messageCooldown: 600, revert: 4)
         case .musicStarted:
             return Reaction(key: "musicOn", state: .music, message: nil, sound: nil,
-                            exprCooldown: 30, messageCooldown: 120, revert: 0)
+                            exprCooldown: 0.5, messageCooldown: 120, revert: 0)
         case .musicPaused:
             return Reaction(key: "musicPause", state: .curious, message: "Music paused.", sound: .click,
-                            exprCooldown: 2, messageCooldown: 2, revert: 2)
+                            exprCooldown: 1.0, messageCooldown: 2.0, revert: 2.0)
         case .musicChanged:
-            return Reaction(key: "musicChange", state: .curious, message: nil, sound: nil,
-                            exprCooldown: 2, messageCooldown: 2, revert: 0)
+            return Reaction(key: "musicChange", state: .music, message: nil, sound: nil,
+                            exprCooldown: 1.0, messageCooldown: 2.0, revert: 0)
         case .musicStopped:
             return Reaction(key: "musicOff", state: .idle, message: nil, sound: nil,
-                            exprCooldown: 30, messageCooldown: 120, revert: 0)
+                            exprCooldown: 0.5, messageCooldown: 120, revert: 0)
         case .commandProcessing:
             return Reaction(key: "commandProcessing", state: .thinking, message: nil, sound: .click,
                             exprCooldown: 0, messageCooldown: 0, revert: 0)

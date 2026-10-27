@@ -54,13 +54,18 @@ struct AMORARobotView: View {
                     )
 
                 // Digital face: eyes + optional mouth.
-                VStack(spacing: compact ? 1.5 : 2.5) {
+                // Decoupled into an anchored ZStack so adding or removing a mouth never shifts
+                // eye position, jump layout, or alter facial geometry.
+                ZStack {
                     HStack(spacing: compact ? 5 : 8) {
                         eye(isLeft: true)
                         eye(isLeft: false)
                     }
+                    .offset(y: compact ? -1.0 : -1.5)
+
                     if robot.expression.mouth != .neutral {
                         MouthView(shape: robot.expression.mouth, tint: palette.accent, compact: compact)
+                            .offset(y: compact ? 5.5 : 8.5)
                     }
                 }
                 .offset(y: -robot.eyeDirection.y * 0.3)
