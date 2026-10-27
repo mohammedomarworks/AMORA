@@ -24,7 +24,7 @@ final class MascotReactionTests: XCTestCase {
     @MainActor
     func testMascotReactionEnumProperties() {
         let reactions = MascotReaction.allCases
-        XCTAssertEqual(reactions.count, 4)
+        XCTAssertEqual(reactions.count, 5)
 
         for reaction in reactions {
             XCTAssertFalse(reaction.displayName.isEmpty)
@@ -39,22 +39,32 @@ final class MascotReactionTests: XCTestCase {
         XCTAssertEqual(MascotReaction.affection.badgeIcon, "heart.fill")
         XCTAssertEqual(MascotReaction.affection.state, .affection)
         XCTAssertEqual(MascotReaction.affection.expression.eyes, .heart)
+        XCTAssertEqual(MascotReaction.affection.sound, .love)
 
         XCTAssertEqual(MascotReaction.excited.badgeText, "Excited")
         XCTAssertEqual(MascotReaction.excited.badgeIcon, "sparkles")
         XCTAssertEqual(MascotReaction.excited.state, .excited)
         XCTAssertEqual(MascotReaction.excited.expression.eyes, .happy)
+        XCTAssertEqual(MascotReaction.excited.sound, .excited)
 
         XCTAssertEqual(MascotReaction.curious.badgeText, "Curious")
         XCTAssertEqual(MascotReaction.curious.badgeIcon, "eye.fill")
         XCTAssertEqual(MascotReaction.curious.state, .curious)
         XCTAssertEqual(MascotReaction.curious.expression.eyes, .normal)
+        XCTAssertEqual(MascotReaction.curious.sound, .click)
 
         XCTAssertEqual(MascotReaction.grumpy.badgeText, "Grumpy")
         XCTAssertEqual(MascotReaction.grumpy.badgeIcon, "face.dashed")
         XCTAssertEqual(MascotReaction.grumpy.state, .grumpy)
         XCTAssertEqual(MascotReaction.grumpy.expression.eyes, .grumpy)
         XCTAssertEqual(MascotReaction.grumpy.expression.mouth, .flat)
+        XCTAssertEqual(MascotReaction.grumpy.sound, .grumpy)
+
+        XCTAssertEqual(MascotReaction.sad.badgeText, "Sad")
+        XCTAssertEqual(MascotReaction.sad.badgeIcon, "cloud.rain.fill")
+        XCTAssertEqual(MascotReaction.sad.state, .sad)
+        XCTAssertEqual(MascotReaction.sad.expression.eyes, .sad)
+        XCTAssertEqual(MascotReaction.sad.sound, .sad)
     }
 
     @MainActor
@@ -83,7 +93,12 @@ final class MascotReactionTests: XCTestCase {
 
         now = now.addingTimeInterval(1.6)
         let fifth = robot.reactToClick(now: now)
-        XCTAssertEqual(fifth, .affection)
+        XCTAssertEqual(fifth, .sad)
+        XCTAssertEqual(robot.activeReaction, .sad)
+
+        now = now.addingTimeInterval(1.6)
+        let sixth = robot.reactToClick(now: now)
+        XCTAssertEqual(sixth, .affection)
         XCTAssertEqual(robot.activeReaction, .affection)
     }
 

@@ -137,17 +137,38 @@ struct NotchEyesView: View {
     @Bindable var robot: AMORARobot
     private var palette: ThemePalette { AppState.shared.settings.palette }
 
+    /// Clamped eye direction so that an approaching cursor from below never pushes
+    /// the capsule downward across the notch's bottom clipping boundary.
+    private var clampedDirection: CGPoint {
+        CGPoint(
+            x: max(-3.0, min(3.0, robot.eyeDirection.x)),
+            y: max(-1.0, min(3.0, robot.eyeDirection.y))
+        )
+    }
+
     var body: some View {
         HStack(spacing: 7) {
             eye
             eye
+        }
+        .contentShape(Rectangle().inset(by: -12))
+        .onContinuousHover { phase in
+            guard IslandModel.shared.displayState == .collapsed else { return }
+            switch phase {
+            case .active(let location):
+                if robot.recordPettingMovement(at: location) {
+                    robot.pet()
+                }
+            case .ended:
+                robot.resetPetting()
+            }
         }
     }
 
     private var eye: some View {
         AMORAEyeView(
             shape: robot.expression.eyes,
-            direction: robot.eyeDirection,
+            direction: clampedDirection,
             blink: max(robot.blinkPhase, robot.expression.blinkProgress),
             width: 5,
             height: 7,
@@ -267,11 +288,11 @@ struct DynamicIslandView: View {
         let eyeScale = 1.0 - 0.15 * eyeProgress
 
         return NotchEyesView(robot: robot)
+            .padding(.bottom, 7)
+            .frame(width: island.notchWidth, height: island.collapsedSize.height, alignment: .bottom)
             .opacity(eyeOpacity)
             .scaleEffect(eyeScale, anchor: .bottom)
-            .frame(width: island.notchWidth, height: island.collapsedSize.height, alignment: .bottom)
-            .padding(.bottom, 4)
-            .allowsHitTesting(false)
+            .allowsHitTesting(e < 0.1)
     }
 
     private func quickContent(expansion e: Double) -> some View {

@@ -274,7 +274,7 @@ final class PersonalityEngine {
             return Reaction(key: "launched", state: .happy, message: "Ready.", sound: .pop,
                             exprCooldown: 0, messageCooldown: 0, revert: 3)
         case .opened:
-            return Reaction(key: "opened", state: .happy, message: "Hey!", sound: .open,
+            return Reaction(key: "opened", state: .expanded, message: nil, sound: .open,
                             exprCooldown: 0, messageCooldown: 3600, revert: 0)
         case .closed:
             return Reaction(key: "closed", state: .idle, message: nil, sound: .close,
@@ -334,8 +334,8 @@ final class PersonalityEngine {
             return Reaction(key: "aiFailed", state: .aiError, message: nil, sound: .notification,
                             exprCooldown: 0.25, messageCooldown: 0.25, revert: 2.5)
         case .aiCancelled:
-            return Reaction(key: "aiCancelled", state: .idle, message: nil, sound: nil,
-                            exprCooldown: 0, messageCooldown: 0, revert: 0.1)
+            return Reaction(key: "aiCancelled", state: .sad, message: "Cancelled.", sound: .sad,
+                            exprCooldown: 0.25, messageCooldown: 0.25, revert: 2.0)
         case .proactiveSuggestionPresented:
             return Reaction(key: "proactivePresented", state: .curious, message: nil, sound: .notification,
                             exprCooldown: 0, messageCooldown: 1, revert: 5)

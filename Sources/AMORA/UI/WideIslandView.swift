@@ -204,7 +204,7 @@ struct AmoraCompanionPanel: View {
                 AmoraAccessibleStatusBadge(
                     text: reaction.badgeText,
                     systemImage: reaction.badgeIcon,
-                    tintColor: reaction == .affection ? .pink : (reaction == .grumpy ? .orange : palette.accent)
+                    tintColor: reaction == .affection ? .pink : (reaction == .grumpy ? .orange : (reaction == .sad ? .blue : palette.accent))
                 )
             } else if let notification = automation.currentNotification {
                 AmoraAccessibleStatusBadge(
