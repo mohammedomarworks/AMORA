@@ -9,6 +9,7 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
     case excited
     case curious
     case grumpy
+    case sad
 
     var displayName: String {
         switch self {
@@ -16,6 +17,7 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
         case .excited: return "Excited"
         case .curious: return "Curious"
         case .grumpy: return "Playfully Grumpy"
+        case .sad: return "Gentle Sadness"
         }
     }
 
@@ -25,6 +27,7 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
         case .excited: return "Excited"
         case .curious: return "Curious"
         case .grumpy: return "Grumpy"
+        case .sad: return "Sad"
         }
     }
 
@@ -34,6 +37,7 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
         case .excited: return "sparkles"
         case .curious: return "eye.fill"
         case .grumpy: return "face.dashed"
+        case .sad: return "cloud.rain.fill"
         }
     }
 
@@ -43,15 +47,17 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
         case .excited: return "Energized and ready! ✨"
         case .curious: return "Observing closely! 👀"
         case .grumpy: return "Careful with the visor! 🤖"
+        case .sad: return "A bit down, but here with you... 🌧️"
         }
     }
 
     var sound: AMORASound {
         switch self {
-        case .affection: return .pop
-        case .excited: return .success
+        case .affection: return .love
+        case .excited: return .excited
         case .curious: return .click
-        case .grumpy: return .click
+        case .grumpy: return .grumpy
+        case .sad: return .sad
         }
     }
 
@@ -61,6 +67,7 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
         case .excited: return .excited()
         case .curious: return .curious()
         case .grumpy: return .grumpy()
+        case .sad: return .sad()
         }
     }
 
@@ -70,6 +77,7 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
         case .excited: return .excited
         case .curious: return .curious
         case .grumpy: return .grumpy
+        case .sad: return .sad
         }
     }
 
@@ -79,6 +87,7 @@ enum MascotReaction: String, CaseIterable, Equatable, Sendable {
         case .excited: return "cheerful and excited"
         case .curious: return "curious and attentive"
         case .grumpy: return "playfully grumpy pouting"
+        case .sad: return "feeling soft sadness and gentle melancholy"
         }
     }
 }
@@ -101,6 +110,20 @@ final class AMORARobot {
     var bouncePhase: Double = 0
     /// Transient head wiggle rotation for playful grumpy reactions.
     var wigglePhase: Double = 0
+
+    // MARK: - Music Dancing Animation State
+    var isDancing: Bool = false
+    var danceTiltPhase: Double = 0
+    var danceBouncePhase: Double = 0
+    var danceAntennaPhase: Double = 0
+    var danceGlowPulse: Double = 0
+
+    // MARK: - Petting Gesture Tracking
+    private var pettingSamples: [(point: CGPoint, timestamp: Date)] = []
+    private var pettingLastDirX: CGFloat = 0
+    private var pettingReversals: Int = 0
+    private var pettingTotalDistance: CGFloat = 0
+    private var lastPetReactionTime: Date = .distantPast
 
     /// Currently active user click reaction, if any.
     private(set) var activeReaction: MascotReaction?
@@ -171,6 +194,36 @@ final class AMORARobot {
         if abs(wigglePhase) > 0.001 {
             wigglePhase = -wigglePhase * 0.75
             if abs(wigglePhase) < 0.005 { wigglePhase = 0 }
+        }
+
+        // Music Dancing animation:
+        // Driven when supported music playback is genuinely active (Apple Music, Spotify, YouTube/BrowserMedia)
+        let musicPlaying = MusicService.shared.isPlaying
+        if musicPlaying {
+            isDancing = true
+            if motion > 0 {
+                // Musical tempo ~125 BPM (2.08 Hz)
+                // Head and body tilt sway matching the dance reference pose
+                danceTiltPhase = sin(elapsed * 4.2) * 0.20 * motion
+                // Vertical bouncy groove (bounces on every half-beat)
+                danceBouncePhase = abs(sin(elapsed * 4.2)) * 3.5 * motion
+                // Antenna audio pulse
+                danceAntennaPhase = 0.5 + sin(elapsed * 8.4) * 0.5 * motion
+                // Warm coral audio glow pulse
+                danceGlowPulse = 0.5 + sin(elapsed * 4.2) * 0.5 * motion
+            } else {
+                // Reduce Motion: suppress tilt and bounce, retain gentle steady aura
+                danceTiltPhase = 0
+                danceBouncePhase = 0
+                danceAntennaPhase = 0.5
+                danceGlowPulse = 0.35
+            }
+        } else {
+            isDancing = false
+            danceTiltPhase = 0
+            danceBouncePhase = 0
+            danceAntennaPhase = 0
+            danceGlowPulse = 0
         }
 
         // Smooth eye follow toward the current target.
@@ -297,7 +350,14 @@ final class AMORARobot {
                 antennaPulse: 0.3
             )
         case .hover:
-            newExpression = .happy()
+            newExpression = Expression(
+                eyes: .normal,
+                eyeOffset: .zero,
+                mouth: .neutral,
+                blinkProgress: 0,
+                headTilt: 0,
+                antennaPulse: 0.35
+            )
         case .thinking:
             newExpression = .thinking()
         case .focused:
@@ -312,6 +372,8 @@ final class AMORARobot {
             newExpression = .affection()
         case .grumpy:
             newExpression = .grumpy()
+        case .sad:
+            newExpression = .sad()
         case .concerned:
             newExpression = .concerned()
         case .surprised:
@@ -340,7 +402,7 @@ final class AMORARobot {
         case .aiError:
             newExpression = .concerned()
         case .expanded:
-            newExpression = .happy()
+            newExpression = .idle()
         }
 
         self.expression = newExpression
@@ -368,13 +430,72 @@ final class AMORARobot {
             chosen = .grumpy
             rapidClickCount = 0
         } else {
-            let cycle: [MascotReaction] = [.affection, .excited, .curious, .grumpy]
+            let cycle: [MascotReaction] = [.affection, .excited, .curious, .grumpy, .sad]
             chosen = cycle[reactionCycleIndex % cycle.count]
             reactionCycleIndex += 1
         }
 
         triggerReaction(chosen)
         return chosen
+    }
+
+    // MARK: - Petting Interaction Methods
+
+    /// Records cursor movement over an interactive mascot or eye region.
+    /// Returns true if a deliberate rub / petting gesture was recognized.
+    func recordPettingMovement(at point: CGPoint, now: Date = Date()) -> Bool {
+        // Window of 1.2s for deliberate stroke
+        pettingSamples.removeAll { now.timeIntervalSince($0.timestamp) > 1.2 }
+
+        guard let last = pettingSamples.last else {
+            resetPetting()
+            pettingSamples.append((point: point, timestamp: now))
+            return false
+        }
+
+        let dx = point.x - last.point.x
+        let dy = point.y - last.point.y
+        let stepDist = hypot(dx, dy)
+
+        // Ignore stationary cursor or tiny sub-pixel jitter
+        guard stepDist >= 1.5 else { return false }
+
+        pettingSamples.append((point: point, timestamp: now))
+        pettingTotalDistance += stepDist
+
+        if abs(dx) > 2.0 {
+            let currentDir: CGFloat = dx > 0 ? 1 : -1
+            if pettingLastDirX != 0 && currentDir != pettingLastDirX {
+                pettingReversals += 1
+            }
+            pettingLastDirX = currentDir
+        }
+
+        let isDeliberateRub = (pettingReversals >= 2 && pettingTotalDistance >= 30.0)
+            || (pettingTotalDistance >= 48.0 && pettingReversals >= 1)
+
+        guard isDeliberateRub else { return false }
+
+        // Cooldown between pet reactions: 2.5s
+        if now.timeIntervalSince(lastPetReactionTime) >= 2.5 {
+            lastPetReactionTime = now
+            resetPetting()
+            return true
+        }
+        return false
+    }
+
+    func resetPetting() {
+        pettingSamples.removeAll(keepingCapacity: true)
+        pettingLastDirX = 0
+        pettingReversals = 0
+        pettingTotalDistance = 0
+    }
+
+    /// Triggers the affectionate petting reaction.
+    func pet() {
+        noteInteraction()
+        triggerReaction(.affection)
     }
 
     func triggerReaction(_ reaction: MascotReaction) {
@@ -406,6 +527,10 @@ final class AMORARobot {
             case .grumpy:
                 bouncePhase = 0
                 wigglePhase = 0.18
+            case .sad:
+                bouncePhase = 0
+                wigglePhase = 0
+                headMovementPhase = -0.06
             }
         } else {
             bouncePhase = 0
@@ -498,6 +623,13 @@ final class AMORARobot {
         previousStateBeforeReaction = nil
         bouncePhase = 0
         wigglePhase = 0
+        isDancing = false
+        danceTiltPhase = 0
+        danceBouncePhase = 0
+        danceAntennaPhase = 0
+        danceGlowPulse = 0
+        resetPetting()
+        lastPetReactionTime = .distantPast
         eyeDirection = .zero
         targetEyeDirection = .zero
         isPerformingIdleMicroReaction = false

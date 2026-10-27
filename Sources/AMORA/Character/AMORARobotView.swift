@@ -15,12 +15,38 @@ struct AMORARobotView: View {
 
         VStack(spacing: 0) {
             AntennaView(
-                pulse: robot.antennaPhase,
+                pulse: robot.isDancing ? robot.danceAntennaPhase : robot.antennaPhase,
                 tint: antennaTint,
                 compact: compact
             )
 
             ZStack {
+                // Audio glow aura beneath chassis when dancing, matching dance reference
+                if robot.isDancing {
+                    Ellipse()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color(red: 1.0, green: 0.42, blue: 0.30).opacity(0.55 * robot.danceGlowPulse),
+                                    Color(red: 1.0, green: 0.25, blue: 0.15).opacity(0.20 * robot.danceGlowPulse),
+                                    Color.clear
+                                ],
+                                center: .center,
+                                startRadius: 2,
+                                endRadius: compact ? 22 : 32
+                            )
+                        )
+                        .frame(width: compact ? 44 : 64, height: compact ? 16 : 24)
+                        .offset(y: compact ? 13 : 20)
+                        .allowsHitTesting(false)
+                }
+
+                // Floating music notes matching dance reference
+                if robot.isDancing && AppState.shared.settings.motionScale > 0 {
+                    MusicNotesFloatingView(pulse: robot.danceAntennaPhase, compact: compact)
+                        .offset(y: compact ? -12 : -18)
+                }
+
                 // Outer pod shell — themed body gradient with a soft top sheen.
                 RoundedRectangle(cornerRadius: compact ? 9 : 14, style: .continuous)
                     .fill(
@@ -65,13 +91,23 @@ struct AMORARobotView: View {
                 .offset(y: -robot.eyeDirection.y * 0.3)
             }
             .frame(width: baseWidth, height: baseHeight)
-            .scaleEffect(1 + robot.bouncePhase * 0.12, anchor: .center)
-            .offset(y: (robot.breathingPhase - 0.5) * (compact ? 1.0 : 1.8) - robot.bouncePhase * 2)
-            .rotationEffect(.radians(robot.headMovementPhase * (compact ? 0.04 : 0.08) + robot.wigglePhase))
+            .scaleEffect(1 + (robot.bouncePhase + (robot.isDancing ? robot.danceBouncePhase * 0.03 : 0)) * 0.12, anchor: .center)
+            .offset(y: (robot.breathingPhase - 0.5) * (compact ? 1.0 : 1.8) - robot.bouncePhase * 2 - (robot.isDancing ? robot.danceBouncePhase : 0))
+            .rotationEffect(.radians(robot.headMovementPhase * (compact ? 0.04 : 0.08) + robot.wigglePhase + (robot.isDancing ? robot.danceTiltPhase : 0)))
         }
         .contentShape(Rectangle())
         .onTapGesture {
             robot.reactToClick()
+        }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let location):
+                if robot.recordPettingMovement(at: location) {
+                    robot.pet()
+                }
+            case .ended:
+                robot.resetPetting()
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("AMORA")
@@ -90,6 +126,10 @@ struct AMORARobotView: View {
             return Color.pink
         } else if robot.activeReaction == .grumpy {
             return Color.orange
+        } else if robot.activeReaction == .sad || robot.state == .sad {
+            return Color(red: 0.45, green: 0.65, blue: 0.95)
+        } else if robot.isDancing {
+            return Color(red: 1.0, green: 0.45, blue: 0.32)
         } else if robot.state == .concerned || robot.state == .aiError {
             return Color.orange.opacity(0.85)
         } else {
@@ -123,13 +163,14 @@ struct AMORARobotView: View {
     /// A short VoiceOver value describing AMORA's current mood.
     private static func accessibilityDescription(for state: AMORAState) -> String {
         switch state {
-        case .idle, .watching: return "resting"
-        case .hover, .happy, .expanded: return "happy"
+        case .idle, .watching, .expanded: return "resting"
+        case .hover, .happy: return "happy"
         case .thinking, .focused: return "focused"
         case .curious: return "curious"
         case .excited: return "excited"
         case .affection: return "feeling affectionate"
         case .grumpy: return "playfully grumpy"
+        case .sad: return "feeling soft sadness"
         case .concerned: return "concerned"
         case .surprised: return "surprised"
         case .sleepy: return "sleeping"
@@ -277,5 +318,30 @@ private struct AMORAArc: Shape {
                               control: CGPoint(x: rect.midX, y: rect.maxY))
         }
         return path
+    }
+}
+
+// MARK: - Floating Music Notes (for dance animation)
+
+private struct MusicNotesFloatingView: View {
+    let pulse: Double
+    let compact: Bool
+
+    var body: some View {
+        let noteSize: CGFloat = compact ? 8 : 11
+        HStack(spacing: compact ? 20 : 32) {
+            Text("♪")
+                .font(.system(size: noteSize, weight: .bold))
+                .foregroundStyle(Color(red: 1.0, green: 0.45, blue: 0.35))
+                .offset(y: -pulse * (compact ? 5 : 8))
+                .opacity(0.4 + pulse * 0.6)
+
+            Text("♫")
+                .font(.system(size: noteSize + 1, weight: .bold))
+                .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.40))
+                .offset(y: -(1.0 - pulse) * (compact ? 6 : 9))
+                .opacity(0.4 + (1.0 - pulse) * 0.6)
+        }
+        .allowsHitTesting(false)
     }
 }

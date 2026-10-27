@@ -658,6 +658,47 @@ public struct SettingsView: View {
             }
 
             SettingsCard(
+                title: "Character Emotion Sounds",
+                description: "Original synthesized audio for expressive mascot emotion states."
+            ) {
+                VStack(spacing: 12) {
+                    emotionSoundRow(
+                        title: "Love & Affection",
+                        subtitle: "Warm, sweet major arpeggio chime played during petting.",
+                        icon: "heart.fill",
+                        sound: .love
+                    )
+
+                    Divider()
+
+                    emotionSoundRow(
+                        title: "Playfully Grumpy",
+                        subtitle: "Short, playful descending robo-grumble when poked rapidly.",
+                        icon: "face.dashed",
+                        sound: .grumpy
+                    )
+
+                    Divider()
+
+                    emotionSoundRow(
+                        title: "Excitement",
+                        subtitle: "Energetic, cheerful rising chirp and celebratory chime.",
+                        icon: "sparkles",
+                        sound: .excited
+                    )
+
+                    Divider()
+
+                    emotionSoundRow(
+                        title: "Gentle Sadness",
+                        subtitle: "Soft, gentle melancholy descending sigh on cancellation.",
+                        icon: "cloud.rain.fill",
+                        sound: .sad
+                    )
+                }
+            }
+
+            SettingsCard(
                 title: "Audio Policy",
                 description: "AMORA strictly limits audio feedback to user-facing events. Sound is never triggered during background checks or background polling."
             ) {
@@ -670,6 +711,22 @@ public struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private func emotionSoundRow(title: String, subtitle: String, icon: String, sound: AMORASound) -> some View {
+        SettingsRow(
+            title: title,
+            subtitle: subtitle,
+            icon: icon
+        ) {
+            Button {
+                SoundService.shared.resetCooldownsForTesting()
+                SoundService.shared.play(sound)
+            } label: {
+                Label("Preview", systemImage: "play.fill")
+            }
+            .disabled(!settings.soundEnabled)
         }
     }
 
