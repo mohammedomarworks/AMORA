@@ -420,4 +420,202 @@ final class FileShelfV1Tests: XCTestCase {
         let clearDecision = AmoraDeterministicRouter.decision(for: "clear file shelf")
         XCTAssertEqual(clearDecision, .toolCall(name: "fileshelf.clear", arguments: [:]))
     }
+
+    // MARK: - 11. Direct Notch Drop & Dragging Destination
+
+    func testDirectNotchPasteboardFileExtraction() throws {
+        let file1 = try createTestFile(name: "DropFile1.txt")
+        let folder1 = try createTestFolder(name: "DropFolder")
+
+        let pboard = NSPasteboard.withUniqueName()
+        pboard.clearContents()
+        pboard.writeObjects([file1 as NSURL, folder1 as NSURL])
+
+        let extracted = FileShelfService.extractURLs(from: pboard)
+        XCTAssertEqual(extracted.count, 2)
+        XCTAssertTrue(extracted.contains(file1))
+        XCTAssertTrue(extracted.contains(folder1))
+
+        // Test non-file pasteboard
+        let stringPboard = NSPasteboard.withUniqueName()
+        stringPboard.clearContents()
+        stringPboard.setString("Just plain text, not a file", forType: .string)
+
+        let extractedStrings = FileShelfService.extractURLs(from: stringPboard)
+        XCTAssertTrue(extractedStrings.isEmpty)
+    }
+
+    func testDirectNotchDropOneFileDetailed() throws {
+        let file = try createTestFile(name: "Invoice.pdf")
+        let shelf = FileShelfService(storageURL: tempStorageURL, fileOpener: mockOpener)
+
+        let result = shelf.addFilesDetailed(urls: [file])
+        XCTAssertEqual(result.totalRequested, 1)
+        XCTAssertEqual(result.newlyAdded.count, 1)
+        XCTAssertEqual(result.existingReordered.count, 0)
+        XCTAssertEqual(result.failedCount, 0)
+        XCTAssertTrue(result.isFullSuccess)
+        XCTAssertFalse(result.isPartialSuccess)
+        XCTAssertEqual(shelf.items.first?.name, "Invoice.pdf")
+        XCTAssertFalse(shelf.items.first?.isDirectory ?? true)
+    }
+
+    func testDirectNotchDropOneFolderDetailed() throws {
+        let folder = try createTestFolder(name: "DesignAssets")
+        let innerFile = folder.appendingPathComponent("icon.png")
+        try "png data".write(to: innerFile, atomically: true, encoding: .utf8)
+
+        let shelf = FileShelfService(storageURL: tempStorageURL, fileOpener: mockOpener)
+
+        let result = shelf.addFilesDetailed(urls: [folder])
+        XCTAssertEqual(result.totalRequested, 1)
+        XCTAssertEqual(result.newlyAdded.count, 1)
+        XCTAssertEqual(shelf.items.count, 1, "Dropping a folder should add only the folder entry, not all its children")
+
+        let addedFolder = shelf.items.first!
+        XCTAssertEqual(addedFolder.name, "DesignAssets")
+        XCTAssertTrue(addedFolder.isDirectory)
+        XCTAssertEqual(addedFolder.contentTypeDescription, "Folder")
+        XCTAssertEqual(addedFolder.systemIconName, "folder.fill")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: innerFile.path))
+    }
+
+    func testDirectNotchDropMixedFilesAndFolders() throws {
+        let file1 = try createTestFile(name: "Doc1.pdf")
+        let file2 = try createTestFile(name: "Doc2.txt")
+        let folder1 = try createTestFolder(name: "ProjectFolder")
+
+        let shelf = FileShelfService(storageURL: tempStorageURL, fileOpener: mockOpener)
+
+        let result = shelf.addFilesDetailed(urls: [file1, folder1, file2])
+        XCTAssertEqual(result.totalRequested, 3)
+        XCTAssertEqual(result.newlyAdded.count, 3)
+        XCTAssertEqual(result.failedCount, 0)
+        XCTAssertTrue(result.isFullSuccess)
+        XCTAssertEqual(shelf.items.count, 3)
+
+        let names = Set(shelf.items.map { $0.name })
+        XCTAssertTrue(names.contains("Doc1.pdf"))
+        XCTAssertTrue(names.contains("Doc2.txt"))
+        XCTAssertTrue(names.contains("ProjectFolder"))
+    }
+
+    func testDirectNotchDropDuplicateHandlingDetailed() throws {
+        let file1 = try createTestFile(name: "DuplicateMe.txt")
+        let file2 = try createTestFile(name: "BrandNew.txt")
+
+        let shelf = FileShelfService(storageURL: tempStorageURL, fileOpener: mockOpener)
+        _ = shelf.addFilesDetailed(urls: [file1])
+        XCTAssertEqual(shelf.items.count, 1)
+        let originalID = shelf.items.first!.id
+
+        let result = shelf.addFilesDetailed(urls: [file1, file2])
+        XCTAssertEqual(result.totalRequested, 2)
+        XCTAssertEqual(result.newlyAdded.count, 1)
+        XCTAssertEqual(result.existingReordered.count, 1)
+        XCTAssertEqual(result.failedCount, 0)
+        XCTAssertEqual(shelf.items.count, 2)
+
+        let reorderedItem = shelf.items.first { $0.name == "DuplicateMe.txt" }
+        XCTAssertEqual(reorderedItem?.id, originalID)
+    }
+
+    func testDirectNotchDropInaccessibleOrMissingFiles() throws {
+        let validFile = try createTestFile(name: "Valid.txt")
+        let ghostURL = tempDirectory.appendingPathComponent("ghost_file_does_not_exist.txt")
+
+        let shelf = FileShelfService(storageURL: tempStorageURL, fileOpener: mockOpener)
+
+        let result = shelf.addFilesDetailed(urls: [validFile, ghostURL])
+        XCTAssertEqual(result.totalRequested, 2)
+        XCTAssertEqual(result.newlyAdded.count, 1)
+        XCTAssertEqual(result.failedCount, 1)
+        XCTAssertFalse(result.isFullSuccess)
+        XCTAssertTrue(result.isPartialSuccess)
+        XCTAssertEqual(shelf.items.count, 1)
+    }
+
+    func testIslandModelDropTargetedAndFeedbackLifecycle() {
+        let model = IslandModel.shared
+
+        XCTAssertFalse(model.isDropTargeted)
+        XCTAssertNil(model.notchDropFeedback)
+
+        model.setDropTargeted(true)
+        XCTAssertTrue(model.isDropTargeted)
+
+        model.setDropTargeted(false)
+        XCTAssertFalse(model.isDropTargeted)
+
+        let fakeItem = ShelfItem(url: URL(fileURLWithPath: "/tmp/sample.txt"))
+        let successResult = FileShelfService.DropResult(
+            totalRequested: 1,
+            newlyAdded: [fakeItem],
+            existingReordered: [],
+            failedCount: 0
+        )
+        model.showDropFeedback(result: successResult)
+        XCTAssertNotNil(model.notchDropFeedback)
+        XCTAssertTrue(model.notchDropFeedback?.isSuccess ?? false)
+        XCTAssertEqual(model.notchDropFeedback?.message, "Added to shelf")
+
+        let successMultiResult = FileShelfService.DropResult(
+            totalRequested: 3,
+            newlyAdded: [fakeItem, fakeItem, fakeItem],
+            existingReordered: [],
+            failedCount: 0
+        )
+        model.showDropFeedback(result: successMultiResult)
+        XCTAssertEqual(model.notchDropFeedback?.message, "Added 3 items")
+
+        let partialResult = FileShelfService.DropResult(
+            totalRequested: 2,
+            newlyAdded: [fakeItem],
+            existingReordered: [],
+            failedCount: 1
+        )
+        model.showDropFeedback(result: partialResult)
+        XCTAssertEqual(model.notchDropFeedback?.message, "Added 1 of 2")
+
+        let duplicateResult = FileShelfService.DropResult(
+            totalRequested: 1,
+            newlyAdded: [],
+            existingReordered: [fakeItem],
+            failedCount: 0
+        )
+        model.showDropFeedback(result: duplicateResult)
+        XCTAssertEqual(model.notchDropFeedback?.message, "Already on shelf")
+
+        let failResult = FileShelfService.DropResult(
+            totalRequested: 1,
+            newlyAdded: [],
+            existingReordered: [],
+            failedCount: 1
+        )
+        model.showDropFeedback(result: failResult)
+        XCTAssertFalse(model.notchDropFeedback?.isSuccess ?? true)
+        XCTAssertEqual(model.notchDropFeedback?.message, "Could not add")
+
+        model.notchDropFeedback = nil
+    }
+
+    func testIslandHostingViewDraggingDestinationRegistered() {
+        let hostView = IslandHostingView(rootView: DynamicIslandView())
+        let acceptedTypes: [NSPasteboard.PasteboardType] = [
+            .fileURL,
+            NSPasteboard.PasteboardType("NSFilenamesPboardType")
+        ]
+        hostView.registerForDraggedTypes(acceptedTypes)
+
+        let pboard = NSPasteboard.withUniqueName()
+        let fileURL = tempDirectory.appendingPathComponent("test_reg.txt")
+        try? "test".write(to: fileURL, atomically: true, encoding: .utf8)
+        pboard.clearContents()
+        pboard.writeObjects([fileURL as NSURL])
+
+        let urls = FileShelfService.extractURLs(from: pboard)
+        XCTAssertEqual(urls.count, 1)
+        XCTAssertEqual(urls.first?.standardizedFileURL, fileURL.standardizedFileURL)
+    }
 }

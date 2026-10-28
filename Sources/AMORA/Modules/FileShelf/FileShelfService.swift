@@ -210,6 +210,46 @@ public final class FileShelfService {
         loadItems()
     }
 
+    public struct DropResult: Equatable, Sendable {
+        public let totalRequested: Int
+        public let newlyAdded: [ShelfItem]
+        public let existingReordered: [ShelfItem]
+        public let failedCount: Int
+
+        public init(totalRequested: Int, newlyAdded: [ShelfItem], existingReordered: [ShelfItem], failedCount: Int) {
+            self.totalRequested = totalRequested
+            self.newlyAdded = newlyAdded
+            self.existingReordered = existingReordered
+            self.failedCount = failedCount
+        }
+
+        public var isFullSuccess: Bool {
+            failedCount == 0 && (!newlyAdded.isEmpty || !existingReordered.isEmpty)
+        }
+
+        public var isPartialSuccess: Bool {
+            !newlyAdded.isEmpty && failedCount > 0
+        }
+    }
+
+    public static func extractURLs(from pasteboard: NSPasteboard) -> [URL] {
+        var extracted: [URL] = []
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] {
+            for url in urls where url.isFileURL {
+                extracted.append(url)
+            }
+        }
+        if extracted.isEmpty, let paths = pasteboard.propertyList(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) as? [String] {
+            for path in paths {
+                let url = URL(fileURLWithPath: path)
+                if url.isFileURL {
+                    extracted.append(url)
+                }
+            }
+        }
+        return extracted
+    }
+
     @discardableResult
     public func addFile(url: URL) -> ShelfItem? {
         let standardized = url.standardizedFileURL.resolvingSymlinksInPath()
@@ -231,38 +271,54 @@ public final class FileShelfService {
     }
 
     @discardableResult
-    public func addFiles(urls: [URL]) -> [ShelfItem] {
-        guard !urls.isEmpty else { return [] }
-        var newlyAddedItems: [ShelfItem] = []
+    public func addFilesDetailed(urls: [URL]) -> DropResult {
+        guard !urls.isEmpty else {
+            return DropResult(totalRequested: 0, newlyAdded: [], existingReordered: [], failedCount: 0)
+        }
+        var newlyAdded: [ShelfItem] = []
+        var reordered: [ShelfItem] = []
+        var failedCount = 0
         var changed = false
 
         for rawURL in urls {
             let standardized = rawURL.standardizedFileURL.resolvingSymlinksInPath()
             guard fileManager.fileExists(atPath: standardized.path) else {
                 lastErrorMessage = "File not found or inaccessible: \(standardized.lastPathComponent)"
+                failedCount += 1
                 continue
             }
 
             if let existingIndex = items.firstIndex(where: { $0.url.path == standardized.path }) {
                 let existing = items.remove(at: existingIndex)
                 items.insert(existing, at: 0)
+                reordered.append(existing)
                 changed = true
             } else {
                 let item = ShelfItem(url: standardized)
                 items.insert(item, at: 0)
-                newlyAddedItems.append(item)
+                newlyAdded.append(item)
                 changed = true
             }
         }
 
         if changed {
             saveItems()
-            if !newlyAddedItems.isEmpty {
+            if !newlyAdded.isEmpty {
                 eventSink.emit(.fileReceived)
             }
         }
 
-        return newlyAddedItems
+        return DropResult(
+            totalRequested: urls.count,
+            newlyAdded: newlyAdded,
+            existingReordered: reordered,
+            failedCount: failedCount
+        )
+    }
+
+    @discardableResult
+    public func addFiles(urls: [URL]) -> [ShelfItem] {
+        addFilesDetailed(urls: urls).newlyAdded
     }
 
     public func removeItem(id: UUID) {

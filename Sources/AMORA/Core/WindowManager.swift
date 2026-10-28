@@ -1,6 +1,7 @@
 import Cocoa
 import QuartzCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Custom NSWindow for AMORA's Dynamic Island. Standard borderless windows
 /// have `canBecomeKey = false` and `canBecomeMain = false` by default in AppKit,
@@ -66,6 +67,84 @@ final class IslandHostingView: NSHostingView<DynamicIslandView> {
         )
         guard islandRect.contains(point) else { return nil }
         return super.hitTest(point) ?? self
+    }
+
+    // MARK: - Direct File & Folder Drag Destination
+
+    private var lastHandledDropTimestamp: TimeInterval = 0
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        if IslandModel.shared.isExpanded {
+            let superOp = super.draggingEntered(sender)
+            if superOp != [] { return superOp }
+        }
+        let urls = FileShelfService.extractURLs(from: sender.draggingPasteboard)
+        guard !urls.isEmpty else { return [] }
+        IslandModel.shared.setDropTargeted(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        if IslandModel.shared.isExpanded {
+            let superOp = super.draggingUpdated(sender)
+            if superOp != [] { return superOp }
+        }
+        let urls = FileShelfService.extractURLs(from: sender.draggingPasteboard)
+        guard !urls.isEmpty else { return [] }
+        if !IslandModel.shared.isDropTargeted {
+            IslandModel.shared.setDropTargeted(true)
+        }
+        return .copy
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        IslandModel.shared.setDropTargeted(false)
+        if IslandModel.shared.isExpanded {
+            super.draggingExited(sender)
+        }
+    }
+
+    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        if IslandModel.shared.isExpanded {
+            let superPrep = super.prepareForDragOperation(sender)
+            if superPrep { return true }
+        }
+        let urls = FileShelfService.extractURLs(from: sender.draggingPasteboard)
+        return !urls.isEmpty
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        if IslandModel.shared.isExpanded {
+            if super.performDragOperation(sender) {
+                IslandModel.shared.setDropTargeted(false)
+                return true
+            }
+        }
+
+        let urls = FileShelfService.extractURLs(from: sender.draggingPasteboard)
+        guard !urls.isEmpty else {
+            IslandModel.shared.setDropTargeted(false)
+            return false
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastHandledDropTimestamp > 0.8 else {
+            IslandModel.shared.setDropTargeted(false)
+            return true
+        }
+        lastHandledDropTimestamp = now
+
+        IslandModel.shared.setDropTargeted(false)
+        let result = FileShelfService.shared.addFilesDetailed(urls: urls)
+        IslandModel.shared.showDropFeedback(result: result)
+        return true
+    }
+
+    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        IslandModel.shared.setDropTargeted(false)
+        if IslandModel.shared.isExpanded {
+            super.concludeDragOperation(sender)
+        }
     }
 }
 
@@ -223,6 +302,15 @@ final class WindowManager {
         hostView.wantsLayer = true
         hostView.layer?.backgroundColor = NSColor.clear.cgColor
         hostView.layer?.isOpaque = false
+
+        let acceptedDragTypes: [NSPasteboard.PasteboardType] = [
+            .fileURL,
+            NSPasteboard.PasteboardType("NSFilenamesPboardType"),
+            NSPasteboard.PasteboardType(UTType.fileURL.identifier),
+            NSPasteboard.PasteboardType(UTType.item.identifier)
+        ]
+        hostView.registerForDraggedTypes(acceptedDragTypes)
+        window.registerForDraggedTypes(acceptedDragTypes)
 
         window.contentView = hostView
 
