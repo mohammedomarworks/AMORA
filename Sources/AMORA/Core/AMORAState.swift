@@ -19,6 +19,7 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
     case sleepy
     case alert
     case music
+    case listening
     case speaking
     case error
     case aiThinking
@@ -29,6 +30,7 @@ enum AMORAState: String, CaseIterable, Codable, Sendable {
         switch self {
         case .error: return 100
         case .alert: return 98
+        case .listening: return 79
         case .aiThinking: return 78
         case .thinking: return 76
         case .speaking: return 75
@@ -88,6 +90,11 @@ final class AMORAStateManager {
         if MusicService.shared.isPlaying,
            currentState == .music,
            newState.priority < AMORAState.music.priority {
+            return
+        }
+        if (VoiceCommandService.shared.isListening || VoiceCommandService.isAnyListening),
+           currentState == .listening,
+           newState.priority < AMORAState.listening.priority {
             return
         }
         guard currentState.canTransition(to: newState) || newState.priority > currentState.priority else { return }

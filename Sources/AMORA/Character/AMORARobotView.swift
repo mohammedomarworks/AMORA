@@ -165,6 +165,7 @@ struct AMORARobotView: View {
         case .sleepy: return "sleeping"
         case .alert: return "alert"
         case .music: return "enjoying music"
+        case .listening: return "listening for voice command"
         case .speaking: return "speaking"
         case .error: return "something went wrong"
         case .aiThinking: return "focused"

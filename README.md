@@ -20,6 +20,7 @@ Orbit includes focus timers, media playback controls, battery and CPU/RAM status
 
 - **Interactive Dynamic Island**: A floating notch interface anchored near the top of the screen that expands into a quick-control panel or a full workspace dashboard.
 - **Native macOS File Shelf**: Drag-and-drop workspace shelf for pinning active files and folders with Quick Look preview, default macOS app launching, Finder reveal, security-scoped bookmark persistence, and assistant integration—without duplicating or altering files on disk.
+- **Voice Commands**: Native speech-to-text integration using Apple's Speech framework and audio capture. Allows speaking natural queries and actions directly into the assistant with real-time waveform feedback, on-device transcription prioritization, silence detection, and full action engine compatibility.
 - **Local-First Architecture**: Core utilities—including timers, battery diagnostics, system metrics, notes, file pinning, and local media controls—execute deterministically on-device with zero network latency.
 - **AMORA Local Brain**: Built-in offline language model inference powered by `llama.cpp` and Metal GPU acceleration, running quantized models (Qwen 2.5) locally inside the application process.
 - **Bounded Tool Registry**: Model-generated actions are restricted to a typed schema with a maximum of 4 calls per request. Destructive filesystem operations and arbitrary shell execution are strictly excluded, and folder navigation requires explicit user confirmation.
@@ -46,6 +47,8 @@ Orbit includes focus timers, media playback controls, battery and CPU/RAM status
 - **macOS**: macOS 14.0 (Sonoma) or later.
 - **Permissions**:
   - *Core Utilities & Local AI*: Require **no special macOS permissions**.
+  - *Microphone*: Required only for Voice Commands (`NSMicrophoneUsageDescription`). Prompted on-demand when the microphone button is clicked.
+  - *Speech Recognition*: Required for native speech-to-text processing (`NSSpeechRecognitionUsageDescription`). Prompted on-demand.
   - *Automation (Apple Events)*: Required only when controlling external playback in Apple Music, Spotify, or Safari.
   - *Accessibility*: Optional; used only for global keyboard shortcut monitoring and auxiliary window alignment.
 - **Integrations & Third-Party Applications (Optional)**:
@@ -208,6 +211,40 @@ The extension is located in the repository at `BrowserExtensions/chrome/`. It us
 - **AppleScript Fallback**: AMORA includes an AppleScript fallback for Safari that inspects the active tab of the frontmost Safari window.
 - **Requirements**: Requires enabling **Safari > Settings > Advanced > Show features for web developers**, followed by **Develop > Allow JavaScript from Apple Events**.
 - **Limitations**: Safari support is limited to detecting media and toggling play/pause in the frontmost active tab. Background tab tracking and bidirectional event synchronization are only available in Chrome.
+
+---
+
+## Voice Commands
+
+AMORA features real-time, privacy-conscious voice command processing utilizing Apple's native Speech framework and AVFoundation audio capture.
+
+### Activating Voice Input
+- **Microphone Control**: Accessible directly within the Dynamic Island (AI Talk tab) and Dashboard assistant input bars.
+- **Start Listening**: Click the microphone icon. AMORA requests macOS Microphone and Speech Recognition permissions on first use.
+- **Visual Feedback**:
+  - **Live Audio Waveform**: Animated real-time visualizer bars scale with live microphone amplitude.
+  - **Interim Transcription**: Words stream into the input field in real time as you speak.
+  - **Mascot Awareness**: AMORA's robot character tilts its head attentively with an alert upward eye gaze in the `.listening` state.
+- **Finalizing & Sending**:
+  - **Silence Detection**: Automatically stops and submits your command after a natural pause (~1.8 seconds of silence).
+  - **Manual Stop**: Click the pulsing microphone button or Send arrow to finalize immediately.
+  - **Cancellation**: Click the Cancel button (`xmark.circle`) or press Escape to discard the spoken utterance without executing any actions.
+  - **Editing**: Transcribed text remains editable in the text field prior to submission.
+
+### Supported Voice Actions
+Spoken utterances enter the exact same validated action engine and deterministic router as typed inputs:
+- *"Set a timer for 10 minutes"* (starts local timer deterministically)
+- *"How much battery do I have?"* (reports battery percentage and remaining runtime)
+- *"What's the system status?"* (reports CPU, memory, and disk diagnostics)
+- *"Show my notes"* (reads saved notes)
+- *"What files are on my file shelf?"* (lists pinned items on the File Shelf)
+- *"Open report.pdf from file shelf"* (launches file using macOS default handler)
+- Consequential operations like *"Clear file shelf"* strictly require user confirmation before executing.
+
+### Privacy & Permissions
+- **On-Device Recognition**: AMORA defaults to `preferOnDeviceRecognition = true`, keeping speech processing locally on your Mac whenever supported by the system language locale.
+- **Zero Audio Storage**: Audio buffers are processed in volatile memory and discarded immediately. No raw audio recordings are stored on disk or sent to external services.
+- **Resolving Denials**: If microphone or speech recognition access was previously denied, click the orange muted mic icon or navigate to **System Settings > Privacy & Security > Microphone / Speech Recognition** to grant access.
 
 ---
 
