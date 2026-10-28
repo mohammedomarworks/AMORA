@@ -20,7 +20,7 @@ Orbit includes focus timers, media playback controls, battery and CPU/RAM status
 
 - **Interactive Dynamic Island**: A floating notch interface anchored near the top of the screen that expands into a quick-control panel or a full workspace dashboard.
 - **Native macOS File Shelf**: Drag-and-drop workspace shelf for pinning active files and folders with Quick Look preview, default macOS app launching, Finder reveal, security-scoped bookmark persistence, and assistant integration—without duplicating or altering files on disk.
-- **Voice Commands**: Native speech-to-text integration using Apple's Speech framework and audio capture. Allows speaking natural queries and actions directly into the assistant with real-time waveform feedback, on-device transcription prioritization, silence detection, and full action engine compatibility.
+- **Voice Commands & Hands-Free Wake Word**: Speak natural queries and actions directly to AMORA. Includes hands-free activation on "AMORA" with on-device acoustic keyword spotting, ring audio buffer handoff for continuous utterances ("AMORA, set a timer for 10 minutes"), leading wake phrase stripping, real-time waveform feedback, on-device transcription prioritization, silence detection, and full action engine compatibility.
 - **Local-First Architecture**: Core utilities—including timers, battery diagnostics, system metrics, notes, file pinning, and local media controls—execute deterministically on-device with zero network latency.
 - **AMORA Local Brain**: Built-in offline language model inference powered by `llama.cpp` and Metal GPU acceleration, running quantized models (Qwen 2.5) locally inside the application process.
 - **Bounded Tool Registry**: Model-generated actions are restricted to a typed schema with a maximum of 4 calls per request. Destructive filesystem operations and arbitrary shell execution are strictly excluded, and folder navigation requires explicit user confirmation.
@@ -230,6 +230,22 @@ AMORA features real-time, privacy-conscious voice command processing utilizing A
   - **Manual Stop**: Click the pulsing microphone button or Send arrow to finalize immediately.
   - **Cancellation**: Click the Cancel button (`xmark.circle`) or press Escape to discard the spoken utterance without executing any actions.
   - **Editing**: Transcribed text remains editable in the text field prior to submission.
+
+### Hands-Free Wake Word ("AMORA")
+AMORA includes a dedicated, lightweight wake-word detector allowing hands-free voice command activation:
+- **Wake Word Standby**: When enabled in **Settings > AI Assistant > Hands-Free Wake Word**, AMORA listens in low-power standby for the keyword *"AMORA"*.
+- **Instant Visual Feedback**: Saying *"AMORA"* immediately perks up AMORA's robot mascot with focused eyes, an alert head tilt, and antenna pulse, transitioning into the `.listening` state without pressing any buttons.
+- **Continuous Utterance vs. Pause Support**:
+  - *Continuous Utterance*: Say *"AMORA, set a timer for ten minutes"* in a single breath. AMORA preserves post-wake audio buffers via an in-memory ring buffer (~160 KB RAM) and passes them directly to speech recognition without clipping early command words.
+  - *Wake Phrase Then Pause*: Say *"AMORA"*, pause, and then speak your command. AMORA detects the wake phrase and remains attentively in `.listening` state waiting for your command.
+- **Boundary Stripping**: Leading wake phrase invocations (*"AMORA,"*, *"Hey AMORA,"*, *"Ok AMORA,"*) are cleanly stripped before command submission, while preserving any internal mentions (*"Tell AMORA hello"*).
+- **Wake Word Engines**:
+  - **Native On-Device (Recommended & Default)**: Low-latency acoustic keyword spotter with dynamic noise-floor Voice Activity Detection (VAD). Requires zero cloud access, no API keys, and no user accounts.
+  - **Picovoice Porcupine (Supported Provider)**: Lightweight keyword spotter provider. For users wishing to use Porcupine, obtain a free personal AccessKey and trained `AMORA` `.ppn` model from [console.picovoice.ai](https://console.picovoice.ai/) and configure the path in AMORA Settings.
+- **Privacy & Power Controls**:
+  - **Zero Disk Storage**: Audio buffers are held strictly in transient memory ring buffers and never written to disk.
+  - **Pause / Resume**: Easily pause wake-word listening with one click in Settings or disable it completely. When paused or disabled, all microphone audio taps are completely released.
+  - **Standby Indicator**: A subtle green indicator appears on the microphone button when wake-word standby is active.
 
 ### Supported Voice Actions
 Spoken utterances enter the exact same validated action engine and deterministic router as typed inputs:

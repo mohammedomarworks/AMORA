@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import AVFoundation
 
 @Observable @MainActor
 final class VoiceCommandService {
@@ -14,9 +15,13 @@ final class VoiceCommandService {
     private(set) var lastErrorMessage: String?
     private(set) var lastResponseMessage: String?
     private(set) var isEngineOnDevice: Bool = false
+    private(set) var isWakeWordActivation: Bool = false
 
     var assistant: AssistantManager
     var eventSink: any AmoraEventSinking
+    var onVoiceSessionEnded: (@MainActor () -> Void)? = {
+        WakeWordService.shared.notifyVoiceSessionEnded()
+    }
 
     // Configurable timeouts
     var silenceTimeoutSeconds: TimeInterval = 1.8
@@ -54,7 +59,15 @@ final class VoiceCommandService {
     }
 
     func startListening() async {
+        await startListening(initialBuffers: [], isWakeWordActivation: false)
+    }
+
+    func startListening(
+        initialBuffers: [AVAudioPCMBuffer],
+        isWakeWordActivation: Bool
+    ) async {
         guard !isListening && !isProcessing else { return }
+        self.isWakeWordActivation = isWakeWordActivation
         feedbackResetTask?.cancel()
         feedbackResetTask = nil
         lastErrorMessage = nil
@@ -106,6 +119,7 @@ final class VoiceCommandService {
         do {
             try engine.startListening(
                 preferOnDevice: preferOnDevice,
+                initialBuffers: initialBuffers,
                 onPartialResult: { [weak self] partial in
                     self?.handlePartialResult(partial)
                 },
@@ -139,6 +153,15 @@ final class VoiceCommandService {
 
     func stopAndSubmit() {
         guard isListening else { return }
+
+        let trimmed = currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let processed = isWakeWordActivation ? Self.stripLeadingWakeWord(from: trimmed) : trimmed
+
+        // If triggered by wake-word and user hasn't said their command yet, stay listening
+        if isWakeWordActivation && processed.isEmpty {
+            return
+        }
+
         decrementListeningCount()
         silenceTask?.cancel()
         silenceTask = nil
@@ -147,20 +170,22 @@ final class VoiceCommandService {
 
         engine.stopListening()
 
-        let trimmed = currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
+        if processed.isEmpty {
             state = .ready
+            isWakeWordActivation = false
             PersonalityEngine.shared.restoreAmbientState()
+            onVoiceSessionEnded?()
             return
         }
 
-        submitUtterance(trimmed)
+        submitUtterance(processed)
     }
 
     func cancelListening() {
         if isListening {
             decrementListeningCount()
         }
+        isWakeWordActivation = false
         silenceTask?.cancel()
         silenceTask = nil
         maxSessionTask?.cancel()
@@ -174,6 +199,7 @@ final class VoiceCommandService {
         currentTranscript = ""
         audioLevel = 0.0
         PersonalityEngine.shared.restoreAmbientState()
+        onVoiceSessionEnded?()
 
         feedbackResetTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 700_000_000)
@@ -204,6 +230,16 @@ final class VoiceCommandService {
         if !trimmed.isEmpty {
             currentTranscript = trimmed
         }
+        let processed = isWakeWordActivation ? Self.stripLeadingWakeWord(from: currentTranscript) : currentTranscript
+        if isWakeWordActivation && processed.isEmpty {
+            decrementListeningCount()
+            engine.stopListening()
+            state = .ready
+            isWakeWordActivation = false
+            PersonalityEngine.shared.restoreAmbientState()
+            onVoiceSessionEnded?()
+            return
+        }
         submitUtterance(currentTranscript)
     }
 
@@ -224,6 +260,7 @@ final class VoiceCommandService {
 
         guard isListening else { return }
         decrementListeningCount()
+        isWakeWordActivation = false
         silenceTask?.cancel()
         silenceTask = nil
         maxSessionTask?.cancel()
@@ -240,13 +277,17 @@ final class VoiceCommandService {
             if case .failed = self?.state {
                 self?.state = .ready
                 PersonalityEngine.shared.restoreAmbientState()
+                self?.onVoiceSessionEnded?()
             }
         }
     }
 
     private func resetSilenceTimer() {
         silenceTask?.cancel()
-        guard !currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let trimmed = currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let processed = isWakeWordActivation ? Self.stripLeadingWakeWord(from: trimmed) : trimmed
+        guard !processed.isEmpty else { return }
+
         silenceTask = Task { @MainActor [weak self] in
             guard let self else { return }
             try? await Task.sleep(nanoseconds: UInt64(self.silenceTimeoutSeconds * 1_000_000_000))
@@ -273,33 +314,54 @@ final class VoiceCommandService {
 
     func submitUtterance(_ utterance: String) {
         let trimmed = utterance.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        let processed = isWakeWordActivation ? Self.stripLeadingWakeWord(from: trimmed) : trimmed
+
+        guard !processed.isEmpty else {
+            if isListening {
+                return
+            }
             state = .ready
+            isWakeWordActivation = false
             PersonalityEngine.shared.restoreAmbientState()
+            onVoiceSessionEnded?()
             return
         }
 
         guard !hasSubmittedCurrentSession else { return }
         hasSubmittedCurrentSession = true
+        isWakeWordActivation = false
 
-        state = .processing(transcript: trimmed)
+        state = .processing(transcript: processed)
         AppState.shared.stateManager.transition(to: .aiThinking)
         AMORARobot.shared.updateExpression(for: .aiThinking)
 
         activeSubmissionTask = Task { @MainActor [weak self] in
             guard let self else { return "" }
-            let answer = await self.assistant.submit(trimmed, settings: AppState.shared.settings.aiSettingsSnapshot)
+            let answer = await self.assistant.submit(processed, settings: AppState.shared.settings.aiSettingsSnapshot)
             self.lastResponseMessage = answer
-            self.state = .completed(transcript: trimmed, message: answer)
+            self.state = .completed(transcript: processed, message: answer)
 
             self.feedbackResetTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 2_200_000_000)
                 if case .completed = self?.state {
                     self?.state = .ready
                     PersonalityEngine.shared.restoreAmbientState()
+                    self?.onVoiceSessionEnded?()
                 }
             }
             return answer
         }
+    }
+
+    static func stripLeadingWakeWord(from transcript: String) -> String {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let pattern = "^(?i)(?:(?:hey|ok|okay|hi)\\s+)?amora[\\s,\\.\\!\\?\\:\\-]*"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return trimmed
+        }
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        let stripped = regex.stringByReplacingMatches(in: trimmed, options: [], range: range, withTemplate: "")
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

@@ -79,9 +79,18 @@ struct VoiceCommandButton: View {
                         .foregroundStyle(Color.orange)
 
                 default:
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(palette.accent)
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(palette.accent)
+
+                        if WakeWordService.shared.isStandby {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 5, height: 5)
+                                .offset(x: 3, y: -2)
+                        }
+                    }
                 }
             }
             .frame(height: 24)
@@ -107,7 +116,11 @@ struct VoiceCommandButton: View {
         case .failed:
             return "Voice recognition failed: \(voice.lastErrorMessage ?? "Unknown error"). Click to retry."
         default:
-            return "Voice Command (Click to speak)"
+            if WakeWordService.shared.isStandby {
+                return "Voice Command (Listening for 'AMORA' or click to speak)"
+            } else {
+                return "Voice Command (Click to speak)"
+            }
         }
     }
 
@@ -157,12 +170,21 @@ struct VoiceCommandListeningBanner: View {
                 AudioWaveformVisualizer(level: voice.audioLevel, accentColor: palette.accent)
                     .frame(width: 24, height: 14)
 
-                Text(voice.currentTranscript.isEmpty ? "Listening for command…" : voice.currentTranscript)
+                Text(voice.currentTranscript.isEmpty ? (voice.isWakeWordActivation ? "Listening… (Wake Word)" : "Listening for command…") : voice.currentTranscript)
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(voice.currentTranscript.isEmpty ? .white.opacity(0.6) : .white)
                     .lineLimit(1)
 
                 Spacer()
+
+                if voice.isWakeWordActivation {
+                    Text("Wake: AMORA")
+                        .font(.system(size: 8, weight: .semibold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(palette.accent.opacity(0.25)))
+                        .foregroundStyle(palette.accent)
+                }
 
                 Text(voice.isEngineOnDevice ? "On-Device" : "Apple Speech")
                     .font(.system(size: 8, weight: .semibold))

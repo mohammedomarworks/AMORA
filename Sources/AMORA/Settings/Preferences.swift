@@ -47,6 +47,51 @@ final class SettingsStore {
     var memoryEnabled: Bool = true
     var voiceCommandsEnabled: Bool = true
     var preferOnDeviceRecognition: Bool = true
+    var wakeWordEnabled: Bool = false {
+        didSet {
+            guard !isLoadingSettings else { return }
+            if wakeWordEnabled {
+                WakeWordService.shared.startIfEnabled()
+            } else {
+                WakeWordService.shared.stop()
+            }
+        }
+    }
+    var wakeWordEngineKind: String = WakeWordEngineKind.nativeAcoustic.rawValue {
+        didSet {
+            guard !isLoadingSettings else { return }
+            updateWakeWordEngine()
+        }
+    }
+    var wakeWordSensitivity: Double = 0.7
+    var porcupineAccessKey: String = "" {
+        didSet {
+            guard !isLoadingSettings else { return }
+            if wakeWordEngineKind == WakeWordEngineKind.porcupine.rawValue {
+                updateWakeWordEngine()
+            }
+        }
+    }
+    var porcupineKeywordPath: String = "" {
+        didSet {
+            guard !isLoadingSettings else { return }
+            if wakeWordEngineKind == WakeWordEngineKind.porcupine.rawValue {
+                updateWakeWordEngine()
+            }
+        }
+    }
+
+    func updateWakeWordEngine() {
+        if wakeWordEngineKind == WakeWordEngineKind.porcupine.rawValue {
+            let porcupine = PorcupineWakeWordEngine(
+                accessKey: porcupineAccessKey,
+                keywordPath: porcupineKeywordPath.isEmpty ? nil : porcupineKeywordPath
+            )
+            WakeWordService.shared.configure(engine: porcupine)
+        } else {
+            WakeWordService.shared.configure(engine: NativeAcousticWakeWordEngine())
+        }
+    }
 
     // Storage loading flag
     private var isLoadingSettings: Bool = false
@@ -165,6 +210,20 @@ final class SettingsStore {
         if defaults.object(forKey: "AMORA_preferOnDeviceRecognition") != nil {
             self.preferOnDeviceRecognition = defaults.bool(forKey: "AMORA_preferOnDeviceRecognition")
         }
+        if defaults.object(forKey: "AMORA_wakeWordEnabled") != nil {
+            self.wakeWordEnabled = defaults.bool(forKey: "AMORA_wakeWordEnabled")
+        }
+        if let kind = defaults.string(forKey: "AMORA_wakeWordEngineKind") {
+            self.wakeWordEngineKind = kind
+        }
+        if defaults.object(forKey: "AMORA_wakeWordSensitivity") != nil {
+            self.wakeWordSensitivity = defaults.double(forKey: "AMORA_wakeWordSensitivity")
+        }
+        if let keywordPath = defaults.string(forKey: "AMORA_porcupineKeywordPath") {
+            self.porcupineKeywordPath = keywordPath
+        }
+        self.porcupineAccessKey = StorageManager.shared.getSecureItem(forKey: "porcupine-access-key") ?? ""
+        updateWakeWordEngine()
         if defaults.object(forKey: "AMORA_proactiveAmoraEnabled") != nil {
             self.proactiveAmoraEnabled = defaults.bool(forKey: "AMORA_proactiveAmoraEnabled")
         }
@@ -254,6 +313,11 @@ final class SettingsStore {
         defaults.set(memoryEnabled, forKey: "AMORA_memoryEnabled")
         defaults.set(voiceCommandsEnabled, forKey: "AMORA_voiceCommandsEnabled")
         defaults.set(preferOnDeviceRecognition, forKey: "AMORA_preferOnDeviceRecognition")
+        defaults.set(wakeWordEnabled, forKey: "AMORA_wakeWordEnabled")
+        defaults.set(wakeWordEngineKind, forKey: "AMORA_wakeWordEngineKind")
+        defaults.set(wakeWordSensitivity, forKey: "AMORA_wakeWordSensitivity")
+        defaults.set(porcupineKeywordPath, forKey: "AMORA_porcupineKeywordPath")
+        StorageManager.shared.setSecureItem(porcupineAccessKey, forKey: "porcupine-access-key")
         defaults.set(proactiveAmoraEnabled, forKey: "AMORA_proactiveAmoraEnabled")
         defaults.set(proactiveTimerCompletedEnabled, forKey: "AMORA_proactiveTimerCompletedEnabled")
         defaults.set(proactiveTimerNearlyFinishedEnabled, forKey: "AMORA_proactiveTimerNearlyFinishedEnabled")

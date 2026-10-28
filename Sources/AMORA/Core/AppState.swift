@@ -27,9 +27,13 @@ final class AppState {
         stateManager.transition(to: .idle)
         AMORAContext.shared.refreshFromServices()
         AMORAEventCenter.shared.emit(.launched)
+        if NSClassFromString("XCTestCase") == nil && settings.wakeWordEnabled {
+            WakeWordService.shared.startIfEnabled()
+        }
     }
 
     func handleTerminate() {
+        WakeWordService.shared.stop()
         AmoraLlamaCppRuntime.shared.unloadSync()
         ClipboardService.shared.stopPolling()
         SystemMonitorService.shared.stopMonitoring()
