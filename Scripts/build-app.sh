@@ -102,6 +102,10 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>AMORA uses Apple Events to control playback in Apple Music and Spotify.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>AMORA requires microphone access to listen to your voice commands.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>AMORA uses speech recognition to convert your voice commands into actions and messages.</string>
 </dict>
 </plist>
 EOF

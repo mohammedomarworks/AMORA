@@ -965,6 +965,57 @@ public struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            // Voice Commands Card
+            SettingsCard(
+                title: "Voice Commands",
+                description: "Speak natural language commands and questions directly to AMORA."
+            ) {
+                VStack(spacing: 14) {
+                    SettingsRow(
+                        title: "Enable Voice Commands",
+                        subtitle: "Adds microphone controls to the Dynamic Island and Dashboard.",
+                        icon: "mic.fill"
+                    ) {
+                        Toggle("", isOn: $settings.voiceCommandsEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+
+                    Divider()
+
+                    SettingsRow(
+                        title: "Prefer On-Device Recognition",
+                        subtitle: "Transcribes speech locally on your Mac when available for maximum privacy.",
+                        icon: "lock.shield.fill"
+                    ) {
+                        Toggle("", isOn: $settings.preferOnDeviceRecognition)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Recognition Mode")
+                                .font(.subheadline)
+                            Text(VoiceCommandService.shared.engine.recognitionModeDescription)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if case .permissionDenied = VoiceCommandService.shared.state {
+                            Button("Open System Settings") {
+                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .buttonStyle(.amoraPill)
+                        }
+                    }
+                }
+            }
         }
     }
 

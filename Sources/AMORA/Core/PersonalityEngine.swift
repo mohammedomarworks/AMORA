@@ -218,6 +218,9 @@ final class PersonalityEngine {
         if let activeReaction = AMORARobot.shared.activeReaction {
             return activeReaction.state
         }
+        if VoiceCommandService.shared.isListening || VoiceCommandService.isAnyListening {
+            return .listening
+        }
         let battery = BatteryService.shared
         if battery.hasBattery && !battery.isCharging && battery.level <= 10 {
             return .alert

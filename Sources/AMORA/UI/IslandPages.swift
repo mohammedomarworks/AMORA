@@ -583,6 +583,9 @@ struct IslandAITalkPage: View {
                 }
             }
 
+            // Voice Listening Banner
+            VoiceCommandListeningBanner()
+
             // Bottom Bar
             HStack(spacing: 8) {
                 if assistant.state == .thinking {
@@ -609,6 +612,8 @@ struct IslandAITalkPage: View {
                         submitRequest()
                     }
 
+                VoiceCommandButton()
+
                 Button {
                     submitRequest()
                 } label: {
@@ -623,6 +628,11 @@ struct IslandAITalkPage: View {
         }
         .padding(.horizontal, 10)
         .padding(.top, 8)
+        .onChange(of: VoiceCommandService.shared.currentTranscript) { _, newTranscript in
+            if VoiceCommandService.shared.isListening && !newTranscript.isEmpty {
+                inputText = newTranscript
+            }
+        }
     }
 
     private func submitWithPrompt(_ prompt: String) {

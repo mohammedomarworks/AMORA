@@ -380,6 +380,8 @@ struct DashboardView: View {
                     }
                 }
 
+                VoiceCommandListeningBanner()
+
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles")
                         .foregroundStyle(.cyan)
@@ -395,6 +397,8 @@ struct DashboardView: View {
                         .onSubmit {
                             handleCommand(vm.commandInput)
                         }
+
+                    VoiceCommandButton()
 
                     if !vm.commandInput.isEmpty {
                         Button {
@@ -412,6 +416,11 @@ struct DashboardView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     isInputFocused = true
+                }
+                .onChange(of: VoiceCommandService.shared.currentTranscript) { _, newTranscript in
+                    if VoiceCommandService.shared.isListening && !newTranscript.isEmpty {
+                        vm.commandInput = newTranscript
+                    }
                 }
 
                 if !vm.suggestions.isEmpty {

@@ -407,6 +407,15 @@ final class AMORARobot {
             newExpression = .alert()
         case .music:
             newExpression = .music()
+        case .listening:
+            newExpression = Expression(
+                eyes: .normal,
+                eyeOffset: CGPoint(x: 0, y: -2),
+                mouth: .neutral,
+                blinkProgress: 0,
+                headTilt: 0.18,
+                antennaPulse: 0.8
+            )
         case .speaking:
             newExpression = Expression(
                 eyes: .normal,

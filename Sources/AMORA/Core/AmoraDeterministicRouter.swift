@@ -284,8 +284,8 @@ enum AmoraDeterministicRouter {
         // 2. List shelf items
         if n == "list files on shelf" || n == "list shelf files" || n == "list files in shelf" || n == "list shelf" ||
            n == "what files are on my shelf" || n == "what files are on the shelf" || n == "what files are in the shelf" ||
-           n == "what is on my file shelf" || n == "what's on my file shelf" || n == "what's on my shelf" ||
-           n == "what files are pinned" || n == "show files on shelf" || n == "show shelf items" {
+           n == "what files are on my file shelf" || n == "what is on my file shelf" || n == "what's on my file shelf" || n == "what's on my shelf" ||
+           n == "what files are pinned" || n == "show files on shelf" || n == "show shelf items" || n == "show my file shelf" {
             return .toolCall(name: "fileshelf.list", arguments: [:])
         }
 

@@ -45,6 +45,8 @@ final class SettingsStore {
     var aiEnabled: Bool = true
     var contextAwarenessEnabled: Bool = true
     var memoryEnabled: Bool = true
+    var voiceCommandsEnabled: Bool = true
+    var preferOnDeviceRecognition: Bool = true
 
     // Storage loading flag
     private var isLoadingSettings: Bool = false
@@ -157,6 +159,12 @@ final class SettingsStore {
         if defaults.object(forKey: "AMORA_memoryEnabled") != nil {
             self.memoryEnabled = defaults.bool(forKey: "AMORA_memoryEnabled")
         }
+        if defaults.object(forKey: "AMORA_voiceCommandsEnabled") != nil {
+            self.voiceCommandsEnabled = defaults.bool(forKey: "AMORA_voiceCommandsEnabled")
+        }
+        if defaults.object(forKey: "AMORA_preferOnDeviceRecognition") != nil {
+            self.preferOnDeviceRecognition = defaults.bool(forKey: "AMORA_preferOnDeviceRecognition")
+        }
         if defaults.object(forKey: "AMORA_proactiveAmoraEnabled") != nil {
             self.proactiveAmoraEnabled = defaults.bool(forKey: "AMORA_proactiveAmoraEnabled")
         }
@@ -244,6 +252,8 @@ final class SettingsStore {
         defaults.set(aiEnabled, forKey: "AMORA_aiEnabled")
         defaults.set(contextAwarenessEnabled, forKey: "AMORA_contextAwarenessEnabled")
         defaults.set(memoryEnabled, forKey: "AMORA_memoryEnabled")
+        defaults.set(voiceCommandsEnabled, forKey: "AMORA_voiceCommandsEnabled")
+        defaults.set(preferOnDeviceRecognition, forKey: "AMORA_preferOnDeviceRecognition")
         defaults.set(proactiveAmoraEnabled, forKey: "AMORA_proactiveAmoraEnabled")
         defaults.set(proactiveTimerCompletedEnabled, forKey: "AMORA_proactiveTimerCompletedEnabled")
         defaults.set(proactiveTimerNearlyFinishedEnabled, forKey: "AMORA_proactiveTimerNearlyFinishedEnabled")
