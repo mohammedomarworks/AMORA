@@ -19,6 +19,7 @@ Orbit includes focus timers, media playback controls, battery and CPU/RAM status
 ## Key Capabilities
 
 - **Interactive Dynamic Island**: A floating notch interface anchored near the top of the screen that expands into a quick-control panel or a full workspace dashboard.
+- **Native macOS File Shelf**: Drag-and-drop workspace shelf for pinning active files and folders with Quick Look preview, default macOS app launching, Finder reveal, security-scoped bookmark persistence, and assistant integration—without duplicating or altering files on disk.
 - **Local-First Architecture**: Core utilities—including timers, battery diagnostics, system metrics, notes, file pinning, and local media controls—execute deterministically on-device with zero network latency.
 - **AMORA Local Brain**: Built-in offline language model inference powered by `llama.cpp` and Metal GPU acceleration, running quantized models (Qwen 2.5) locally inside the application process.
 - **Bounded Tool Registry**: Model-generated actions are restricted to a typed schema with a maximum of 4 calls per request. Destructive filesystem operations and arbitrary shell execution are strictly excluded, and folder navigation requires explicit user confirmation.
@@ -242,6 +243,15 @@ Model actions execute strictly through `AMORAToolRegistry`:
 - **No Arbitrary Execution**: There is no shell execution, terminal command invocation, or arbitrary Swift reflection.
 - **Folder Allowlist**: The folder tool is restricted to opening `Desktop`, `Documents`, and `Downloads`. It cannot access arbitrary paths and **always requires user confirmation** before opening.
 - **Deterministic Multi-Tool Order**: Requests with multiple actions execute sequentially. Partial failures are preserved and reported accurately rather than masked as success.
+
+### 4. File Shelf Persistence & Non-Destructive Integrity
+
+The native File Shelf allows users to pin important files and directories across the Dynamic Island, Quick Panel, and full Dashboard:
+- **Security-Scoped Bookmarks**: Sandboxed and non-sandboxed file access relies on macOS security-scoped bookmarks stored in `~/Library/Application Support/AMORA/file_shelf.json`. When a file is moved, stale bookmarks are refreshed automatically upon access.
+- **Strict Non-Destructive Removal**: Removing an entry from the File Shelf or issuing a "clear file shelf" command removes only the shelf reference within AMORA. It never deletes, moves, or alters the underlying files or directories on your Mac.
+- **Quick Look & Native Launching**: Pinned items support macOS Quick Look previews, default application launching via `NSWorkspace`, and revealing in Finder.
+- **Assistant Boundaries & Truthfulness**: Assistant actions (`fileshelf.list`, `fileshelf.open`, `fileshelf.reveal`, `fileshelf.remove`, `fileshelf.clear`) validate targets against current shelf state, confirm consequential operations (such as clearing all entries), and report truthful results without false successes.
+- **Zero Content Memory Bloat**: Metadata (file size, directory flag, file type icon) is retrieved via lightweight filesystem `stat` resource values without loading document contents into memory.
 
 ---
 

@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import QuickLook
 
 @Observable @MainActor
 final class DashboardViewModel {
@@ -16,6 +17,7 @@ struct DashboardView: View {
     @Bindable var vm: DashboardViewModel
     @FocusState private var isInputFocused: Bool
     @State private var isDashboardFileShelfDropTargeted = false
+    @State private var fileShelfPreviewURL: URL? = nil
     private var robot: AMORARobot { AMORARobot.shared }
     private var battery: BatteryService { BatteryService.shared }
     private var timer: TimerService { TimerService.shared }
@@ -701,34 +703,74 @@ struct DashboardView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.cyan.opacity(0.85))
                 }
+                if fileShelf.isProcessingDrop {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .padding(.leading, 4)
+                }
                 Spacer()
+                Button {
+                    fileShelf.presentAddFilesPanel()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("Add")
+                            .font(.system(size: 10))
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.cyan)
+                .help("Add files to shelf")
+                .accessibilityLabel("Add files to shelf")
+
                 if !fileShelf.items.isEmpty {
                     Button("Clear All") {
+                        let count = fileShelf.items.count
                         fileShelf.clearShelf()
-                        setFeedback("Cleared all pinned files")
+                        setFeedback("Cleared \(count) items from shelf (original files preserved)")
                     }
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.5))
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Clear all pinned files")
+                    .accessibilityLabel("Clear all pinned files from shelf")
+                    .help("Clear all entries from shelf without deleting files")
                 }
             }
 
             if fileShelf.items.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: isDashboardFileShelfDropTargeted ? "arrow.down.doc.fill" : "tray.and.arrow.down")
-                        .font(.system(size: 22))
+                        .font(.system(size: 24))
                         .foregroundStyle(isDashboardFileShelfDropTargeted ? .cyan : .white.opacity(0.35))
                         .scaleEffect(isDashboardFileShelfDropTargeted ? 1.15 : 1.0)
                         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isDashboardFileShelfDropTargeted)
 
                     Text(isDashboardFileShelfDropTargeted ? "Drop files to pin" : "Drop files here to keep them handy")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isDashboardFileShelfDropTargeted ? .cyan : .white.opacity(0.6))
+                        .foregroundStyle(isDashboardFileShelfDropTargeted ? .cyan : .white.opacity(0.75))
 
-                    Text("Drag any file from Finder to pin for quick access")
+                    Text("Drag files from Finder or click Browse to pin for quick access")
                         .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.white.opacity(0.45))
+
+                    Button {
+                        fileShelf.presentAddFilesPanel()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder.badge.plus")
+                                .font(.system(size: 10))
+                            Text("Browse Files...")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 14)
@@ -744,64 +786,76 @@ struct DashboardView: View {
                     VStack(spacing: 4) {
                         ForEach(fileShelf.items) { item in
                             HStack(spacing: 8) {
-                                Image(systemName: item.isMissing ? "exclamationmark.triangle.fill" : "doc.fill")
-                                    .font(.system(size: 12))
+                                Image(systemName: item.systemIconName)
+                                    .font(.system(size: 13))
                                     .foregroundStyle(item.isMissing ? Color.orange : Color.cyan)
+                                    .frame(width: 16)
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(item.name)
                                         .font(.system(size: 11, weight: .medium))
                                         .lineLimit(1)
+                                        .truncationMode(.middle)
                                         .foregroundStyle(item.isMissing ? .white.opacity(0.55) : .white.opacity(0.9))
+                                        .help(item.name)
 
-                                    if item.isMissing {
-                                        Text("Missing file")
-                                            .font(.system(size: 9))
-                                            .foregroundStyle(Color.orange.opacity(0.85))
-                                    }
+                                    Text(item.metadataDescription)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(item.isMissing ? Color.orange.opacity(0.85) : .white.opacity(0.45))
                                 }
 
                                 Spacer()
 
-                                Button {
-                                    if !fileShelf.openFile(item) {
-                                        setFeedback("Could not open: \(item.name)")
+                                if !item.isMissing {
+                                    Button {
+                                        fileShelfPreviewURL = item.url
+                                    } label: {
+                                        Image(systemName: "eye")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.white.opacity(0.75))
                                     }
-                                } label: {
-                                    Image(systemName: "arrow.up.forward.app")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.cyan)
-                                }
-                                .buttonStyle(.plain)
-                                .help("Open file")
-                                .accessibilityLabel("Open \(item.name)")
-                                .disabled(item.isMissing)
+                                    .buttonStyle(.plain)
+                                    .help("Quick Look preview")
+                                    .accessibilityLabel("Preview \(item.name)")
 
-                                Button {
-                                    if !fileShelf.revealFile(item) {
-                                        setFeedback("Could not reveal: \(item.name)")
+                                    Button {
+                                        if !fileShelf.openFile(item) {
+                                            setFeedback("Could not open: \(item.name)")
+                                        }
+                                    } label: {
+                                        Image(systemName: "arrow.up.forward.app")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.cyan)
                                     }
-                                } label: {
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.white.opacity(0.7))
+                                    .buttonStyle(.plain)
+                                    .help("Open with default app")
+                                    .accessibilityLabel("Open \(item.name)")
+
+                                    Button {
+                                        if !fileShelf.revealFile(item) {
+                                            setFeedback("Could not reveal: \(item.name)")
+                                        }
+                                    } label: {
+                                        Image(systemName: "magnifyingglass")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.white.opacity(0.7))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Reveal in Finder")
+                                    .accessibilityLabel("Reveal \(item.name) in Finder")
                                 }
-                                .buttonStyle(.plain)
-                                .help("Reveal in Finder")
-                                .accessibilityLabel("Reveal \(item.name) in Finder")
-                                .disabled(item.isMissing)
 
                                 Button {
                                     fileShelf.removeItem(id: item.id)
-                                    setFeedback("Removed \(item.name)")
+                                    setFeedback("Removed \(item.name) from shelf (file preserved on disk)")
                                 } label: {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.red.opacity(0.7))
+                                    Image(systemName: "xmark.circle")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.white.opacity(0.4))
                                 }
                                 .buttonStyle(.plain)
-                                .help("Remove from shelf")
-                                .accessibilityLabel("Remove \(item.name)")
+                                .help("Remove from shelf (keeps original file on Mac)")
+                                .accessibilityLabel("Remove \(item.name) from shelf without deleting file")
                             }
                             .padding(6)
                             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.04)))
@@ -820,12 +874,17 @@ struct DashboardView: View {
                 )
             }
         }
+        .quickLookPreview($fileShelfPreviewURL)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onDrop(of: [.fileURL, .item], isTargeted: $isDashboardFileShelfDropTargeted) { providers in
-            let accepted = fileShelf.handleDrop(providers: providers) { url in
-                setFeedback("File added to shelf: \(url.lastPathComponent)")
-            }
+            let accepted = fileShelf.handleDrop(providers: providers, onFilesAdded: { urls in
+                if urls.count == 1, let first = urls.first {
+                    setFeedback("File added to shelf: \(first.lastPathComponent)")
+                } else if urls.count > 1 {
+                    setFeedback("Added \(urls.count) files to shelf")
+                }
+            })
             return accepted
         }
     }

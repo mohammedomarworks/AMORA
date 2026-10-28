@@ -136,6 +136,11 @@ final class ActionEngineTests: XCTestCase {
         let (engine, _, _, _, _, _) = makeTestEngine()
         let expectedIdentifiers = [
             "app.open",
+            "fileshelf.clear",
+            "fileshelf.list",
+            "fileshelf.open",
+            "fileshelf.remove",
+            "fileshelf.reveal",
             "folder.open",
             "media.next",
             "media.pause",

@@ -303,6 +303,8 @@ struct ActionExecutionView: View {
             Image(systemName: "bell.fill").font(.system(size: 11)).foregroundStyle(.indigo)
         case .saveMemory, .forgetMemory, .updateMemory, .clearMemories:
             Image(systemName: "brain.head.profile").font(.system(size: 11)).foregroundStyle(.teal)
+        case .listShelfFiles, .openShelfFile, .revealShelfFile, .removeShelfFile, .clearShelf:
+            Image(systemName: "tray.and.arrow.down").font(.system(size: 11)).foregroundStyle(.cyan)
         }
     }
 

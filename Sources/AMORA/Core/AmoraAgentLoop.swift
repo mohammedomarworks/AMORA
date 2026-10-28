@@ -1103,6 +1103,119 @@ final class AmoraAgentLoop {
             }
         }
 
+        // 15. File Shelf: list
+        if normalized == "fileshelf.list" || normalized == "list_shelf_files" || normalized == "list_files" || normalized == "shelf.list" {
+            let shelf = FileShelfService.shared
+            shelf.refreshItemStates()
+            if shelf.items.isEmpty {
+                return ToolExecutionResult(
+                    isSuccess: true,
+                    output: "Your File Shelf is empty. You can drag and drop files onto the shelf to pin them.",
+                    deniedConfirmation: false
+                )
+            }
+            let listStr = shelf.items.map { item in
+                let status = item.isMissing ? "missing" : (item.fileSizeDescription ?? "available")
+                return "• \(item.name) (\(status))"
+            }.joined(separator: "\n")
+            let count = shelf.items.count
+            let countStr = count == 1 ? "1 item" : "\(count) items"
+            return ToolExecutionResult(
+                isSuccess: true,
+                output: "Here are the \(countStr) on your File Shelf:\n\(listStr)",
+                deniedConfirmation: false
+            )
+        }
+
+        // 16. File Shelf: open
+        if normalized == "fileshelf.open" || normalized == "open_shelf_file" || normalized == "open_file" || normalized == "file.open" {
+            guard let name = arguments["name"] ?? arguments["file"] ?? arguments["filename"] ?? arguments["target"],
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return ToolExecutionResult(isSuccess: false, output: "Missing required 'name' parameter for fileshelf.open.", deniedConfirmation: false)
+            }
+            let shelf = FileShelfService.shared
+            guard let item = shelf.findItem(named: name) else {
+                return ToolExecutionResult(isSuccess: false, output: "I couldn't find '\(name)' on your File Shelf.", deniedConfirmation: false)
+            }
+            guard !item.isMissing && FileManager.default.fileExists(atPath: item.url.path) else {
+                shelf.markItemMissing(id: item.id)
+                return ToolExecutionResult(isSuccess: false, output: "Cannot open '\(item.name)': the file is missing or inaccessible.", deniedConfirmation: false)
+            }
+            if shelf.openFile(item) {
+                return ToolExecutionResult(isSuccess: true, output: "Opening \(item.name).", deniedConfirmation: false)
+            } else {
+                return ToolExecutionResult(isSuccess: false, output: "Failed to open \(item.name).", deniedConfirmation: false)
+            }
+        }
+
+        // 17. File Shelf: reveal
+        if normalized == "fileshelf.reveal" || normalized == "reveal_shelf_file" || normalized == "reveal_file" || normalized == "file.reveal" {
+            guard let name = arguments["name"] ?? arguments["file"] ?? arguments["filename"] ?? arguments["target"],
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return ToolExecutionResult(isSuccess: false, output: "Missing required 'name' parameter for fileshelf.reveal.", deniedConfirmation: false)
+            }
+            let shelf = FileShelfService.shared
+            guard let item = shelf.findItem(named: name) else {
+                return ToolExecutionResult(isSuccess: false, output: "I couldn't find '\(name)' on your File Shelf.", deniedConfirmation: false)
+            }
+            guard !item.isMissing && FileManager.default.fileExists(atPath: item.url.path) else {
+                shelf.markItemMissing(id: item.id)
+                return ToolExecutionResult(isSuccess: false, output: "Cannot reveal '\(item.name)': the file is missing or inaccessible.", deniedConfirmation: false)
+            }
+            if shelf.revealFile(item) {
+                return ToolExecutionResult(isSuccess: true, output: "Revealed \(item.name) in Finder.", deniedConfirmation: false)
+            } else {
+                return ToolExecutionResult(isSuccess: false, output: "Failed to reveal \(item.name).", deniedConfirmation: false)
+            }
+        }
+
+        // 18. File Shelf: remove
+        if normalized == "fileshelf.remove" || normalized == "remove_shelf_file" || normalized == "remove_file" || normalized == "file.remove" || normalized == "unpin_file" {
+            guard let name = arguments["name"] ?? arguments["file"] ?? arguments["filename"] ?? arguments["target"],
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return ToolExecutionResult(isSuccess: false, output: "Missing required 'name' parameter for fileshelf.remove.", deniedConfirmation: false)
+            }
+            let shelf = FileShelfService.shared
+            guard let item = shelf.findItem(named: name) else {
+                return ToolExecutionResult(isSuccess: false, output: "I couldn't find '\(name)' on your File Shelf.", deniedConfirmation: false)
+            }
+            shelf.removeItem(id: item.id)
+            return ToolExecutionResult(
+                isSuccess: true,
+                output: "Removed \(item.name) from your File Shelf. The original file was not deleted.",
+                deniedConfirmation: false
+            )
+        }
+
+        // 19. File Shelf: clear
+        if normalized == "fileshelf.clear" || normalized == "clear_shelf" || normalized == "clear_fileshelf" || normalized == "shelf.clear" {
+            let confirmedArg = arguments["confirmed"]?.lowercased() == "true"
+            let confirmed: Bool
+            if confirmedArg {
+                confirmed = true
+            } else {
+                confirmed = await coordinator.requestConfirmation(
+                    for: .clearShelf(confirmed: true),
+                    prompt: "Are you sure you want to clear your File Shelf? (This will not delete the original files from your Mac.)",
+                    at: toolIndex
+                )
+            }
+            guard confirmed else {
+                return ToolExecutionResult(
+                    isSuccess: false,
+                    output: "Action cancelled: confirmation was not granted.",
+                    deniedConfirmation: true
+                )
+            }
+            let count = FileShelfService.shared.items.count
+            FileShelfService.shared.clearShelf()
+            return ToolExecutionResult(
+                isSuccess: true,
+                output: "Cleared all \(count) items from your File Shelf. The original files were not deleted.",
+                deniedConfirmation: false
+            )
+        }
+
         // Unknown / unapproved tool
         return ToolExecutionResult(
             isSuccess: false,
@@ -1156,6 +1269,11 @@ Approved tools:
 - app.open: {"name": "app name"} (open installed macOS apps like Spotify, VS Code, Safari)
 - folder.open: {"location": "downloads"|"documents"|"desktop"} (open a standard folder)
 - workspace.open: {"section": "Notes"|"Clipboard"|"File Shelf"} (open AMORA workspace)
+- fileshelf.list: {} (list filenames and status of items currently on the File Shelf)
+- fileshelf.open: {"name": "filename"} (open a file from the File Shelf using its default app)
+- fileshelf.reveal: {"name": "filename"} (reveal a file from the File Shelf in Finder)
+- fileshelf.remove: {"name": "filename"} (remove a file reference from the File Shelf without deleting the actual file)
+- fileshelf.clear: {} (remove all references from the File Shelf; requires confirmation)
 - media.play: {} (start audio playback)
 - media.pause: {} (pause audio playback)
 - media.next: {} (skip to next track)

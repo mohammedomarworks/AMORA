@@ -7,6 +7,16 @@ enum IslandDisplayState: Int, CaseIterable, Equatable {
     case workspace = 2
 }
 
+public struct NotchDropFeedback: Equatable, Sendable {
+    public let isSuccess: Bool
+    public let message: String
+
+    public init(isSuccess: Bool, message: String) {
+        self.isSuccess = isSuccess
+        self.message = message
+    }
+}
+
 /// Shared morph state for the single notch window. `expansion` is driven by
 /// WindowManager's spring (0 = collapsed into the physical notch, 1 = compact
 /// Quick Island, 2 = expanded Workspace) and read here to interpolate corner
@@ -35,6 +45,56 @@ final class IslandModel {
 
     var isExpanded: Bool { expansion > 0.05 }
     var isWorkspace: Bool { expansion > 1.05 }
+
+    /// True while a valid file or folder drag is hovering over the notch.
+    var isDropTargeted: Bool = false
+
+    /// Temporary feedback shown on the collapsed notch after a drop.
+    var notchDropFeedback: NotchDropFeedback?
+    private var feedbackResetTask: Task<Void, Never>?
+
+    func setDropTargeted(_ targeted: Bool) {
+        guard isDropTargeted != targeted else { return }
+        isDropTargeted = targeted
+        if targeted {
+            AMORARobot.shared.updateExpression(for: .curious)
+            AMORARobot.shared.setEyeDirection(x: 0, y: -0.8)
+        } else {
+            PersonalityEngine.shared.restoreAmbientState()
+        }
+    }
+
+    func showDropFeedback(result: FileShelfService.DropResult) {
+        feedbackResetTask?.cancel()
+        if result.newlyAdded.count > 0 && result.failedCount == 0 {
+            let count = result.newlyAdded.count
+            let msg = count == 1 ? "Added to shelf" : "Added \(count) items"
+            notchDropFeedback = NotchDropFeedback(isSuccess: true, message: msg)
+            AMORARobot.shared.updateExpression(for: .happy)
+        } else if result.isPartialSuccess {
+            notchDropFeedback = NotchDropFeedback(
+                isSuccess: true,
+                message: "Added \(result.newlyAdded.count) of \(result.totalRequested)"
+            )
+            AMORARobot.shared.updateExpression(for: .happy)
+        } else if !result.existingReordered.isEmpty && result.newlyAdded.isEmpty && result.failedCount == 0 {
+            notchDropFeedback = NotchDropFeedback(isSuccess: true, message: "Already on shelf")
+            AMORARobot.shared.updateExpression(for: .happy)
+        } else {
+            notchDropFeedback = NotchDropFeedback(isSuccess: false, message: "Could not add")
+            AMORARobot.shared.updateExpression(for: .concerned)
+        }
+
+        feedbackResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if !Task.isCancelled {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    self.notchDropFeedback = nil
+                }
+                PersonalityEngine.shared.restoreAmbientState()
+            }
+        }
+    }
 
     func islandSize(for e: Double) -> CGSize {
         if e <= 1.0 {
@@ -202,6 +262,17 @@ struct DynamicIslandView: View {
     var body: some View {
         content(expansion: island.expansion)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .onDrop(of: [.fileURL, .item], isTargeted: Binding(
+                get: { island.isDropTargeted },
+                set: { island.setDropTargeted($0) }
+            )) { providers in
+                guard !island.isExpanded else { return false }
+                let accepted = FileShelfService.shared.handleDrop(providers: providers, onFilesAdded: { urls in
+                    let result = FileShelfService.shared.addFilesDetailed(urls: urls)
+                    island.showDropFeedback(result: result)
+                })
+                return accepted
+            }
             .onHover { hovering in
                 guard !island.isExpanded && island.targetState == .collapsed else { return }
                 robot.isHovering = hovering
@@ -254,6 +325,7 @@ struct DynamicIslandView: View {
     private func surface(shape: IslandShape, size: CGSize, bottomRadius: CGFloat, e: Double) -> some View {
         let border = IslandBorderShape(bottomRadius: bottomRadius)
         let tD = min(1.0, max(0.0, e))
+        let palette = appState.settings.palette
 
         // Apple-style razor-thin glass border: completely transparent near the top bezel
         // and physical notch (y <= topInset), emerging subtly down the lateral edges and
@@ -277,6 +349,12 @@ struct DynamicIslandView: View {
 
             // Inner hairline border tracing the exact curved silhouette
             border.stroke(borderGradient, lineWidth: 1.0)
+
+            // Active drop highlight & glow when files or folders are dragged directly over the notch
+            if island.isDropTargeted {
+                border.stroke(palette.accent.opacity(0.9), lineWidth: 1.8)
+                border.stroke(palette.accent.opacity(0.35), lineWidth: 4.5).blur(radius: 2.0)
+            }
         }
         .frame(width: size.width, height: size.height)
         .contentShape(shape)
@@ -298,12 +376,30 @@ struct DynamicIslandView: View {
         let eyeOpacity = 1.0 - eyeProgress
         let eyeScale = 1.0 - 0.15 * eyeProgress
 
-        return NotchEyesView(robot: robot)
-            .opacity(eyeOpacity)
-            .scaleEffect(eyeScale, anchor: .center)
-            .frame(width: island.notchWidth, height: chinHeight, alignment: .center)
-            .frame(width: island.notchWidth, height: island.collapsedSize.height, alignment: .bottom)
-            .allowsHitTesting(e < 0.1)
+        return ZStack {
+            if let feedback = island.notchDropFeedback {
+                HStack(spacing: 5) {
+                    Image(systemName: feedback.isSuccess ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(feedback.isSuccess ? Color.green : Color.orange)
+                    Text(feedback.message)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.black.opacity(0.85)))
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            } else {
+                NotchEyesView(robot: robot)
+            }
+        }
+        .opacity(eyeOpacity)
+        .scaleEffect(eyeScale, anchor: .center)
+        .frame(width: island.notchWidth, height: chinHeight, alignment: .center)
+        .frame(width: island.notchWidth, height: island.collapsedSize.height, alignment: .bottom)
+        .allowsHitTesting(e < 0.1)
     }
 
     private func quickContent(expansion e: Double) -> some View {

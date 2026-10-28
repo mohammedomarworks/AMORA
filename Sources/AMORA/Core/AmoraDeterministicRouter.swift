@@ -45,6 +45,11 @@ enum AmoraDeterministicRouter {
             }
         }
 
+        // 0b. File Shelf explicit actions (list, clear, open, reveal, remove)
+        if let fileShelfAction = fileShelfDecision(n: n, original: trimmed) {
+            return fileShelfAction
+        }
+
         // 1. Note search ("find my notes about X") — before battery/app so that
         //    "...notes about battery" is treated as a search, not a battery read.
         if let query = noteSearchQuery(n) {
@@ -126,6 +131,16 @@ enum AmoraDeterministicRouter {
             return .toolCall(name: "forget_memory", arguments: ["query": query])
         case .clearMemories(let confirmed):
             return .toolCall(name: "clear_memories", arguments: ["confirmed": "\(confirmed)"])
+        case .listShelfFiles:
+            return .toolCall(name: "fileshelf.list", arguments: [:])
+        case .openShelfFile(let name):
+            return .toolCall(name: "fileshelf.open", arguments: ["name": name])
+        case .revealShelfFile(let name):
+            return .toolCall(name: "fileshelf.reveal", arguments: ["name": name])
+        case .removeShelfFile(let name):
+            return .toolCall(name: "fileshelf.remove", arguments: ["name": name])
+        case .clearShelf(let confirmed):
+            return .toolCall(name: "fileshelf.clear", arguments: ["confirmed": "\(confirmed)"])
         }
     }
 
@@ -255,6 +270,94 @@ enum AmoraDeterministicRouter {
             }
             if !remainder.isEmpty { return remainder }
         }
+        return nil
+    }
+
+    // MARK: - File Shelf Actions
+
+    private static func fileShelfDecision(n: String, original: String) -> AmoraAgentDecision? {
+        // 1. Clear shelf
+        if n == "clear file shelf" || n == "clear fileshelf" || n == "clear my file shelf" || n == "clear the shelf" || n == "clear shelf" || n == "clear pinned files" {
+            return .toolCall(name: "fileshelf.clear", arguments: [:])
+        }
+
+        // 2. List shelf items
+        if n == "list files on shelf" || n == "list shelf files" || n == "list files in shelf" || n == "list shelf" ||
+           n == "what files are on my shelf" || n == "what files are on the shelf" || n == "what files are in the shelf" ||
+           n == "what is on my file shelf" || n == "what's on my file shelf" || n == "what's on my shelf" ||
+           n == "what files are pinned" || n == "show files on shelf" || n == "show shelf items" {
+            return .toolCall(name: "fileshelf.list", arguments: [:])
+        }
+
+        // 3. Open file from shelf
+        // e.g. "open report.pdf from shelf", "open document on the shelf", "open pinned file notes.txt"
+        if n.hasPrefix("open ") && (n.contains("from shelf") || n.contains("from my shelf") || n.contains("from file shelf") || n.contains("from the file shelf") || n.contains("from the shelf") || n.contains("on shelf") || n.contains("on the shelf") || n.contains("on file shelf") || n.contains("pinned file")) {
+            var target = original
+            let patterns = ["from the file shelf", "from file shelf", "from my shelf", "from the shelf", "from shelf", "on the file shelf", "on file shelf", "on the shelf", "on shelf"]
+            for pat in patterns {
+                if let r = target.range(of: pat, options: .caseInsensitive) {
+                    target.removeSubrange(r)
+                }
+            }
+            if target.lowercased().hasPrefix("open pinned file ") {
+                target = String(target.dropFirst("open pinned file ".count))
+            } else if target.lowercased().hasPrefix("open file ") {
+                target = String(target.dropFirst("open file ".count))
+            } else if target.lowercased().hasPrefix("open ") {
+                target = String(target.dropFirst("open ".count))
+            }
+            let cleaned = target.trimmingCharacters(in: CharacterSet(charactersIn: " \t\"'"))
+            if !cleaned.isEmpty {
+                return .toolCall(name: "fileshelf.open", arguments: ["name": cleaned])
+            }
+        }
+
+        // 4. Reveal file from shelf in Finder
+        // e.g. "reveal report.pdf in finder", "show document in finder"
+        if (n.hasPrefix("reveal ") || n.hasPrefix("show ")) && (n.contains("in finder") || n.contains("from shelf") || n.contains("from my shelf") || n.contains("from file shelf") || n.contains("from the file shelf") || n.contains("on shelf") || n.contains("on the shelf") || n.contains("on file shelf")) {
+            var target = original
+            let patterns = ["in finder", "from the file shelf", "from file shelf", "from my shelf", "from the shelf", "from shelf", "on the file shelf", "on file shelf", "on the shelf", "on shelf"]
+            for pat in patterns {
+                if let r = target.range(of: pat, options: .caseInsensitive) {
+                    target.removeSubrange(r)
+                }
+            }
+            if target.lowercased().hasPrefix("reveal ") {
+                target = String(target.dropFirst("reveal ".count))
+            } else if target.lowercased().hasPrefix("show ") {
+                target = String(target.dropFirst("show ".count))
+            }
+            let cleaned = target.trimmingCharacters(in: CharacterSet(charactersIn: " \t\"'"))
+            if !cleaned.isEmpty {
+                return .toolCall(name: "fileshelf.reveal", arguments: ["name": cleaned])
+            }
+        }
+
+        // 5. Remove / unpin file from shelf
+        // e.g. "remove notes.txt from shelf", "unpin report.pdf"
+        if (n.hasPrefix("remove ") || n.hasPrefix("unpin ")) && (n.contains("from shelf") || n.contains("from my shelf") || n.contains("from file shelf") || n.hasPrefix("unpin ")) {
+            var target = original
+            let patterns = ["from my shelf", "from shelf", "from the shelf", "from file shelf", "from the file shelf"]
+            for pat in patterns {
+                if let r = target.range(of: pat, options: .caseInsensitive) {
+                    target.removeSubrange(r)
+                }
+            }
+            if target.lowercased().hasPrefix("remove file ") {
+                target = String(target.dropFirst("remove file ".count))
+            } else if target.lowercased().hasPrefix("remove ") {
+                target = String(target.dropFirst("remove ".count))
+            } else if target.lowercased().hasPrefix("unpin file ") {
+                target = String(target.dropFirst("unpin file ".count))
+            } else if target.lowercased().hasPrefix("unpin ") {
+                target = String(target.dropFirst("unpin ".count))
+            }
+            let cleaned = target.trimmingCharacters(in: CharacterSet(charactersIn: " \t\"'"))
+            if !cleaned.isEmpty {
+                return .toolCall(name: "fileshelf.remove", arguments: ["name": cleaned])
+            }
+        }
+
         return nil
     }
 }

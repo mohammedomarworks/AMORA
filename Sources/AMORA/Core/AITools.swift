@@ -6,6 +6,7 @@ enum AMORAToolOperation: Equatable, Sendable {
     case readMedia, playMedia, pauseMedia, nextTrack, previousTrack, createNote(text: String), listNotes, searchNotes(query: String)
     case openApplication(name: String), openFolder(name: String), readSystem, showView(name: String)
     case saveMemory(key: String, value: String), recallMemory(query: String), listMemories, forgetMemory(query: String), updateMemory(key: String, value: String), clearMemories(confirmed: Bool)
+    case listShelfFiles, openShelfFile(name: String), revealShelfFile(name: String), removeShelfFile(name: String), clearShelfFiles(confirmed: Bool)
 }
 enum AMORAToolSafety: String, Codable, Sendable { case readOnly, lowRisk, confirmationRequired }
 struct AMORAToolRequest: Equatable, Sendable { let tool: AMORATool; let operation: AMORAToolOperation }
@@ -33,7 +34,7 @@ struct AMORAToolResult: Equatable, Sendable {
     }
     func validate(_ request: AMORAToolRequest) -> AMORAToolValidation {
         switch request.operation {
-        case .readBattery, .readMedia, .readSystem, .listNotes, .searchNotes, .recallMemory, .listMemories, .forgetMemory: return .allowed
+        case .readBattery, .readMedia, .readSystem, .listNotes, .searchNotes, .recallMemory, .listMemories, .forgetMemory, .listShelfFiles, .openShelfFile, .revealShelfFile, .removeShelfFile: return .allowed
         case let .startTimer(seconds), let .addTimerTime(seconds): return (1...86_400).contains(seconds) ? .allowed : .rejected(reason: "Timer duration is outside the supported range.")
         case .pauseTimer, .resumeTimer, .stopTimer, .playMedia, .pauseMedia, .nextTrack, .previousTrack, .createNote, .openApplication, .showView: return .allowed
         case let .openFolder(name): return folderOpener.resolveFolderURL(for: name) == nil ? .rejected(reason: "That folder is not available through AMORA.") : .needsConfirmation(prompt: "Would you like me to open \(name.capitalized)?")
@@ -51,6 +52,8 @@ struct AMORAToolResult: Equatable, Sendable {
             }
         case .clearMemories(let confirmed):
             return confirmed ? .allowed : .needsConfirmation(prompt: "Are you sure you want me to forget everything? This will permanently delete all stored memories.")
+        case .clearShelfFiles(let confirmed):
+            return confirmed ? .allowed : .needsConfirmation(prompt: "Are you sure you want to clear your File Shelf? (This will not delete the original files from your Mac.)")
         }
     }
     private func perform(_ request: AMORAToolRequest) async -> AMORAToolResult {
@@ -166,6 +169,61 @@ struct AMORAToolResult: Equatable, Sendable {
             } catch {
                 return .init(tool: .memory, status: .failure, message: "Failed to clear memories: \(error.localizedDescription)")
             }
+        case .listShelfFiles:
+            let shelf = FileShelfService.shared
+            shelf.refreshItemStates()
+            if shelf.items.isEmpty {
+                return .init(tool: .fileShelf, status: .success, message: "Your File Shelf is empty. You can drag and drop files onto the shelf to pin them.", data: ["count": "0"])
+            }
+            let listStr = shelf.items.map { item in
+                let status = item.isMissing ? "missing" : (item.fileSizeDescription ?? "available")
+                return "• \(item.name) (\(status))"
+            }.joined(separator: "\n")
+            let count = shelf.items.count
+            let countStr = count == 1 ? "1 item" : "\(count) items"
+            return .init(tool: .fileShelf, status: .success, message: "Here are the \(countStr) on your File Shelf:\n\(listStr)", data: ["count": "\(count)"])
+        case let .openShelfFile(name):
+            let shelf = FileShelfService.shared
+            guard let item = shelf.findItem(named: name) else {
+                return .init(tool: .fileShelf, status: .failure, message: "I couldn't find '\(name)' on your File Shelf.")
+            }
+            guard !item.isMissing && FileManager.default.fileExists(atPath: item.url.path) else {
+                shelf.markItemMissing(id: item.id)
+                return .init(tool: .fileShelf, status: .failure, message: "Cannot open '\(item.name)': the file is missing or inaccessible.")
+            }
+            if shelf.openFile(item) {
+                return .init(tool: .fileShelf, status: .success, message: "Opening \(item.name).", data: ["name": item.name, "path": item.url.path])
+            } else {
+                return .init(tool: .fileShelf, status: .failure, message: "Failed to open \(item.name).")
+            }
+        case let .revealShelfFile(name):
+            let shelf = FileShelfService.shared
+            guard let item = shelf.findItem(named: name) else {
+                return .init(tool: .fileShelf, status: .failure, message: "I couldn't find '\(name)' on your File Shelf.")
+            }
+            guard !item.isMissing && FileManager.default.fileExists(atPath: item.url.path) else {
+                shelf.markItemMissing(id: item.id)
+                return .init(tool: .fileShelf, status: .failure, message: "Cannot reveal '\(item.name)': the file is missing or inaccessible.")
+            }
+            if shelf.revealFile(item) {
+                return .init(tool: .fileShelf, status: .success, message: "Revealed \(item.name) in Finder.", data: ["name": item.name, "path": item.url.path])
+            } else {
+                return .init(tool: .fileShelf, status: .failure, message: "Failed to reveal \(item.name).")
+            }
+        case let .removeShelfFile(name):
+            let shelf = FileShelfService.shared
+            guard let item = shelf.findItem(named: name) else {
+                return .init(tool: .fileShelf, status: .failure, message: "I couldn't find '\(name)' on your File Shelf.")
+            }
+            shelf.removeItem(id: item.id)
+            return .init(tool: .fileShelf, status: .success, message: "Removed \(item.name) from your File Shelf. The original file was not deleted.", data: ["name": item.name])
+        case let .clearShelfFiles(confirmed):
+            guard confirmed else {
+                return .init(tool: .fileShelf, status: .needsConfirmation, message: "Are you sure you want to clear your File Shelf? (This will not delete the original files from your Mac.)")
+            }
+            let count = FileShelfService.shared.items.count
+            FileShelfService.shared.clearShelf()
+            return .init(tool: .fileShelf, status: .success, message: "Cleared all \(count) items from your File Shelf. The original files were not deleted.", data: ["clearedCount": "\(count)"])
         }
     }
     private func mediaControl(playing: Bool) -> AMORAToolResult {
@@ -232,6 +290,16 @@ struct AMORAToolPlan: Codable, Sendable {
                 return .init(tool: tool, operation: .updateMemory(key: key, value: value))
             case (.memory, "clear"):
                 return .init(tool: tool, operation: .clearMemories(confirmed: true))
+            case (.fileShelf, "list"), (.file, "list"):
+                return .init(tool: tool, operation: .listShelfFiles)
+            case (.fileShelf, "open"), (.file, "open"):
+                return (call.name ?? call.text ?? call.query).map { .init(tool: tool, operation: .openShelfFile(name: $0)) }
+            case (.fileShelf, "reveal"), (.file, "reveal"):
+                return (call.name ?? call.text ?? call.query).map { .init(tool: tool, operation: .revealShelfFile(name: $0)) }
+            case (.fileShelf, "remove"), (.file, "remove"), (.fileShelf, "unpin"), (.file, "unpin"):
+                return (call.name ?? call.text ?? call.query).map { .init(tool: tool, operation: .removeShelfFile(name: $0)) }
+            case (.fileShelf, "clear"), (.file, "clear"):
+                return .init(tool: tool, operation: .clearShelfFiles(confirmed: true))
             default: return nil
             }
         }

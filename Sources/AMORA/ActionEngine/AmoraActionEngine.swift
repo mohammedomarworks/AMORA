@@ -27,6 +27,7 @@ public final class AmoraActionEngine: Sendable {
         timerController: any AmoraTimerControlling = DefaultAmoraTimerController(),
         memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared,
         memoryService: AmoraMemoryService = .shared,
+        fileShelf: FileShelfService = .shared,
         decider: any AmoraActionDeciding = AmoraActionDecisionEngine(),
         eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) -> AmoraActionEngine {
@@ -39,7 +40,8 @@ public final class AmoraActionEngine: Sendable {
             workspaceController: workspaceController,
             timerController: timerController,
             memoryStore: memoryStore,
-            memoryService: memoryService
+            memoryService: memoryService,
+            fileShelf: fileShelf
         )
         return AmoraActionEngine(registry: registry, decider: decider, eventSink: eventSink)
     }
@@ -51,6 +53,7 @@ public final class AmoraActionEngine: Sendable {
         onFolderOpen: (@Sendable (URL) -> Void)? = nil,
         memoryStore: any AmoraMemoryStoring = AmoraMemoryStore(storage: AmoraInMemoryStorage()),
         memoryService: AmoraMemoryService = .shared,
+        fileShelf: FileShelfService = .shared,
         eventSink: any AmoraEventSinking = MacOSAmoraEventSink()
     ) -> AmoraActionEngine {
         let registry = AmoraActionRegistry()
@@ -62,7 +65,8 @@ public final class AmoraActionEngine: Sendable {
             workspaceController: ControlledAmoraWorkspaceController(),
             timerController: DefaultAmoraTimerController(),
             memoryStore: memoryStore,
-            memoryService: memoryService
+            memoryService: memoryService,
+            fileShelf: fileShelf
         )
         return AmoraActionEngine(registry: registry, decider: AmoraActionDecisionEngine(), eventSink: eventSink)
     }
@@ -347,7 +351,8 @@ public final class AmoraActionEngine: Sendable {
         workspaceController: any AmoraWorkspaceControlling,
         timerController: any AmoraTimerControlling,
         memoryStore: any AmoraMemoryStoring = AmoraMemoryStore.shared,
-        memoryService: AmoraMemoryService = .shared
+        memoryService: AmoraMemoryService = .shared,
+        fileShelf: FileShelfService = .shared
     ) {
         // --- 1. Media: Play ---
         registry.register(AmoraActionDefinition(
@@ -764,6 +769,192 @@ public final class AmoraActionEngine: Sendable {
                 } catch {
                     return .failed(actionId: "memory.clear", message: "Failed to clear memories: \(error.localizedDescription)")
                 }
+            }
+        ))
+
+        // --- 17. File Shelf: List ---
+        registry.register(AmoraActionDefinition(
+            identifier: "fileshelf.list",
+            name: "List File Shelf",
+            description: "Lists all files currently pinned to the AMORA File Shelf.",
+            handler: { _, _ in
+                let shelf = fileShelf
+                shelf.refreshItemStates()
+                if shelf.items.isEmpty {
+                    return .success(
+                        actionId: "fileshelf.list",
+                        message: "Your File Shelf is empty. You can drag and drop files onto the shelf to pin them.",
+                        data: ["count": "0"]
+                    )
+                }
+                let listStr = shelf.items.map { item in
+                    let status = item.isMissing ? "missing" : (item.fileSizeDescription ?? "available")
+                    return "• \(item.name) (\(status))"
+                }.joined(separator: "\n")
+                let count = shelf.items.count
+                let countStr = count == 1 ? "1 item" : "\(count) items"
+                return .success(
+                    actionId: "fileshelf.list",
+                    message: "Here are the \(countStr) on your File Shelf:\n\(listStr)",
+                    data: ["count": "\(count)"]
+                )
+            }
+        ))
+
+        // --- 18. File Shelf: Open ---
+        registry.register(AmoraActionDefinition(
+            identifier: "fileshelf.open",
+            name: "Open Pinned File",
+            description: "Opens a pinned file from the File Shelf using its default macOS application.",
+            validator: { action in
+                guard case .openShelfFile(let name) = action else {
+                    return .invalid(reason: "Invalid action payload for fileshelf.open.")
+                }
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? .invalid(reason: "File name cannot be empty.") : .valid
+            },
+            handler: { action, _ in
+                guard case .openShelfFile(let name) = action else {
+                    return .invalidInput(actionId: "fileshelf.open", message: "Missing file name.")
+                }
+                let shelf = fileShelf
+                guard let item = shelf.findItem(named: name) else {
+                    return .unavailable(
+                        actionId: "fileshelf.open",
+                        message: "I couldn't find '\(name)' on your File Shelf."
+                    )
+                }
+                guard !item.isMissing && FileManager.default.fileExists(atPath: item.url.path) else {
+                    shelf.markItemMissing(id: item.id)
+                    return .failed(
+                        actionId: "fileshelf.open",
+                        message: "Cannot open '\(item.name)': the file is missing or inaccessible."
+                    )
+                }
+                if shelf.openFile(item) {
+                    return .success(
+                        actionId: "fileshelf.open",
+                        message: "Opening \(item.name).",
+                        data: ["name": item.name, "path": item.url.path]
+                    )
+                } else {
+                    return .failed(
+                        actionId: "fileshelf.open",
+                        message: "Failed to open \(item.name)."
+                    )
+                }
+            }
+        ))
+
+        // --- 19. File Shelf: Reveal ---
+        registry.register(AmoraActionDefinition(
+            identifier: "fileshelf.reveal",
+            name: "Reveal Pinned File",
+            description: "Reveals a pinned file from the File Shelf in Finder.",
+            validator: { action in
+                guard case .revealShelfFile(let name) = action else {
+                    return .invalid(reason: "Invalid action payload for fileshelf.reveal.")
+                }
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? .invalid(reason: "File name cannot be empty.") : .valid
+            },
+            handler: { action, _ in
+                guard case .revealShelfFile(let name) = action else {
+                    return .invalidInput(actionId: "fileshelf.reveal", message: "Missing file name.")
+                }
+                let shelf = fileShelf
+                guard let item = shelf.findItem(named: name) else {
+                    return .unavailable(
+                        actionId: "fileshelf.reveal",
+                        message: "I couldn't find '\(name)' on your File Shelf."
+                    )
+                }
+                guard !item.isMissing && FileManager.default.fileExists(atPath: item.url.path) else {
+                    shelf.markItemMissing(id: item.id)
+                    return .failed(
+                        actionId: "fileshelf.reveal",
+                        message: "Cannot reveal '\(item.name)': the file is missing or inaccessible."
+                    )
+                }
+                if shelf.revealFile(item) {
+                    return .success(
+                        actionId: "fileshelf.reveal",
+                        message: "Revealed \(item.name) in Finder.",
+                        data: ["name": item.name, "path": item.url.path]
+                    )
+                } else {
+                    return .failed(
+                        actionId: "fileshelf.reveal",
+                        message: "Failed to reveal \(item.name)."
+                    )
+                }
+            }
+        ))
+
+        // --- 20. File Shelf: Remove ---
+        registry.register(AmoraActionDefinition(
+            identifier: "fileshelf.remove",
+            name: "Remove from Shelf",
+            description: "Removes a file reference from the File Shelf without deleting the actual file from disk.",
+            validator: { action in
+                guard case .removeShelfFile(let name) = action else {
+                    return .invalid(reason: "Invalid action payload for fileshelf.remove.")
+                }
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? .invalid(reason: "File name cannot be empty.") : .valid
+            },
+            handler: { action, _ in
+                guard case .removeShelfFile(let name) = action else {
+                    return .invalidInput(actionId: "fileshelf.remove", message: "Missing file name.")
+                }
+                let shelf = fileShelf
+                guard let item = shelf.findItem(named: name) else {
+                    return .unavailable(
+                        actionId: "fileshelf.remove",
+                        message: "I couldn't find '\(name)' on your File Shelf."
+                    )
+                }
+                shelf.removeItem(id: item.id)
+                return .success(
+                    actionId: "fileshelf.remove",
+                    message: "Removed \(item.name) from your File Shelf. The original file was not deleted.",
+                    data: ["name": item.name]
+                )
+            }
+        ))
+
+        // --- 21. File Shelf: Clear ---
+        registry.register(AmoraActionDefinition(
+            identifier: "fileshelf.clear",
+            name: "Clear File Shelf",
+            description: "Removes all file references from the File Shelf (requires confirmation; original files are preserved).",
+            isConfirmationRequiredByDefault: true,
+            confirmationRequirement: { _ in
+                .required(prompt: "Are you sure you want to clear your File Shelf? (This will not delete the original files from your Mac.)")
+            },
+            validator: { action in
+                guard case .clearShelf = action else {
+                    return .invalid(reason: "Invalid action payload for fileshelf.clear.")
+                }
+                return .valid
+            },
+            handler: { action, context in
+                guard case .clearShelf(let confirmed) = action else {
+                    return .invalidInput(actionId: "fileshelf.clear", message: "Invalid payload.")
+                }
+                guard confirmed || context.isConfirmed else {
+                    return .needsConfirmation(
+                        actionId: "fileshelf.clear",
+                        prompt: "Are you sure you want to clear your File Shelf? (This will not delete the original files from your Mac.)"
+                    )
+                }
+                let count = fileShelf.items.count
+                fileShelf.clearShelf()
+                return .success(
+                    actionId: "fileshelf.clear",
+                    message: "Cleared all \(count) items from your File Shelf. The original files were not deleted.",
+                    data: ["clearedCount": "\(count)"]
+                )
             }
         ))
     }

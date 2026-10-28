@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import QuickLook
 
 // MARK: - 1. IslandHomePage
 @MainActor
@@ -876,30 +877,66 @@ struct IslandFileShelfPage: View {
     private var shelf: FileShelfService { FileShelfService.shared }
 
     @State private var isDropTargeted: Bool = false
+    @State private var previewURL: URL? = nil
 
     var body: some View {
         VStack(spacing: 6) {
             HStack {
                 Text("File Shelf (\(shelf.items.count))")
                     .font(.system(size: 11, weight: .bold))
+                if shelf.isProcessingDrop {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .padding(.leading, 2)
+                }
                 Spacer()
+                Button {
+                    shelf.presentAddFilesPanel()
+                } label: {
+                    HStack(spacing: 2) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("Add")
+                            .font(.system(size: 10))
+                    }
+                }
+                .buttonStyle(.amoraPill)
+                .help("Add files to shelf")
+                .accessibilityLabel("Add files to shelf")
+
                 if !shelf.items.isEmpty {
                     Button("Clear") {
                         shelf.clearShelf()
                     }
                     .font(.system(size: 10))
                     .buttonStyle(.amoraPill)
+                    .help("Clear all entries from shelf without deleting files")
+                    .accessibilityLabel("Clear all pinned files from shelf")
                 }
             }
             .padding(.horizontal, 10)
             .padding(.top, 8)
 
             if shelf.items.isEmpty {
-                AmoraEmptyStateView(
-                    iconName: "folder",
-                    title: "Shelf Empty",
-                    subtitle: "Drag and drop files here."
-                )
+                VStack(spacing: 8) {
+                    AmoraEmptyStateView(
+                        iconName: "folder",
+                        title: "Shelf Empty",
+                        subtitle: "Drag and drop files here, or browse."
+                    )
+                    Button {
+                        shelf.presentAddFilesPanel()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder.badge.plus")
+                                .font(.system(size: 10))
+                            Text("Browse Files...")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(.amoraPill)
+                    .padding(.bottom, 6)
+                }
                 .frame(maxHeight: .infinity)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
@@ -910,33 +947,55 @@ struct IslandFileShelfPage: View {
                     VStack(spacing: 6) {
                         ForEach(shelf.items, id: \.id) { item in
                             HStack(spacing: 6) {
-                                Image(systemName: "doc")
+                                Image(systemName: item.systemIconName)
                                     .font(.system(size: 12))
                                     .foregroundColor(item.isMissing ? .red : palette.accent)
+                                    .frame(width: 14)
 
-                                Text(item.name)
-                                    .font(.system(size: 10))
-                                    .lineLimit(1)
-                                    .strikethrough(item.isMissing)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .strikethrough(item.isMissing)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .help(item.name)
+
+                                    Text(item.metadataDescription)
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(item.isMissing ? Color.red.opacity(0.85) : .white.opacity(0.45))
+                                }
 
                                 HStack(spacing: 4) {
                                     if !item.isMissing {
                                         Button {
-                                            _ = shelf.openFile(item)
-                                        } label: { Image(systemName: "arrow.up.right.square") }
+                                            previewURL = item.url
+                                        } label: { Image(systemName: "eye") }
                                         .buttonStyle(.amoraHeaderCircle)
+                                        .help("Preview with Quick Look")
+                                        .accessibilityLabel("Preview \(item.name)")
+
+                                        Button {
+                                            _ = shelf.openFile(item)
+                                        } label: { Image(systemName: "arrow.up.forward.app") }
+                                        .buttonStyle(.amoraHeaderCircle)
+                                        .help("Open with default app")
+                                        .accessibilityLabel("Open \(item.name)")
 
                                         Button {
                                             _ = shelf.revealFile(item)
                                         } label: { Image(systemName: "magnifyingglass") }
                                         .buttonStyle(.amoraHeaderCircle)
+                                        .help("Reveal in Finder")
+                                        .accessibilityLabel("Reveal \(item.name) in Finder")
                                     }
 
                                     Button {
                                         shelf.removeItem(id: item.id)
                                     } label: { Image(systemName: "xmark") }
                                     .buttonStyle(.amoraHeaderCircle)
+                                    .help("Remove from shelf without deleting file")
+                                    .accessibilityLabel("Remove \(item.name) from shelf without deleting file")
                                 }
                             }
                             .padding(.horizontal, 8)
@@ -954,6 +1013,7 @@ struct IslandFileShelfPage: View {
                 )
             }
         }
+        .quickLookPreview($previewURL)
         .onDrop(of: [.fileURL, .item], isTargeted: $isDropTargeted) { providers in
             return shelf.handleDrop(providers: providers) { _ in
                 shelf.refreshItemStates()
