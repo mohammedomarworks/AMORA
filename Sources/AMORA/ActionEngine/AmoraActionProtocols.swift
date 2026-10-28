@@ -273,6 +273,34 @@ public struct NativeAmoraFolderOpener: AmoraFolderOpening {
     }
 }
 
+/// Decoupled protocol for safely opening and revealing files through native workspace APIs.
+public protocol AmoraFileOpening: Sendable {
+    func openFile(at url: URL) throws -> Bool
+    func revealFile(at url: URL) throws -> Bool
+}
+
+/// Production implementation opening and revealing files using NSWorkspace.
+public struct NativeAmoraFileOpener: AmoraFileOpening {
+    public init() {}
+
+    public func openFile(at url: URL) throws -> Bool {
+        #if canImport(AppKit)
+        return NSWorkspace.shared.open(url)
+        #else
+        return false
+        #endif
+    }
+
+    public func revealFile(at url: URL) throws -> Bool {
+        #if canImport(AppKit)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        return true
+        #else
+        return false
+        #endif
+    }
+}
+
 /// Decoupled protocol for controlling the Workspace window state.
 @MainActor
 public protocol AmoraWorkspaceControlling: Sendable {
@@ -438,4 +466,35 @@ public struct ControlledAmoraMediaController: AmoraMediaControlling {
 public struct ControlledAmoraWorkspaceController: AmoraWorkspaceControlling {
     public init() {}
     public func showWorkspace(section: String?) {}
+}
+
+/// Controlled file opener for evaluation and testing without invoking NSWorkspace.
+public final class ControlledAmoraFileOpener: AmoraFileOpening, @unchecked Sendable {
+    public private(set) var openedURLs: [URL] = []
+    public private(set) var revealedURLs: [URL] = []
+    public var shouldSucceed: Bool = true
+    public var onOpen: (@Sendable (URL) -> Void)?
+    public var onReveal: (@Sendable (URL) -> Void)?
+
+    public init(shouldSucceed: Bool = true, onOpen: (@Sendable (URL) -> Void)? = nil, onReveal: (@Sendable (URL) -> Void)? = nil) {
+        self.shouldSucceed = shouldSucceed
+        self.onOpen = onOpen
+        self.onReveal = onReveal
+    }
+
+    public func openFile(at url: URL) throws -> Bool {
+        guard shouldSucceed else { return false }
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        openedURLs.append(url)
+        onOpen?(url)
+        return true
+    }
+
+    public func revealFile(at url: URL) throws -> Bool {
+        guard shouldSucceed else { return false }
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        revealedURLs.append(url)
+        onReveal?(url)
+        return true
+    }
 }

@@ -20,6 +20,11 @@ public enum AmoraAction: Equatable, Sendable {
     case forgetMemory(query: String)
     case updateMemory(target: String, newValue: String)
     case clearMemories(confirmed: Bool)
+    case listShelfFiles
+    case openShelfFile(name: String)
+    case revealShelfFile(name: String)
+    case removeShelfFile(name: String)
+    case clearShelf(confirmed: Bool)
 
     public var identifier: String {
         switch self {
@@ -40,6 +45,11 @@ public enum AmoraAction: Equatable, Sendable {
         case .forgetMemory: return "memory.forget"
         case .updateMemory: return "memory.update"
         case .clearMemories: return "memory.clear"
+        case .listShelfFiles: return "fileshelf.list"
+        case .openShelfFile: return "fileshelf.open"
+        case .revealShelfFile: return "fileshelf.reveal"
+        case .removeShelfFile: return "fileshelf.remove"
+        case .clearShelf: return "fileshelf.clear"
         }
     }
 
@@ -67,6 +77,11 @@ public enum AmoraAction: Equatable, Sendable {
         case .forgetMemory(let query): return "Forget Memory: \(query)"
         case .updateMemory(let target, let value): return "Update Memory (\(target): \(value))"
         case .clearMemories: return "Clear Memories"
+        case .listShelfFiles: return "List File Shelf"
+        case .openShelfFile(let name): return "Open File: \(name)"
+        case .revealShelfFile(let name): return "Reveal File: \(name)"
+        case .removeShelfFile(let name): return "Remove from Shelf: \(name)"
+        case .clearShelf: return "Clear File Shelf"
         }
     }
 
@@ -78,7 +93,8 @@ public enum AmoraAction: Equatable, Sendable {
              (.previousTrack, .previousTrack),
              (.cancelTimer, .cancelTimer),
              (.pauseTimer, .pauseTimer),
-             (.resumeTimer, .resumeTimer):
+             (.resumeTimer, .resumeTimer),
+             (.listShelfFiles, .listShelfFiles):
             return true
         case (.openApplication(let lName), .openApplication(let rName)):
             return lName.caseInsensitiveCompare(rName) == .orderedSame
@@ -101,6 +117,14 @@ public enum AmoraAction: Equatable, Sendable {
         case (.forgetMemory(let lQ), .forgetMemory(let rQ)):
             return lQ.caseInsensitiveCompare(rQ) == .orderedSame
         case (.clearMemories(let lC), .clearMemories(let rC)):
+            return lC == rC
+        case (.openShelfFile(let lName), .openShelfFile(let rName)):
+            return lName.caseInsensitiveCompare(rName) == .orderedSame
+        case (.revealShelfFile(let lName), .revealShelfFile(let rName)):
+            return lName.caseInsensitiveCompare(rName) == .orderedSame
+        case (.removeShelfFile(let lName), .removeShelfFile(let rName)):
+            return lName.caseInsensitiveCompare(rName) == .orderedSame
+        case (.clearShelf(let lC), .clearShelf(let rC)):
             return lC == rC
         default:
             return false
@@ -223,6 +247,29 @@ public struct AmoraActionRequest: Codable, Equatable, Sendable {
         case "memory.clear", "clear_memories", "clearmemories", "clear_memory", "clearmemory":
             let confirmed = parameters["confirmed"] == "true"
             return .success(.clearMemories(confirmed: confirmed))
+        case "fileshelf.list", "list_shelf_files", "list_files", "shelf.list", "files.list":
+            return .success(.listShelfFiles)
+        case "fileshelf.open", "open_shelf_file", "open_file", "file.open":
+            guard let name = parameters["name"] ?? parameters["file"] ?? parameters["filename"] ?? parameters["target"],
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'name' parameter for openShelfFile action."))
+            }
+            return .success(.openShelfFile(name: name.trimmingCharacters(in: .whitespacesAndNewlines)))
+        case "fileshelf.reveal", "reveal_shelf_file", "reveal_file", "file.reveal":
+            guard let name = parameters["name"] ?? parameters["file"] ?? parameters["filename"] ?? parameters["target"],
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'name' parameter for revealShelfFile action."))
+            }
+            return .success(.revealShelfFile(name: name.trimmingCharacters(in: .whitespacesAndNewlines)))
+        case "fileshelf.remove", "remove_shelf_file", "remove_file", "file.remove", "unpin_file":
+            guard let name = parameters["name"] ?? parameters["file"] ?? parameters["filename"] ?? parameters["target"],
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure(.missingParameter("Missing required 'name' parameter for removeShelfFile action."))
+            }
+            return .success(.removeShelfFile(name: name.trimmingCharacters(in: .whitespacesAndNewlines)))
+        case "fileshelf.clear", "clear_shelf", "clear_fileshelf", "shelf.clear":
+            let confirmed = parameters["confirmed"] == "true"
+            return .success(.clearShelf(confirmed: confirmed))
         default:
             return .failure(.unknownAction("Unknown action identifier: '\(actionId)'."))
         }

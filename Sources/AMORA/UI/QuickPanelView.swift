@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import QuickLook
 
 @Observable @MainActor
 final class QuickPanelViewModel {
@@ -18,6 +19,7 @@ struct QuickPanelView: View {
     @State private var celebrationActive = false
     @State private var boundaryBounceOffset: CGFloat = 0
     @State private var isFileShelfDropTargeted = false
+    @State private var previewURL: URL? = nil
     private var robot = AMORARobot.shared
     private var battery = BatteryService.shared
     private var timer = TimerService.shared
@@ -607,13 +609,34 @@ struct QuickPanelView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(palette.accent.opacity(0.85))
                 }
+                if fileShelf.isProcessingDrop {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .padding(.leading, 4)
+                }
                 Spacer()
+                Button {
+                    fileShelf.presentAddFilesPanel()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("Add")
+                            .font(.system(size: 10))
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.accent)
+                .help("Add files to shelf")
+                .accessibilityLabel("Add files to shelf")
+
                 if !fileShelf.items.isEmpty {
                     Button("Clear") { fileShelf.clearShelf() }
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.5))
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Clear all pinned files")
+                        .accessibilityLabel("Clear all pinned files from shelf")
+                        .help("Clear all entries from shelf without deleting files")
                 }
             }
 
@@ -627,14 +650,32 @@ struct QuickPanelView: View {
 
                     Text(isFileShelfDropTargeted ? "Drop files to pin" : "Drop files into File Shelf")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isFileShelfDropTargeted ? palette.accent : .white.opacity(0.55))
+                        .foregroundStyle(isFileShelfDropTargeted ? palette.accent : .white.opacity(0.7))
 
-                    Text("Drag any file from Finder here")
+                    Text("Drag files from Finder or click Browse")
                         .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(.white.opacity(0.4))
+
+                    Button {
+                        fileShelf.presentAddFilesPanel()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder.badge.plus")
+                                .font(.system(size: 10))
+                            Text("Browse Files...")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 24)
+                .padding(.vertical, 20)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(
@@ -647,57 +688,71 @@ struct QuickPanelView: View {
                     VStack(spacing: 6) {
                         ForEach(fileShelf.items) { item in
                             HStack(spacing: 8) {
-                                Image(systemName: item.isMissing ? "exclamationmark.triangle.fill" : "doc.fill")
+                                Image(systemName: item.systemIconName)
                                     .font(.system(size: 13))
                                     .foregroundStyle(item.isMissing ? Color.orange : palette.accent)
+                                    .frame(width: 16)
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(item.name)
                                         .font(.system(size: 11, weight: .medium))
                                         .lineLimit(1)
+                                        .truncationMode(.middle)
                                         .foregroundStyle(item.isMissing ? .white.opacity(0.55) : .white.opacity(0.9))
+                                        .help(item.name)
 
-                                    if item.isMissing {
-                                        Text("Missing file")
-                                            .font(.system(size: 9))
-                                            .foregroundStyle(Color.orange.opacity(0.85))
-                                    }
+                                    Text(item.metadataDescription)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(item.isMissing ? Color.orange.opacity(0.85) : .white.opacity(0.45))
                                 }
 
                                 Spacer()
 
-                                Button {
-                                    _ = fileShelf.openFile(item)
-                                } label: {
-                                    Image(systemName: "arrow.up.forward.app")
-                                        .font(.system(size: 11))
-                                }
-                                .buttonStyle(.plain)
-                                .help("Open file")
-                                .accessibilityLabel("Open \(item.name)")
-                                .disabled(item.isMissing)
+                                if !item.isMissing {
+                                    Button {
+                                        previewURL = item.url
+                                    } label: {
+                                        Image(systemName: "eye")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.white.opacity(0.75))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Quick Look preview")
+                                    .accessibilityLabel("Preview \(item.name)")
 
-                                Button {
-                                    _ = fileShelf.revealFile(item)
-                                } label: {
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.system(size: 11))
+                                    Button {
+                                        _ = fileShelf.openFile(item)
+                                    } label: {
+                                        Image(systemName: "arrow.up.forward.app")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(palette.accent)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Open with default app")
+                                    .accessibilityLabel("Open \(item.name)")
+
+                                    Button {
+                                        _ = fileShelf.revealFile(item)
+                                    } label: {
+                                        Image(systemName: "magnifyingglass")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.white.opacity(0.7))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Reveal in Finder")
+                                    .accessibilityLabel("Reveal \(item.name) in Finder")
                                 }
-                                .buttonStyle(.plain)
-                                .help("Reveal in Finder")
-                                .accessibilityLabel("Reveal \(item.name) in Finder")
-                                .disabled(item.isMissing)
 
                                 Button {
                                     fileShelf.removeItem(id: item.id)
                                 } label: {
-                                    Image(systemName: "trash")
+                                    Image(systemName: "xmark.circle")
                                         .font(.system(size: 11))
-                                        .foregroundStyle(.red.opacity(0.7))
+                                        .foregroundStyle(.white.opacity(0.4))
                                 }
                                 .buttonStyle(.plain)
-                                .help("Remove from shelf")
-                                .accessibilityLabel("Remove \(item.name)")
+                                .help("Remove from shelf (keeps original file on Mac)")
+                                .accessibilityLabel("Remove \(item.name) from shelf without deleting file")
                             }
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.05)))
@@ -715,6 +770,7 @@ struct QuickPanelView: View {
                 )
             }
         }
+        .quickLookPreview($previewURL)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onDrop(of: [.fileURL, .item], isTargeted: $isFileShelfDropTargeted) { providers in
