@@ -1016,6 +1016,143 @@ public struct SettingsView: View {
                     }
                 }
             }
+
+            // Hands-Free Wake Word Card
+            SettingsCard(
+                title: "Hands-Free Wake Word",
+                description: "Activate voice listening hands-free simply by saying \"AMORA\"."
+            ) {
+                VStack(spacing: 14) {
+                    SettingsRow(
+                        title: "Enable Wake Word (\"AMORA\")",
+                        subtitle: "Listens for the keyword 'AMORA' to activate voice commands automatically.",
+                        icon: "waveform.badge.mic"
+                    ) {
+                        Toggle("", isOn: $settings.wakeWordEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+
+                    if settings.wakeWordEnabled {
+                        Divider()
+
+                        // Status & Control Row
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: WakeWordService.shared.state.statusIcon)
+                                        .foregroundStyle(WakeWordService.shared.state.statusColor)
+                                    Text(WakeWordService.shared.state.statusTitle)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                Text(WakeWordService.shared.state.userFacingDescription)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+
+                            if case .standby = WakeWordService.shared.state {
+                                Button {
+                                    WakeWordService.shared.pause()
+                                } label: {
+                                    Label("Pause", systemImage: "pause.fill")
+                                }
+                                .buttonStyle(.amoraPill)
+                            } else if case .paused = WakeWordService.shared.state {
+                                Button {
+                                    WakeWordService.shared.resume()
+                                } label: {
+                                    Label("Resume", systemImage: "play.fill")
+                                }
+                                .buttonStyle(.amoraPill)
+                            } else if case .unauthorized = WakeWordService.shared.state {
+                                Button("System Settings") {
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }
+                                .buttonStyle(.amoraPill)
+                            }
+                        }
+
+                        Divider()
+
+                        // Engine Selection
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Wake Word Engine")
+                                .font(.subheadline)
+                            Picker("", selection: $settings.wakeWordEngineKind) {
+                                ForEach(WakeWordEngineKind.allCases, id: \.rawValue) { kind in
+                                    Text(kind.displayName).tag(kind.rawValue)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+
+                            if settings.wakeWordEngineKind == WakeWordEngineKind.nativeAcoustic.rawValue {
+                                Text("Runs completely on-device using native acoustic processing. Zero network traffic and no third-party accounts required.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Uses Picovoice Porcupine keyword spotting. Requires a free AccessKey and trained .ppn keyword model.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        // Porcupine Configuration Fields
+                        if settings.wakeWordEngineKind == WakeWordEngineKind.porcupine.rawValue {
+                            Divider()
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Picovoice AccessKey")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    SecureField("Paste Picovoice AccessKey", text: $settings.porcupineAccessKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Custom Keyword Model Path (.ppn)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    TextField("/path/to/Amora_mac.ppn", text: $settings.porcupineKeywordPath)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+
+                                Button {
+                                    if let url = URL(string: "https://console.picovoice.ai/") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                } label: {
+                                    Label("Get Free AccessKey & Train 'AMORA' Model", systemImage: "arrow.up.right.square")
+                                }
+                                .buttonStyle(.amoraPill)
+                            }
+                        }
+
+                        Divider()
+
+                        // Sensitivity
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Detection Sensitivity")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text(String(format: "%.0f%%", settings.wakeWordSensitivity * 100))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Slider(value: $settings.wakeWordSensitivity, in: 0.1...1.0, step: 0.05)
+                            Text("Higher sensitivity triggers more easily; lower sensitivity resists ambient background noise.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
     }
 

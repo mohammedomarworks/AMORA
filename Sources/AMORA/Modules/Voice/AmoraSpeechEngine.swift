@@ -14,6 +14,7 @@ protocol AmoraSpeechEngine: AnyObject {
 
     func startListening(
         preferOnDevice: Bool,
+        initialBuffers: [AVAudioPCMBuffer],
         onPartialResult: @escaping @MainActor (String) -> Void,
         onFinalResult: @escaping @MainActor (String) -> Void,
         onAudioLevel: @escaping @MainActor (Float) -> Void,
@@ -22,6 +23,25 @@ protocol AmoraSpeechEngine: AnyObject {
 
     func stopListening()
     func cancelListening()
+}
+
+extension AmoraSpeechEngine {
+    func startListening(
+        preferOnDevice: Bool,
+        onPartialResult: @escaping @MainActor (String) -> Void,
+        onFinalResult: @escaping @MainActor (String) -> Void,
+        onAudioLevel: @escaping @MainActor (Float) -> Void,
+        onError: @escaping @MainActor (Error) -> Void
+    ) throws {
+        try startListening(
+            preferOnDevice: preferOnDevice,
+            initialBuffers: [],
+            onPartialResult: onPartialResult,
+            onFinalResult: onFinalResult,
+            onAudioLevel: onAudioLevel,
+            onError: onError
+        )
+    }
 }
 
 // MARK: - Native Apple Speech Recognition Engine
@@ -115,6 +135,7 @@ final class AppleSpeechEngine: AmoraSpeechEngine {
 
     func startListening(
         preferOnDevice: Bool,
+        initialBuffers: [AVAudioPCMBuffer],
         onPartialResult: @escaping @MainActor (String) -> Void,
         onFinalResult: @escaping @MainActor (String) -> Void,
         onAudioLevel: @escaping @MainActor (Float) -> Void,
@@ -137,6 +158,10 @@ final class AppleSpeechEngine: AmoraSpeechEngine {
         }
 
         self.recognitionRequest = request
+
+        for buffer in initialBuffers {
+            request.append(buffer)
+        }
 
         let inputNode = engine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
@@ -231,6 +256,7 @@ final class MockSpeechEngine: AmoraSpeechEngine {
     var wasStopCalled: Bool = false
     var wasCancelCalled: Bool = false
     var lastPreferOnDevice: Bool?
+    var lastInitialBuffers: [AVAudioPCMBuffer] = []
 
     var onPartialResultHandler: ((String) -> Void)?
     var onFinalResultHandler: ((String) -> Void)?
@@ -251,6 +277,7 @@ final class MockSpeechEngine: AmoraSpeechEngine {
 
     func startListening(
         preferOnDevice: Bool,
+        initialBuffers: [AVAudioPCMBuffer],
         onPartialResult: @escaping @MainActor (String) -> Void,
         onFinalResult: @escaping @MainActor (String) -> Void,
         onAudioLevel: @escaping @MainActor (Float) -> Void,
@@ -260,6 +287,7 @@ final class MockSpeechEngine: AmoraSpeechEngine {
         wasStartCalled = true
         isListening = true
         lastPreferOnDevice = preferOnDevice
+        lastInitialBuffers = initialBuffers
         self.onPartialResultHandler = onPartialResult
         self.onFinalResultHandler = onFinalResult
         self.onAudioLevelHandler = onAudioLevel
